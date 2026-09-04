@@ -15,16 +15,16 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/gophish/gophish/logger"
+	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/jordan-wright/email"
 
-	"github.com/gophish/gophish/models"
+	"github.com/darkarmy-cyber/darkphish/models"
 )
 
-// Pattern for GoPhish emails e.g ?rid=AbC1234
+// Pattern for Darkphish emails e.g ?rid=AbC1234
 // We include the optional quoted-printable 3D at the front, just in case decoding fails. e.g ?rid=3DAbC1234
 // We also include alternative URL encoded representations of '=' and '?' to handle Microsoft ATP URLs e.g %3Frid%3DAbC1234
-var goPhishRegex = regexp.MustCompile("((\\?|%3F)rid(=|%3D)(3D)?([A-Za-z0-9]{7}))")
+var resultIDRegex = regexp.MustCompile(`((\?|%3F)rid(=|%3D)(3D)?([A-Za-z0-9]{7}))`)
 
 // Monitor is a worker that monitors IMAP servers for reported campaign emails
 type Monitor struct {
@@ -134,7 +134,9 @@ func checkForNewEmails(im models.IMAP) {
 		return
 	}
 	// Update last_succesful_login here via im.Host
-	err = models.SuccessfulLogin(&im)
+	if err := models.SuccessfulLogin(&im); err != nil {
+		log.Errorf("record IMAP login success: %v", err)
+	}
 
 	if len(msgs) > 0 {
 		log.Debugf("%d new emails for %s", len(msgs), im.Username)
@@ -158,20 +160,20 @@ func checkForNewEmails(im models.IMAP) {
 				continue
 			}
 			if len(rids) < 1 {
-				// In the future this should be an alert in Gophish
-				log.Infof("User '%s' reported email with subject '%s'. This is not a GoPhish campaign; you should investigate it.", m.Email.From, m.Email.Subject)
+				// In the future this should be an alert in Darkphish
+				log.Infof("User '%s' reported email with subject '%s'. This is not a Darkphish campaign; you should investigate it.", m.Email.From, m.Email.Subject)
 			}
 			for rid := range rids {
 				log.Infof("User '%s' reported email with rid %s", m.Email.From, rid)
 				result, err := models.GetResult(rid)
 				if err != nil {
-					log.Error("Error reporting GoPhish email with rid ", rid, ": ", err.Error())
+					log.Error("Error reporting Darkphish email with rid ", rid, ": ", err.Error())
 					reportingFailed = append(reportingFailed, m.SeqNum)
 					continue
 				}
 				err = result.HandleEmailReport(models.EventDetails{})
 				if err != nil {
-					log.Error("Error updating GoPhish email with rid ", rid, ": ", err.Error())
+					log.Error("Error updating Darkphish email with rid ", rid, ": ", err.Error())
 					continue
 				}
 				if im.DeleteReportedCampaignEmail {
@@ -183,15 +185,15 @@ func checkForNewEmails(im models.IMAP) {
 		// Check if any emails were unable to be reported, so we can mark them as unread
 		if len(reportingFailed) > 0 {
 			log.Debugf("Marking %d emails as unread as failed to report", len(reportingFailed))
-			err := mailServer.MarkAsUnread(reportingFailed) // Set emails as unread that we failed to report to GoPhish
+			err := mailServer.MarkAsUnread(reportingFailed) // Set emails as unread that we failed to report to Darkphish
 			if err != nil {
 				log.Error("Unable to mark emails as unread: ", err.Error())
 			}
 		}
-		// If the DeleteReportedCampaignEmail flag is set, delete reported Gophish campaign emails
+		// If the DeleteReportedCampaignEmail flag is set, delete reported Darkphish campaign emails
 		if len(deleteEmails) > 0 {
 			log.Debugf("Deleting %d campaign emails", len(deleteEmails))
-			err := mailServer.DeleteEmails(deleteEmails) // Delete GoPhish campaign emails.
+			err := mailServer.DeleteEmails(deleteEmails) // Delete Darkphish campaign emails.
 			if err != nil {
 				log.Error("Failed to delete emails: ", err.Error())
 			}
@@ -205,7 +207,7 @@ func checkForNewEmails(im models.IMAP) {
 func checkRIDs(em *email.Email, rids map[string]bool) {
 	// Check Text and HTML
 	emailContent := string(em.Text) + string(em.HTML)
-	for _, r := range goPhishRegex.FindAllStringSubmatch(emailContent, -1) {
+	for _, r := range resultIDRegex.FindAllStringSubmatch(emailContent, -1) {
 		newrid := r[len(r)-1]
 		if !rids[newrid] {
 			rids[newrid] = true
@@ -213,7 +215,7 @@ func checkRIDs(em *email.Email, rids map[string]bool) {
 	}
 }
 
-// returns a slice of gophish rid paramters found in the email HTML, Text, and attachments
+// returns a slice of darkphish rid paramters found in the email HTML, Text, and attachments
 func matchEmail(em *email.Email) (map[string]bool, error) {
 	rids := make(map[string]bool)
 	checkRIDs(em, rids)

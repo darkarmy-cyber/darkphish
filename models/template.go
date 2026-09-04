@@ -5,7 +5,7 @@ import (
 	"net/mail"
 	"time"
 
-	log "github.com/gophish/gophish/logger"
+	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/jinzhu/gorm"
 )
 

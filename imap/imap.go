@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/darkarmy-cyber/darkphish/dialer"
+	log "github.com/darkarmy-cyber/darkphish/logger"
+	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 	"github.com/emersion/go-message/charset"
-	"github.com/gophish/gophish/dialer"
-	log "github.com/gophish/gophish/logger"
-	"github.com/gophish/gophish/models"
 
 	"github.com/jordan-wright/email"
 )

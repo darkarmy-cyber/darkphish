@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"time"
 
-	log "github.com/gophish/gophish/logger"
-	"github.com/gophish/gophish/webhook"
+	log "github.com/darkarmy-cyber/darkphish/logger"
+	"github.com/darkarmy-cyber/darkphish/webhook"
 	"github.com/jinzhu/gorm"
 	"github.com/sirupsen/logrus"
 )
@@ -221,6 +221,11 @@ func (c *Campaign) getDetails() error {
 		c.SMTP = SMTP{Name: "[Deleted]"}
 		log.Warnf("%s: sending profile not found for campaign", err)
 	}
+	if err == nil {
+		if err = c.SMTP.openPassword(); err != nil {
+			return err
+		}
+	}
 	err = db.Where("smtp_id=?", c.SMTP.Id).Find(&c.SMTP.Headers).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		log.Warn(err)
@@ -379,6 +384,9 @@ func GetCampaignMailContext(id int64, uid int64) (Campaign, error) {
 	if err != nil {
 		return c, err
 	}
+	if err = c.SMTP.openPassword(); err != nil {
+		return c, err
+	}
 	err = db.Where("smtp_id=?", c.SMTP.Id).Find(&c.SMTP.Headers).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return c, err
@@ -422,7 +430,7 @@ func GetCampaignResults(id int64, uid int64) (CampaignResults, error) {
 		log.Errorf("%s: results not found for campaign", err)
 		return cr, err
 	}
-	err = db.Table("events").Where("campaign_id=?", cr.Id).Find(&cr.Events).Error
+	err = db.Table("events").Where("campaign_id=?", cr.Id).Order("time ASC, id ASC").Find(&cr.Events).Error
 	if err != nil {
 		log.Errorf("%s: events not found for campaign", err)
 		return cr, err

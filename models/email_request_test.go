@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/darkarmy-cyber/darkphish/config"
 	"github.com/gophish/gomail"
-	"github.com/gophish/gophish/config"
 	"github.com/jordan-wright/email"
 	check "gopkg.in/check.v1"
 )
@@ -78,8 +78,8 @@ func (s *ModelsSuite) TestEmailRequestGenerate(ch *check.C) {
 
 	s.config.ContactAddress = "test@test.com"
 	expectedHeaders := map[string]string{
-		"X-Mailer":          config.ServerName,
-		"X-Gophish-Contact": s.config.ContactAddress,
+		"X-Mailer":            config.ServerName,
+		"X-Darkphish-Contact": s.config.ContactAddress,
 	}
 
 	msg := gomail.NewMessage()
@@ -131,8 +131,8 @@ func (s *ModelsSuite) TestGetSmtpFrom(ch *check.C) {
 
 	msg := gomail.NewMessage()
 	err := req.Generate(msg)
+	ch.Assert(err, check.Equals, nil)
 	smtp_from, err := req.GetSmtpFrom()
-
 	ch.Assert(err, check.Equals, nil)
 	ch.Assert(smtp_from, check.Equals, "from@example.com")
 }

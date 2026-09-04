@@ -10,7 +10,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/big"
 	"net/http"
 	"net/mail"
@@ -18,8 +17,8 @@ import (
 	"regexp"
 	"time"
 
-	log "github.com/gophish/gophish/logger"
-	"github.com/gophish/gophish/models"
+	log "github.com/darkarmy-cyber/darkphish/logger"
+	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/jordan-wright/email"
 )
 
@@ -38,7 +37,7 @@ func ParseMail(r *http.Request) (email.Email, error) {
 	if err != nil {
 		fmt.Println(err)
 	}
-	body, err := ioutil.ReadAll(m.Body)
+	body, err := io.ReadAll(m.Body)
 	e.HTML = body
 	return e, err
 }
@@ -155,7 +154,7 @@ func CheckAndCreateSSL(cp string, kp string) error {
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			Organization: []string{"Gophish"},
+			Organization: []string{"Darkphish"},
 		},
 		NotBefore: notBefore,
 		NotAfter:  notAfter,

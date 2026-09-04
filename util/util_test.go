@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/gophish/gophish/models"
+	"github.com/darkarmy-cyber/darkphish/models"
 )
 
 func buildCSVRequest(csvPayload string) (*http.Request, error) {

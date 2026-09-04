@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gophish/gophish/config"
+	"github.com/darkarmy-cyber/darkphish/config"
 
 	"github.com/gophish/gomail"
 	"github.com/jordan-wright/email"
@@ -266,8 +266,8 @@ func (s *ModelsSuite) TestMailLogGenerate(ch *check.C) {
 func (s *ModelsSuite) TestMailLogGenerateTransparencyHeaders(ch *check.C) {
 	s.config.ContactAddress = "test@test.com"
 	expectedHeaders := map[string]string{
-		"X-Mailer":          config.ServerName,
-		"X-Gophish-Contact": s.config.ContactAddress,
+		"X-Mailer":            config.ServerName,
+		"X-Darkphish-Contact": s.config.ContactAddress,
 	}
 	campaign := s.createCampaign(ch)
 	got := s.emailFromFirstMailLog(campaign, ch)
@@ -278,8 +278,8 @@ func (s *ModelsSuite) TestMailLogGenerateTransparencyHeaders(ch *check.C) {
 
 func (s *ModelsSuite) TestMailLogGenerateOverrideTransparencyHeaders(ch *check.C) {
 	expectedHeaders := map[string]string{
-		"X-Mailer":          "",
-		"X-Gophish-Contact": "",
+		"X-Mailer":            "",
+		"X-Darkphish-Contact": "",
 	}
 	smtp := SMTP{
 		Name:        "Test SMTP",
@@ -287,7 +287,7 @@ func (s *ModelsSuite) TestMailLogGenerateOverrideTransparencyHeaders(ch *check.C
 		FromAddress: "foo@example.com",
 		UserId:      1,
 		Headers: []Header{
-			Header{Key: "X-Gophish-Contact", Value: ""},
+			Header{Key: "X-Darkphish-Contact", Value: ""},
 			Header{Key: "X-Mailer", Value: ""},
 		},
 	}
@@ -397,11 +397,9 @@ func (s *ModelsSuite) TestEmbedAttachment(ch *check.C) {
 	ch.Assert(PostCampaign(&campaign, campaign.UserId), check.Equals, nil)
 	got := s.emailFromFirstMailLog(campaign, ch)
 
-	// The email package simply ignores attachments where the Content-Disposition header is set
-	// to inline, so the best we can do without replacing the whole thing is to check that only
-	// the text file was added as an attachment.
-	ch.Assert(got.Attachments, check.HasLen, 1)
-	ch.Assert(got.Attachments[0].Filename, check.Equals, "test.txt")
+	ch.Assert(got.Attachments, check.HasLen, 2)
+	ch.Assert(got.Attachments[0].Filename, check.Equals, "test.png")
+	ch.Assert(got.Attachments[1].Filename, check.Equals, "test.txt")
 }
 
 func BenchmarkMailLogGenerate100(b *testing.B) {

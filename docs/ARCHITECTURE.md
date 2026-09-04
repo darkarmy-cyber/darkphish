@@ -27,16 +27,21 @@ is a future workstream and will require its own migration and campaign test matr
 - Outbound imports use a connect-time restricted dialer. It validates resolved
   addresses to resist DNS rebinding and denies local, private, metadata,
   multicast, unspecified, and reserved ranges unless explicitly allowlisted.
-- Credential submissions are data-minimized: field names may be retained but
-  values are discarded. Darkphish does not provide credential replay.
+- Credential handling is campaign-scoped and disabled by default. Policy-only
+  mode persists irreversible measurements; encrypted review stores a bounded-
+  retention AES-256-GCM envelope and exposes plaintext only through a dedicated,
+  permission-checked, audited POST action. Normal APIs, exports, webhooks, and
+  logs never receive the raw value. Darkphish does not provide credential replay.
 
 ## Audit and observability
 
 Administrative requests receive an application-generated `X-Request-ID`.
 Security-sensitive API mutations, campaign result access, login, logout, and
-impersonation emit JSON-line events with timestamp, actor, action, target,
-result, request ID, source IP, and authentication method. The audit interface
-does not accept request bodies, passwords, tokens, or secret values.
+impersonation emit persistent indexed events and matching JSON-line records with
+timestamp, actor, action, target, result, request ID, source IP, and
+authentication method. The audit interface does not accept request bodies,
+passwords, tokens, or secret values. The administrator viewer uses server-side
+filters and pagination; retention cleanup is configured independently.
 
 `/healthz` reports process liveness. `/readyz` verifies database connectivity.
 Metrics and tracing are intentionally deferred, but request correlation and

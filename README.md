@@ -44,42 +44,40 @@ Development defaults are deliberately separate from production. Read
 [development setup](docs/DEVELOPMENT.md) and [production deployment](docs/DEPLOYMENT.md)
 before exposing an instance to a network.
 
-## Docker
+## Deployment
 
-```sh
-docker build -t darkphish:local .
-docker run --rm -p 3333:3333 -p 8080:8080 \
-  --read-only --tmpfs /tmp --volume darkphish-data:/data \
-  --env DARKPHISH_SESSION_AUTH_KEY='base64:<32-byte-key>' \
-  --env DARKPHISH_SESSION_ENCRYPTION_KEY='base64:<32-byte-key>' \
-  --env DARKPHISH_SECRET_ENCRYPTION_KEY='base64:<32-byte-key>' \
-  darkphish:local
-```
-
-See [Docker deployment](docs/DEPLOYMENT.md) for key generation, persistence,
-TLS, reverse-proxy, and health-check guidance.
+Native binaries are the supported release artifacts. Historical container
+files remain optional community tooling, but container builds and publishing
+are not required CI or release gates. See [deployment](docs/DEPLOYMENT.md) for
+key generation, persistence, TLS, database, and health-check guidance.
 
 ## Security baseline
 
 - Browser clients use encrypted, signed, `HttpOnly`, `SameSite=Lax` sessions.
-- External API clients authenticate with `Authorization: Bearer <token>`.
+- External API clients authenticate with scoped, expiring personal access tokens
+  sent as `Authorization: Bearer <token>`.
 - API tokens in query strings are rejected.
 - Administrative CORS is off unless exact trusted origins are configured.
 - Production mode requires persistent session and secret-encryption keys.
 - Stored SMTP, IMAP, and webhook secrets are write-only in normal API responses.
-- Credential submissions retain field names only; submitted values are discarded.
-- Administrative changes and sensitive reads emit structured, secret-free audit events.
+- Campaigns default to disabled credential handling. Policy-only mode stores
+  irreversible findings; encrypted review requires explicit authorization,
+  short retention, and an individually audited reveal.
+- Administrative changes and sensitive reads emit persistent, indexed,
+  secret-free audit events.
 
-Long-lived API tokens are no longer placed in browser HTML or JavaScript. The
-current compatibility token is returned only immediately after rotation. A
-hashed, named, scoped, expiring personal-access-token model remains planned.
+Raw personal access tokens are displayed once and never stored. Legacy
+permanent API keys no longer authenticate.
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Development](docs/DEVELOPMENT.md)
-- [Production and Docker deployment](docs/DEPLOYMENT.md)
-- [Migration from the upstream baseline](docs/MIGRATION.md)
+- [Version and release policy](docs/RELEASES.md)
+- [Production deployment](docs/DEPLOYMENT.md)
+- [Credential review](docs/CREDENTIAL_REVIEW.md)
+- [Personal access tokens](docs/API_TOKENS.md)
+- [Migration from the upstream baseline and 0.2](docs/MIGRATION.md)
 - [Security policy](SECURITY.md)
 - [Changelog](CHANGELOG.md)
 

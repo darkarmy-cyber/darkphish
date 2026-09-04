@@ -1,47 +1,33 @@
-# Migration from the upstream baseline
+# Migration to Darkphish 0.2
 
-Darkphish 0.1.0 starts from commit
-`95618469799295e2c0fec980805a2dfbb818816b`. Existing SQLite and MySQL data is
-preserved; startup applies normal Goose migrations and does not recreate the
-database.
+Back up the database, configuration, certificates, and runtime data before
+starting. Darkphish applies Goose migrations in place for both SQLite and MySQL.
+The 0.2 migration adds campaign policy controls, separate derived policy results,
+encrypted review records, personal access tokens, and indexed audit events.
 
-## Operator checklist
+## Required operator actions
 
-1. Back up the database, configuration, certificates, and runtime data.
-2. Rename runtime paths and service references to `darkphish`. The default
-   SQLite filename is now `darkphish.db`; explicitly retain an old path when
-   migrating an existing database.
-3. Replace new configuration keys from the supplied `config.json`. Production
-   deployments must enable `production_mode` and supply persistent session and
-   integration-secret keys.
-4. Update external API clients to `Authorization: Bearer <token>`. URL query
-   authentication now returns 401. Send `POST`, not `GET`, to the campaign
-   completion endpoint.
-5. Configure exact administrative CORS origins only if required. CSRF
-   `trusted_origins` must also be exact and scheme-qualified (for example,
-   `https://admin.example.com`); production rejects plaintext origins.
-6. Verify SMTP, IMAP, and webhook settings. Existing plaintext values can be
-   read for compatibility and are encrypted on their next write when the
-   encryption key is configured.
-7. Ensure users know the 12-character minimum password policy.
-8. Validate custom landing pages: submitted field names are recorded, but values
-   and passwords are always discarded regardless of legacy capture flags.
-9. Start the service, verify `/healthz` and `/readyz`, then test a non-production
-   authorized campaign before normal use.
+1. Configure persistent session keys and a versioned secret keyring as described
+   in `DEPLOYMENT.md`. Keep the old integration-secret key during rotation.
+2. Start one upgraded instance and confirm migration success before upgrading
+   the rest of a shared deployment.
+3. Create scoped, expiring PATs for API clients. Migration disables values in
+   the legacy `users.api_key` column; old permanent tokens stop authenticating.
+4. Review every campaign. Existing and new campaigns default to credential mode
+   `disabled`. Enable `policy_only` first unless retained plaintext review has a
+   documented, authorized need.
+5. If encrypted review is approved, grant `credentials:view` only to the small
+   review group, set short retention, and align database backups and replicas.
+6. Run `--rotate-secrets`, verify SMTP/IMAP/webhook connectivity, then remove old
+   keys only after backup retention permits.
+7. Verify `/healthz`, `/readyz`, PAT scope enforcement, audit paging/export, and
+   an authorized non-production campaign.
 
-## Compatibility identifiers
+Historical credential values discarded by prior Darkphish versions remain lost.
+The migration does not and cannot recover them. Historical integration secrets
+remain readable only when their original key is retained; losing a key makes its
+ciphertexts unrecoverable.
 
-For one transitional release, the legacy `GOPHISH_SESSION_AUTH_KEY`,
-`GOPHISH_SESSION_ENCRYPTION_KEY`, `GOPHISH_SECRET_ENCRYPTION_KEY`,
-`GOPHISH_INITIAL_ADMIN_PASSWORD`,
-`GOPHISH_INITIAL_ADMIN_API_TOKEN`, and initial-password-file variables are
-accepted as deprecated fallbacks. `DARKPHISH_*` always takes precedence.
-
-## Database migrations
-
-The 0.1.0 data migration only updates built-in permission descriptions from the
-upstream product name to Darkphish. It changes no tables or user data. Secret
-encryption is deliberately lazy-on-write to preserve existing installations.
-
-No PostgreSQL support or GORM major-version migration is included. Those require
-a dedicated cross-backend migration and CRUD/campaign compatibility suite.
+SQLite and MySQL migrations preserve campaign and policy findings when expired
+credential ciphertext is cleared. No PostgreSQL or GORM major-version migration
+is included in 0.2.

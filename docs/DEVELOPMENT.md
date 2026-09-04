@@ -20,8 +20,12 @@ go build -trimpath ./...
 ```
 
 CI additionally runs staticcheck, govulncheck, CodeQL, pnpm audit, Trivy secret
-scanning, and container scans. Generated assets under `static/*/dist` are
+scanning, migration tests, and changelog-fragment validation. Generated assets under `static/*/dist` are
 committed and CI verifies that a fresh frontend build does not change them.
+
+Container builds are optional compatibility tooling and are not required CI or
+release gates. Releases contain native binaries, checksums, an SBOM, and build
+provenance.
 
 `staticcheck.conf` temporarily excludes ST1000, ST1003, and ST1005. The inherited
 package comments and public identifiers predate those style rules, while several
@@ -39,6 +43,12 @@ Security and correctness fixes require a regression test demonstrating allowed,
 blocked, and edge behavior. Preserve existing SQLite files and add explicit,
 reversible migrations for persistent changes. Keep simulation-page policies
 separate from administrative policies.
+
+Runtime changes require a fragment under `changes/`. Validate it with
+`node scripts/changelog.mjs validate`; release preparation aggregates fragments
+and advances root `VERSION` to the fragments' next-minor target before creating
+the protected release pull request. `VERSION` remains the authoritative SemVer
+source after preparation.
 
 Use the legal upstream name only in attribution, dependency import paths,
 historical migrations, or documented deprecated compatibility identifiers.

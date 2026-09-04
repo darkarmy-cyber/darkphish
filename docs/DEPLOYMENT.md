@@ -1,55 +1,48 @@
-# Production and Docker deployment
+# Production deployment
 
-The supplied image runs as UID/GID 65532, stores mutable data in `/data`, keeps
-configuration at `/etc/darkphish/config.json`, and supports a read-only root
-filesystem with a writable `/data` volume and `/tmp` tmpfs. The runtime image
-contains only the binary and required runtime assets.
+Native binaries are the supported Darkphish 0.2 release artifacts. Each release
+contains SHA-256 checksums, an SPDX SBOM, and provenance. Historical Docker files
+remain optional and receive no required CI or publishing guarantee.
 
-## Required production secrets
+## Required production keys
 
-`docker/config.json` enables `production_mode`; startup therefore requires:
+Supply independent 32-byte session keys and a versioned secret keyring:
 
-- `DARKPHISH_SESSION_AUTH_KEY`: exactly 32 bytes
-- `DARKPHISH_SESSION_ENCRYPTION_KEY`: exactly 32 bytes
-- `DARKPHISH_SECRET_ENCRYPTION_KEY`: exactly 32 bytes
-
-The three exact-length keys accept raw text or `base64:`/`hex:` prefixes. Generate
-independent random values, for example:
-
-```sh
-printf 'base64:'; openssl rand -base64 32
-openssl rand -base64 48
+```text
+DARKPHISH_SESSION_AUTH_KEY=base64:<32-byte-value>
+DARKPHISH_SESSION_ENCRYPTION_KEY=base64:<32-byte-value>
+DARKPHISH_SECRET_ACTIVE_KEY=V1
+DARKPHISH_SECRET_KEY_V1=base64:<32-byte-value>
 ```
 
-Supply keys using an orchestrator secret store. File-backed configuration is
-also supported through `auth_key_file`, `encryption_key_file`, and the secret
-store `encryption_key_file`; paths are resolved relative to the config file.
-Never commit key material.
+Raw, `base64:`, and `hex:` encodings are accepted. Keep key IDs stable and use
+only letters, digits, dots, underscores, or hyphens. Never commit key material.
+Production startup fails when the active key is absent or invalid.
 
-## Runtime
+To rotate without downtime, deploy the old and new keys together, select the new
+ID with `DARKPHISH_SECRET_ACTIVE_KEY`, then run:
 
 ```sh
-docker build -t darkphish:local .
-docker volume create darkphish-data
-docker run --name darkphish --read-only --tmpfs /tmp \
-  --volume darkphish-data:/data \
-  --publish 3333:3333 --publish 8080:8080 \
-  --env-file /secure/path/darkphish.env \
-  darkphish:local
+darkphish --config /etc/darkphish/config.json --rotate-secrets
 ```
 
-The administrative endpoint uses TLS on port 3333 and the simulation endpoint
-uses port 8080 in the container configuration. Replace generated certificates
-with managed certificates or terminate TLS at a trusted reverse proxy. Restrict
-port 3333 to administrators. Configure scheme-qualified, exact
-`trusted_origins` when a separate browser origin is required, and exact
-`cors_allowed_origins` only when a separate administrative API client requires
-cross-origin access. Production rejects plaintext trusted origins.
+Keep old keys available until the command succeeds on all shared databases and
+backups using the old key have expired. The legacy
+`DARKPHISH_SECRET_ENCRYPTION_KEY` may be supplied temporarily to read v1
+envelopes that predate key IDs.
 
-The image health check calls `https://127.0.0.1:3333/healthz`. Use `/readyz` for
-traffic readiness because it also checks database connectivity.
+## Runtime and data
 
-Back up `/data`, test restoration, rotate keys through a planned maintenance
-procedure, and retain the old secret-encryption key until stored integration
-credentials have been re-encrypted. Losing that key makes encrypted SMTP, IMAP,
-and webhook credentials unrecoverable.
+Place the administrative endpoint behind TLS, restrict it to administrators,
+and isolate the simulation listener. Configure exact, scheme-qualified
+`trusted_origins`; configure administrative `cors_allowed_origins` only where a
+separate trusted client requires them. Use `/healthz` for process liveness and
+`/readyz` for database readiness.
+
+SQLite needs exclusive, filesystem-consistent backups of the configured DB file.
+MySQL needs transactionally consistent backups and protected binary logs. Test
+restoration before upgrades. Apply the configured audit retention and campaign
+credential retention to replicas, snapshots, and off-site backups as well.
+
+`audit.retention_days` defaults to 365. `personal_access_tokens.max_lifetime_days`
+defaults to 90. Review these limits against organizational policy.

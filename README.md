@@ -1,66 +1,90 @@
-![gophish logo](https://raw.github.com/gophish/gophish/master/static/images/gophish_purple.png)
+# Darkphish
 
-Gophish
-=======
+![Darkphish](static/images/darkphish_banner.png)
 
-![Build Status](https://github.com/gophish/gophish/workflows/CI/badge.svg) [![GoDoc](https://godoc.org/github.com/gophish/gophish?status.svg)](https://godoc.org/github.com/gophish/gophish)
+[![CI](https://github.com/darkarmy-cyber/darkphish/actions/workflows/ci.yml/badge.svg)](https://github.com/darkarmy-cyber/darkphish/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/darkarmy-cyber/darkphish/actions/workflows/codeql.yml/badge.svg)](https://github.com/darkarmy-cyber/darkphish/actions/workflows/codeql.yml)
 
-Gophish: Open-Source Phishing Toolkit
+Darkphish is an open-source platform for authorized phishing simulations,
+security-awareness training, internal security testing, and defensive research.
+It is derived from Gophish and keeps its straightforward single-binary design
+while establishing a secure, actively maintained foundation.
 
-[Gophish](https://getgophish.com) is an open-source phishing toolkit designed for businesses and penetration testers. It provides the ability to quickly and easily setup and execute phishing engagements and security awareness training.
+Use Darkphish only where you have explicit authorization. It is not intended
+for credential theft, malware delivery, security-control evasion, or targeting
+third parties.
 
-### Install
+## Build from source
 
-Installation of Gophish is dead-simple - just download and extract the zip containing the [release for your system](https://github.com/gophish/gophish/releases/), and run the binary. Gophish has binary releases for Windows, Mac, and Linux platforms.
+Requirements:
 
-### Building From Source
-**If you are building from source, please note that Gophish requires Go v1.10 or above!**
+- Go 1.27.1 (CGO and a C compiler are required for SQLite)
+- Node.js 24.x and pnpm 11.19.0 for frontend changes
 
-To build Gophish from source, simply run ```git clone https://github.com/gophish/gophish.git``` and ```cd``` into the project source directory. Then, run ```go build```. After this, you should have a binary called ```gophish``` in the current directory.
-
-### Docker
-You can also use Gophish via the official Docker container [here](https://hub.docker.com/r/gophish/gophish/).
-
-### Setup
-After running the Gophish binary, open an Internet browser to https://localhost:3333 and login with the default username and password listed in the log output.
-e.g.
+```sh
+go test ./...
+go build -trimpath -o darkphish ./
+pnpm install --frozen-lockfile
+pnpm run build
 ```
-time="2020-07-29T01:24:08Z" level=info msg="Please login with the username admin and the password 4304d5255378177d"
+
+Start the development configuration with:
+
+```sh
+./darkphish --config config.json
 ```
 
-Releases of Gophish prior to v0.10.1 have a default username of `admin` and password of `gophish`.
+The initial administrator password is written with owner-only permissions to
+`darkphish_initial_admin_password` beside the SQLite database. The password is
+never printed to logs and the file is removed after the required first password
+change. You can instead set `DARKPHISH_INITIAL_ADMIN_PASSWORD` or configure
+`DARKPHISH_INITIAL_ADMIN_PASSWORD_FILE`.
 
-### Documentation
+Development defaults are deliberately separate from production. Read
+[development setup](docs/DEVELOPMENT.md) and [production deployment](docs/DEPLOYMENT.md)
+before exposing an instance to a network.
 
-Documentation can be found on our [site](http://getgophish.com/documentation). Find something missing? Let us know by filing an issue!
+## Docker
 
-### Issues
-
-Find a bug? Want more features? Find something missing in the documentation? Let us know! Please don't hesitate to [file an issue](https://github.com/gophish/gophish/issues/new) and we'll get right on it.
-
-### License
+```sh
+docker build -t darkphish:local .
+docker run --rm -p 3333:3333 -p 8080:8080 \
+  --read-only --tmpfs /tmp --volume darkphish-data:/data \
+  --env DARKPHISH_SESSION_AUTH_KEY='base64:<32-byte-key>' \
+  --env DARKPHISH_SESSION_ENCRYPTION_KEY='base64:<32-byte-key>' \
+  --env DARKPHISH_SECRET_ENCRYPTION_KEY='base64:<32-byte-key>' \
+  darkphish:local
 ```
-Gophish - Open-Source Phishing Framework
 
-The MIT License (MIT)
+See [Docker deployment](docs/DEPLOYMENT.md) for key generation, persistence,
+TLS, reverse-proxy, and health-check guidance.
 
-Copyright (c) 2013 - 2020 Jordan Wright
+## Security baseline
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software ("Gophish Community Edition") and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+- Browser clients use encrypted, signed, `HttpOnly`, `SameSite=Lax` sessions.
+- External API clients authenticate with `Authorization: Bearer <token>`.
+- API tokens in query strings are rejected.
+- Administrative CORS is off unless exact trusted origins are configured.
+- Production mode requires persistent session and secret-encryption keys.
+- Stored SMTP, IMAP, and webhook secrets are write-only in normal API responses.
+- Credential submissions retain field names only; submitted values are discarded.
+- Administrative changes and sensitive reads emit structured, secret-free audit events.
 
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
+Long-lived API tokens are no longer placed in browser HTML or JavaScript. The
+current compatibility token is returned only immediately after rotation. A
+hashed, named, scoped, expiring personal-access-token model remains planned.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-```
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Development](docs/DEVELOPMENT.md)
+- [Production and Docker deployment](docs/DEPLOYMENT.md)
+- [Migration from the upstream baseline](docs/MIGRATION.md)
+- [Security policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
+
+## License and origin
+
+Darkphish is MIT licensed. The original copyright and permission notice are
+preserved in [LICENSE](LICENSE). See [NOTICE.md](NOTICE.md) for derivation and
+attribution details.

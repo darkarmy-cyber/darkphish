@@ -1,9 +1,33 @@
-# Security Policy
+# Security policy
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-Thank you for taking the time to find and report a security vulnerability in Gophish!
+Please report suspected vulnerabilities privately through the
+[Darkphish GitHub security advisory form](https://github.com/darkarmy-cyber/darkphish/security/advisories/new).
+Do not disclose exploitable details in a public issue.
 
-I'd ask that you please send me an email with the details at hi@getgophish.com rather than posting any details in the public issue tracker.
+Include the affected version or commit, deployment model, reproduction steps,
+impact, and any suggested mitigation. Never include real credentials, campaign
+data, or personal information. The Darkphish maintainers will acknowledge the
+report, investigate it, coordinate a fix and disclosure date, and credit the
+reporter when requested.
 
-I'll happily work with you to get the vulnerability resolved as quickly as possible, and will be sure to credit you (if you'd like!) in the release notes for the following release.
+Reports concerning unmodified upstream code are still welcome here: Darkphish
+maintainers own the security response for Darkphish deployments.
+
+## Supported versions
+
+Until Darkphish reaches 1.0, security fixes are made on the current development
+branch and latest tagged minor release. Operators should track the newest
+security release; older pre-1.0 versions do not receive indefinite backports.
+
+## Deployment expectations
+
+Run the administrative server behind TLS, enable `production_mode`, provide
+all required persistent keys from a secret manager or mounted files, restrict
+network access, back up `/data`, and keep the container and host patched. The
+simulation listener is a separate trust boundary and should not expose the
+administrative interface.
+
+Darkphish is for explicitly authorized simulations only. Vulnerability reports
+must not use third-party systems or real employee credentials as test material.

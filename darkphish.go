@@ -1,7 +1,7 @@
 package main
 
 /*
-gophish - Open-Source Phishing Framework
+darkphish - Open-Source Phishing Framework
 
 The MIT License (MIT)
 
@@ -27,21 +27,20 @@ THE SOFTWARE.
 */
 import (
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
 
-	"gopkg.in/alecthomas/kingpin.v2"
+	"github.com/alecthomas/kingpin/v2"
 
-	"github.com/gophish/gophish/config"
-	"github.com/gophish/gophish/controllers"
-	"github.com/gophish/gophish/dialer"
-	"github.com/gophish/gophish/imap"
-	log "github.com/gophish/gophish/logger"
-	"github.com/gophish/gophish/middleware"
-	"github.com/gophish/gophish/models"
-	"github.com/gophish/gophish/webhook"
+	"github.com/darkarmy-cyber/darkphish/config"
+	"github.com/darkarmy-cyber/darkphish/controllers"
+	"github.com/darkarmy-cyber/darkphish/dialer"
+	"github.com/darkarmy-cyber/darkphish/imap"
+	log "github.com/darkarmy-cyber/darkphish/logger"
+	"github.com/darkarmy-cyber/darkphish/middleware"
+	"github.com/darkarmy-cyber/darkphish/models"
+	"github.com/darkarmy-cyber/darkphish/webhook"
 )
 
 const (
@@ -60,7 +59,7 @@ var (
 func main() {
 	// Load the version
 
-	version, err := ioutil.ReadFile("./VERSION")
+	version, err := os.ReadFile("./VERSION")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -81,10 +80,21 @@ func main() {
 		log.Warnf("Please consider adding a contact_address entry in your config.json")
 	}
 	config.Version = string(version)
+	if err = middleware.ConfigureSession(
+		conf.Session.AuthKey,
+		conf.Session.EncryptionKey,
+		conf.AdminConf.UseTLS,
+		conf.Session.LifetimeHours,
+		conf.ProductionMode,
+	); err != nil {
+		log.Fatal(err)
+	}
 
 	// Configure our various upstream clients to make sure that we restrict
 	// outbound connections as needed.
-	dialer.SetAllowedHosts(conf.AdminConf.AllowedInternalHosts)
+	if err = dialer.SetAllowedHosts(conf.AdminConf.AllowedInternalHosts); err != nil {
+		log.Fatal(err)
+	}
 	webhook.SetTransport(&http.Transport{
 		DialContext: dialer.Dialer().DialContext,
 	})
@@ -102,7 +112,7 @@ func main() {
 	}
 
 	// Unlock any maillogs that may have been locked for processing
-	// when Gophish was last shutdown.
+	// when Darkphish was last shutdown.
 	err = models.UnlockAllMailLogs()
 	if err != nil {
 		log.Fatal(err)
@@ -115,7 +125,6 @@ func main() {
 	}
 	adminConfig := conf.AdminConf
 	adminServer := controllers.NewAdminServer(adminConfig, adminOptions...)
-	middleware.Store.Options.Secure = adminConfig.UseTLS
 
 	phishConfig := conf.PhishConf
 	phishServer := controllers.NewPhishingServer(phishConfig)

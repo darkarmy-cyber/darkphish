@@ -1,18 +1,58 @@
 package models
 
 import (
+	"encoding/json"
 	"errors"
 
-	log "github.com/gophish/gophish/logger"
+	log "github.com/darkarmy-cyber/darkphish/logger"
 )
 
 // Webhook represents the webhook model
 type Webhook struct {
-	Id       int64  `json:"id" gorm:"column:id; primary_key:yes"`
-	Name     string `json:"name"`
-	URL      string `json:"url"`
-	Secret   string `json:"secret"`
-	IsActive bool   `json:"is_active"`
+	Id        int64  `json:"id" gorm:"column:id; primary_key:yes"`
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	Secret    string `json:"-"`
+	SecretSet bool   `json:"secret_set" gorm:"-"`
+	IsActive  bool   `json:"is_active"`
+}
+
+// UnmarshalJSON accepts a write-only signing secret.
+func (wh *Webhook) UnmarshalJSON(data []byte) error {
+	type alias Webhook
+	payload := struct {
+		Secret string `json:"secret"`
+		*alias
+	}{alias: (*alias)(wh)}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+	wh.Secret = payload.Secret
+	wh.SecretSet = payload.Secret != ""
+	return nil
+}
+
+func (wh *Webhook) openSecret() error {
+	secret, err := secretStore.Open(wh.Secret)
+	if err != nil {
+		return err
+	}
+	wh.Secret = secret
+	wh.SecretSet = secret != ""
+	return nil
+}
+
+func (wh *Webhook) saveWithProtectedSecret() error {
+	plain := wh.Secret
+	protected, err := secretStore.Seal(plain)
+	if err != nil {
+		return err
+	}
+	wh.Secret = protected
+	err = db.Save(wh).Error
+	wh.Secret = plain
+	wh.SecretSet = plain != ""
+	return err
 }
 
 // ErrURLNotSpecified indicates there was no URL specified
@@ -25,6 +65,11 @@ var ErrNameNotSpecified = errors.New("Name can't be empty")
 func GetWebhooks() ([]Webhook, error) {
 	whs := []Webhook{}
 	err := db.Find(&whs).Error
+	for i := range whs {
+		if err == nil {
+			err = whs[i].openSecret()
+		}
+	}
 	return whs, err
 }
 
@@ -32,6 +77,11 @@ func GetWebhooks() ([]Webhook, error) {
 func GetActiveWebhooks() ([]Webhook, error) {
 	whs := []Webhook{}
 	err := db.Where("is_active=?", true).Find(&whs).Error
+	for i := range whs {
+		if err == nil {
+			err = whs[i].openSecret()
+		}
+	}
 	return whs, err
 }
 
@@ -40,6 +90,9 @@ func GetActiveWebhooks() ([]Webhook, error) {
 func GetWebhook(id int64) (Webhook, error) {
 	wh := Webhook{}
 	err := db.Where("id=?", id).First(&wh).Error
+	if err == nil {
+		err = wh.openSecret()
+	}
 	return wh, err
 }
 
@@ -50,7 +103,7 @@ func PostWebhook(wh *Webhook) error {
 		log.Error(err)
 		return err
 	}
-	err = db.Save(wh).Error
+	err = wh.saveWithProtectedSecret()
 	if err != nil {
 		log.Error(err)
 	}
@@ -64,7 +117,7 @@ func PutWebhook(wh *Webhook) error {
 		log.Error(err)
 		return err
 	}
-	err = db.Save(wh).Error
+	err = wh.saveWithProtectedSecret()
 	return err
 }
 

@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gophish/gophish/auth"
-	"github.com/gophish/gophish/config"
-	"github.com/gophish/gophish/models"
+	"github.com/darkarmy-cyber/darkphish/auth"
+	"github.com/darkarmy-cyber/darkphish/config"
+	"github.com/darkarmy-cyber/darkphish/models"
 )
 
 // testContext is the data required to test API related functions
@@ -42,18 +42,22 @@ func setupTest(t *testing.T) *testContext {
 	ctx.adminServer.Start()
 	// Get the API key to use for these tests
 	u, err := models.GetUser(1)
-	// Reset the temporary password for the admin user to a value we control
-	hash, err := auth.GeneratePasswordHash("gophish")
-	u.Hash = hash
-	models.PutUser(&u)
 	if err != nil {
 		t.Fatalf("error getting first user from database: %v", err)
+	}
+	// Reset the temporary password for the admin user to a value we control
+	hash, err := auth.GeneratePasswordHash("darkphish")
+	if err != nil {
+		t.Fatalf("error hashing test password: %v", err)
+	}
+	u.Hash = hash
+	if err := models.PutUser(&u); err != nil {
+		t.Fatalf("error updating first user: %v", err)
 	}
 
 	// Create a second user to test account locked status
 	u2 := models.User{Username: "houdini", Hash: hash, AccountLocked: true}
-	models.PutUser(&u2)
-	if err != nil {
+	if err := models.PutUser(&u2); err != nil {
 		t.Fatalf("error creating new user: %v", err)
 	}
 

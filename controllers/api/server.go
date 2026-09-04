@@ -3,24 +3,25 @@ package api
 import (
 	"net/http"
 
-	mid "github.com/gophish/gophish/middleware"
-	"github.com/gophish/gophish/middleware/ratelimit"
-	"github.com/gophish/gophish/models"
-	"github.com/gophish/gophish/worker"
+	mid "github.com/darkarmy-cyber/darkphish/middleware"
+	"github.com/darkarmy-cyber/darkphish/middleware/ratelimit"
+	"github.com/darkarmy-cyber/darkphish/models"
+	"github.com/darkarmy-cyber/darkphish/worker"
 	"github.com/gorilla/mux"
 )
 
 // ServerOption is an option to apply to the API server.
 type ServerOption func(*Server)
 
-// Server represents the routes and functionality of the Gophish API.
+// Server represents the routes and functionality of the Darkphish API.
 // It's not a server in the traditional sense, in that it isn't started and
 // stopped. Rather, it's meant to be used as an http.Handler in the
 // AdminServer.
 type Server struct {
-	handler http.Handler
-	worker  worker.Worker
-	limiter *ratelimit.PostLimiter
+	handler        http.Handler
+	worker         worker.Worker
+	limiter        *ratelimit.PostLimiter
+	allowedOrigins []string
 }
 
 // NewServer returns a new instance of the API handler with the provided
@@ -52,11 +53,19 @@ func WithLimiter(limiter *ratelimit.PostLimiter) ServerOption {
 	}
 }
 
+// WithAllowedOrigins enables CORS for exact administrative API origins.
+func WithAllowedOrigins(origins []string) ServerOption {
+	return func(as *Server) {
+		as.allowedOrigins = append([]string(nil), origins...)
+	}
+}
+
 func (as *Server) registerRoutes() {
 	root := mux.NewRouter()
 	root = root.StrictSlash(true)
 	router := root.PathPrefix("/api/").Subrouter()
 	router.Use(mid.RequireAPIKey)
+	router.Use(mid.AuditAPI)
 	router.Use(mid.EnforceViewOnly)
 	router.HandleFunc("/imap/", as.IMAPServer)
 	router.HandleFunc("/imap/validate", as.IMAPServerValidate)
@@ -66,7 +75,7 @@ func (as *Server) registerRoutes() {
 	router.HandleFunc("/campaigns/{id:[0-9]+}", as.Campaign)
 	router.HandleFunc("/campaigns/{id:[0-9]+}/results", as.CampaignResults)
 	router.HandleFunc("/campaigns/{id:[0-9]+}/summary", as.CampaignSummary)
-	router.HandleFunc("/campaigns/{id:[0-9]+}/complete", as.CampaignComplete)
+	router.HandleFunc("/campaigns/{id:[0-9]+}/complete", as.CampaignComplete).Methods(http.MethodPost)
 	router.HandleFunc("/groups/", as.Groups)
 	router.HandleFunc("/groups/summary", as.GroupsSummary)
 	router.HandleFunc("/groups/{id:[0-9]+}", as.Group)
@@ -86,7 +95,7 @@ func (as *Server) registerRoutes() {
 	router.HandleFunc("/webhooks/", mid.Use(as.Webhooks, mid.RequirePermission(models.PermissionModifySystem)))
 	router.HandleFunc("/webhooks/{id:[0-9]+}/validate", mid.Use(as.ValidateWebhook, mid.RequirePermission(models.PermissionModifySystem)))
 	router.HandleFunc("/webhooks/{id:[0-9]+}", mid.Use(as.Webhook, mid.RequirePermission(models.PermissionModifySystem)))
-	as.handler = router
+	as.handler = mid.CORS(as.allowedOrigins)(router)
 }
 
 func (as *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

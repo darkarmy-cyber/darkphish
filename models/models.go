@@ -1,28 +1,36 @@
 package models
 
 import (
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
-	"bitbucket.org/liamstask/goose/lib/goose"
-
+	"github.com/darkarmy-cyber/darkphish/auth"
+	"github.com/darkarmy-cyber/darkphish/config"
+	secretpkg "github.com/darkarmy-cyber/darkphish/internal/secrets"
 	mysql "github.com/go-sql-driver/mysql"
-	"github.com/gophish/gophish/auth"
-	"github.com/gophish/gophish/config"
+	"github.com/pressly/goose/v3"
 
-	log "github.com/gophish/gophish/logger"
+	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/jinzhu/gorm"
 	_ "github.com/mattn/go-sqlite3" // Blank import needed to import sqlite3
 )
 
 var db *gorm.DB
 var conf *config.Config
+var secretStore secretpkg.Store = secretpkg.PlaintextStore{}
+
+// Health verifies that the configured database is reachable.
+func Health() error {
+	if db == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+	return db.DB().Ping()
+}
 
 const MaxDatabaseConnectionAttempts int = 10
 
@@ -32,12 +40,38 @@ const DefaultAdminUsername = "admin"
 // InitialAdminPassword is the environment variable that specifies which
 // password to use for the initial root login instead of generating one
 // randomly
-const InitialAdminPassword = "GOPHISH_INITIAL_ADMIN_PASSWORD"
+const InitialAdminPassword = "DARKPHISH_INITIAL_ADMIN_PASSWORD"
+const LegacyInitialAdminPassword = "GOPHISH_INITIAL_ADMIN_PASSWORD"
 
-// InitialAdminApiToken is the environment variable that specifies the
+// InitialAdminAPIToken is the environment variable that specifies the
 // API token to seed the initial root login instead of generating one
 // randomly
-const InitialAdminApiToken = "GOPHISH_INITIAL_ADMIN_API_TOKEN"
+const InitialAdminAPIToken = "DARKPHISH_INITIAL_ADMIN_API_TOKEN"
+const LegacyInitialAdminAPIToken = "GOPHISH_INITIAL_ADMIN_API_TOKEN"
+
+func environmentValue(primary, legacy string) string {
+	if value := os.Getenv(primary); value != "" {
+		return value
+	}
+	return os.Getenv(legacy)
+}
+
+func configureSecretStore(c *config.Config) error {
+	if c.Secrets.EncryptionKey == "" {
+		if c.ProductionMode {
+			return fmt.Errorf("DARKPHISH_SECRET_ENCRYPTION_KEY is required in production mode")
+		}
+		secretStore = secretpkg.PlaintextStore{}
+		log.Warn("integration secrets are stored as plaintext in development mode; configure DARKPHISH_SECRET_ENCRYPTION_KEY")
+		return nil
+	}
+	key, err := secretpkg.DecodeKey(c.Secrets.EncryptionKey)
+	if err != nil {
+		return err
+	}
+	secretStore, err = secretpkg.NewAESGCM(key)
+	return err
+}
 
 const (
 	CampaignInProgress string = "In progress"
@@ -74,38 +108,22 @@ type Response struct {
 	Data    interface{} `json:"data"`
 }
 
-// Copy of auth.GenerateSecureKey to prevent cyclic import with auth library
-func generateSecureKey() string {
-	k := make([]byte, 32)
-	io.ReadFull(rand.Reader, k)
-	return fmt.Sprintf("%x", k)
-}
-
-func chooseDBDriver(name, openStr string) goose.DBDriver {
-	d := goose.DBDriver{Name: name, OpenStr: openStr}
-
-	switch name {
-	case "mysql":
-		d.Import = "github.com/go-sql-driver/mysql"
-		d.Dialect = &goose.MySqlDialect{}
-
-	// Default database is sqlite3
-	default:
-		d.Import = "github.com/mattn/go-sqlite3"
-		d.Dialect = &goose.Sqlite3Dialect{}
-	}
-
-	return d
-}
-
 func createTemporaryPassword(u *User) error {
 	var temporaryPassword string
-	if envPassword := os.Getenv(InitialAdminPassword); envPassword != "" {
+	if envPassword := environmentValue(InitialAdminPassword, LegacyInitialAdminPassword); envPassword != "" {
 		temporaryPassword = envPassword
 	} else {
-		// This will result in a 16 character password which could be viewed as an
-		// inconvenience, but it should be ok for now.
 		temporaryPassword = auth.GenerateSecureKey(auth.MinPasswordLength)
+		if conf.DBPath != ":memory:" {
+			passwordPath := environmentValue("DARKPHISH_INITIAL_ADMIN_PASSWORD_FILE", "GOPHISH_INITIAL_ADMIN_PASSWORD_FILE")
+			if passwordPath == "" {
+				passwordPath = filepath.Join(filepath.Dir(conf.DBPath), "darkphish_initial_admin_password")
+			}
+			if err := os.WriteFile(passwordPath, []byte(temporaryPassword+"\n"), 0600); err != nil {
+				return fmt.Errorf("write initial administrator password file: %w", err)
+			}
+			log.Infof("Initial administrator password written to %s; delete this file after first login", passwordPath)
+		}
 	}
 	hash, err := auth.GeneratePasswordHash(temporaryPassword)
 	if err != nil {
@@ -119,8 +137,22 @@ func createTemporaryPassword(u *User) error {
 	if err != nil {
 		return err
 	}
-	log.Infof("Please login with the username admin and the password %s", temporaryPassword)
 	return nil
+}
+
+// RemoveInitialAdminPasswordFile removes the generated development bootstrap
+// credential after the administrator completes the required password change.
+func RemoveInitialAdminPasswordFile() {
+	if conf == nil || conf.DBPath == ":memory:" || environmentValue(InitialAdminPassword, LegacyInitialAdminPassword) != "" {
+		return
+	}
+	passwordPath := environmentValue("DARKPHISH_INITIAL_ADMIN_PASSWORD_FILE", "GOPHISH_INITIAL_ADMIN_PASSWORD_FILE")
+	if passwordPath == "" {
+		passwordPath = filepath.Join(filepath.Dir(conf.DBPath), "darkphish_initial_admin_password")
+	}
+	if err := os.Remove(passwordPath); err != nil && !os.IsNotExist(err) {
+		log.Warnf("unable to remove initial administrator password file %s: %v", passwordPath, err)
+	}
 }
 
 // Setup initializes the database and runs any needed migrations.
@@ -133,17 +165,13 @@ func createTemporaryPassword(u *User) error {
 func Setup(c *config.Config) error {
 	// Setup the package-scoped config
 	conf = c
-	// Setup the goose configuration
-	migrateConf := &goose.DBConf{
-		MigrationsDir: conf.MigrationsPath,
-		Env:           "production",
-		Driver:        chooseDBDriver(conf.DBName, conf.DBPath),
-	}
-	// Get the latest possible migration
-	latest, err := goose.GetMostRecentDBVersion(migrateConf.MigrationsDir)
-	if err != nil {
-		log.Error(err)
+	var err error
+	if err := configureSecretStore(c); err != nil {
 		return err
+	}
+	if err := goose.SetDialect(conf.DBName); err != nil {
+		log.Error(err)
+		return fmt.Errorf("configure database migrations: %w", err)
 	}
 
 	// Register certificates for tls encrypted db connections
@@ -151,7 +179,7 @@ func Setup(c *config.Config) error {
 		switch conf.DBName {
 		case "mysql":
 			rootCertPool := x509.NewCertPool()
-			pem, err := ioutil.ReadFile(conf.DBSSLCaPath)
+			pem, err := os.ReadFile(conf.DBSSLCaPath)
 			if err != nil {
 				log.Error(err)
 				return err
@@ -186,13 +214,26 @@ func Setup(c *config.Config) error {
 	}
 	db.LogMode(false)
 	db.SetLogger(log.Logger)
-	db.DB().SetMaxOpenConns(1)
+	maxOpen := conf.DBMaxOpenConns
+	if maxOpen == 0 {
+		if conf.DBName == "sqlite3" {
+			maxOpen = 1
+		} else {
+			maxOpen = 10
+		}
+	}
+	maxIdle := conf.DBMaxIdleConns
+	if maxIdle == 0 {
+		maxIdle = maxOpen
+	}
+	db.DB().SetMaxOpenConns(maxOpen)
+	db.DB().SetMaxIdleConns(maxIdle)
 	if err != nil {
 		log.Error(err)
 		return err
 	}
 	// Migrate up to the latest version
-	err = goose.RunMigrationsOnDb(migrateConf, migrateConf.MigrationsDir, latest, db.DB())
+	err = goose.Up(db.DB(), conf.MigrationsPath)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -214,7 +255,7 @@ func Setup(c *config.Config) error {
 			PasswordChangeRequired: true,
 		}
 
-		if envToken := os.Getenv(InitialAdminApiToken); envToken != "" {
+		if envToken := environmentValue(InitialAdminAPIToken, LegacyInitialAdminAPIToken); envToken != "" {
 			adminUser.ApiKey = envToken
 		} else {
 			adminUser.ApiKey = auth.GenerateSecureKey(auth.APIKeyLength)
@@ -226,16 +267,9 @@ func Setup(c *config.Config) error {
 			return err
 		}
 	}
-	// If this is the first time the user is installing Gophish, then we will
-	// generate a temporary password for the admin user.
-	//
-	// We do this here instead of in the block above where the admin is created
-	// since there's the chance the user executes Gophish and has some kind of
-	// error, then tries restarting it. If they didn't grab the password out of
-	// the logs, then they would have lost it.
-	//
-	// By doing the temporary password here, we will regenerate that temporary
-	// password until the user is able to reset the admin password.
+	// Initialize a password only when the new or migrated account has no hash.
+	// Existing password-reset-required accounts retain their temporary password
+	// across restarts.
 	if adminUser.Username == "" {
 		adminUser, err = GetUserByUsername(DefaultAdminUsername)
 		if err != nil {
@@ -243,7 +277,7 @@ func Setup(c *config.Config) error {
 			return err
 		}
 	}
-	if adminUser.PasswordChangeRequired {
+	if strings.TrimSpace(adminUser.Hash) == "" {
 		err = createTemporaryPassword(&adminUser)
 		if err != nil {
 			log.Error(err)

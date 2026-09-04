@@ -2,20 +2,19 @@ package config
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"reflect"
 	"testing"
 
-	log "github.com/gophish/gophish/logger"
+	log "github.com/darkarmy-cyber/darkphish/logger"
 )
 
 var validConfig = []byte(`{
 	"admin_server": {
 		"listen_url": "127.0.0.1:3333",
 		"use_tls": true,
-		"cert_path": "gophish_admin.crt",
-		"key_path": "gophish_admin.key"
+		"cert_path": "darkphish_admin.crt",
+		"key_path": "darkphish_admin.key"
 	},
 	"phish_server": {
 		"listen_url": "0.0.0.0:8080",
@@ -24,13 +23,13 @@ var validConfig = []byte(`{
 		"key_path": "example.key"
 	},
 	"db_name": "sqlite3",
-	"db_path": "gophish.db",
+	"db_path": "darkphish.db",
 	"migrations_prefix": "db/db_",
 	"contact_address": ""
 }`)
 
 func createTemporaryConfig(t *testing.T) *os.File {
-	f, err := ioutil.TempFile("", "gophish-config")
+	f, err := os.CreateTemp("", "darkphish-config")
 	if err != nil {
 		t.Fatalf("unable to create temporary config: %v", err)
 	}
@@ -64,7 +63,8 @@ func TestLoadConfig(t *testing.T) {
 	}
 	expectedConfig.MigrationsPath = expectedConfig.MigrationsPath + expectedConfig.DBName
 	expectedConfig.TestFlag = false
-	expectedConfig.AdminConf.CSRFKey = ""
+	expectedConfig.AdminConf.MaxRequestBodyBytes = DefaultMaxRequestBodyBytes
+	expectedConfig.Session.LifetimeHours = DefaultSessionLifetimeHours
 	expectedConfig.Logging = &log.Config{}
 	if !reflect.DeepEqual(expectedConfig, conf) {
 		t.Fatalf("invalid config received. expected %#v got %#v", expectedConfig, conf)
@@ -74,5 +74,64 @@ func TestLoadConfig(t *testing.T) {
 	_, err = LoadConfig("bogusfile")
 	if err == nil {
 		t.Fatalf("expected error when loading invalid config, but got %v", err)
+	}
+}
+
+func TestProductionSecurityValidation(t *testing.T) {
+	conf := &Config{
+		AdminConf:      AdminServer{MaxRequestBodyBytes: DefaultMaxRequestBodyBytes},
+		Session:        SessionConfig{LifetimeHours: DefaultSessionLifetimeHours},
+		ProductionMode: true,
+	}
+	if err := conf.ValidateSecurity(); err == nil {
+		t.Fatal("expected missing production secrets to be rejected")
+	}
+
+	conf.Session.AuthKey = "short"
+	conf.Session.EncryptionKey = "short"
+	conf.Secrets.EncryptionKey = "short"
+	if err := conf.ValidateSecurity(); err == nil {
+		t.Fatal("expected weak production secrets to be rejected")
+	}
+
+	conf.Session.AuthKey = "hex:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	conf.Session.EncryptionKey = "0123456789abcdef0123456789abcdef"
+	conf.Secrets.EncryptionKey = "base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+	if err := conf.ValidateSecurity(); err != nil {
+		t.Fatalf("expected valid production secrets: %v", err)
+	}
+
+	conf.AdminConf.TrustedOrigins = []string{"http://admin.example.test"}
+	if err := conf.ValidateSecurity(); err == nil {
+		t.Fatal("expected a plaintext production trusted origin to be rejected")
+	}
+	conf.AdminConf.TrustedOrigins = []string{"https://admin.example.test"}
+	if err := conf.ValidateSecurity(); err != nil {
+		t.Fatalf("expected an exact HTTPS production trusted origin: %v", err)
+	}
+}
+
+func TestTrustedOriginValidation(t *testing.T) {
+	conf := &Config{
+		AdminConf: AdminServer{MaxRequestBodyBytes: DefaultMaxRequestBodyBytes},
+		Session:   SessionConfig{LifetimeHours: DefaultSessionLifetimeHours},
+	}
+	for _, origin := range []string{
+		"admin.example.test",
+		"ftp://admin.example.test",
+		"https://user@admin.example.test",
+		"https://admin.example.test/",
+		"https://admin.example.test/path",
+		"https://admin.example.test?query=true",
+	} {
+		conf.AdminConf.TrustedOrigins = []string{origin}
+		if err := conf.ValidateSecurity(); err == nil {
+			t.Errorf("expected invalid trusted origin %q to be rejected", origin)
+		}
+	}
+
+	conf.AdminConf.TrustedOrigins = []string{"http://localhost:3333", "https://admin.example.test"}
+	if err := conf.ValidateSecurity(); err != nil {
+		t.Fatalf("expected exact development origins to be accepted: %v", err)
 	}
 }

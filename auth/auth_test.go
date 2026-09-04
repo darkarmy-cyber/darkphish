@@ -39,3 +39,27 @@ func TestValidatePasswordChange(t *testing.T) {
 		t.Fatalf("unexpected error received. expected %v got %v", ErrReusedPassword, got)
 	}
 }
+
+func TestCheckAccountState(t *testing.T) {
+	tests := []struct {
+		name                string
+		locked              bool
+		changeRequired      bool
+		allowPasswordChange bool
+		want                error
+	}{
+		{name: "active", want: nil},
+		{name: "locked", locked: true, want: ErrAccountLocked},
+		{name: "change required", changeRequired: true, want: ErrPasswordChangeRequired},
+		{name: "password change route", changeRequired: true, allowPasswordChange: true, want: nil},
+		{name: "locked password change route", locked: true, changeRequired: true, allowPasswordChange: true, want: ErrAccountLocked},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CheckAccountState(tt.locked, tt.changeRequired, tt.allowPasswordChange); got != tt.want {
+				t.Fatalf("expected %v, got %v", tt.want, got)
+			}
+		})
+	}
+}

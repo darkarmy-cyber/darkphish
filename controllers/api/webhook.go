@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strconv"
 
-	log "github.com/gophish/gophish/logger"
-	"github.com/gophish/gophish/models"
-	"github.com/gophish/gophish/webhook"
+	log "github.com/darkarmy-cyber/darkphish/logger"
+	"github.com/darkarmy-cyber/darkphish/models"
+	"github.com/darkarmy-cyber/darkphish/webhook"
 	"github.com/gorilla/mux"
 )
 
@@ -62,12 +62,16 @@ func (as *Server) Webhook(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, models.Response{Success: true, Message: "Webhook deleted Successfully!"}, http.StatusOK)
 
 	case r.Method == "PUT":
+		existingSecret := wh.Secret
 		wh = models.Webhook{}
 		err = json.NewDecoder(r.Body).Decode(&wh)
 		if err != nil {
 			log.Errorf("error decoding webhook: %v", err)
 			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
 			return
+		}
+		if wh.Secret == "" {
+			wh.Secret = existingSecret
 		}
 		wh.Id = id
 		err = models.PutWebhook(&wh)

@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gophish/gophish/auth"
-	ctx "github.com/gophish/gophish/context"
-	log "github.com/gophish/gophish/logger"
-	"github.com/gophish/gophish/models"
+	"github.com/darkarmy-cyber/darkphish/auth"
+	ctx "github.com/darkarmy-cyber/darkphish/context"
+	log "github.com/darkarmy-cyber/darkphish/logger"
+	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/gorilla/mux"
 	"github.com/jinzhu/gorm"
 )
@@ -174,6 +174,10 @@ func (as *Server) User(w http.ResponseWriter, r *http.Request) {
 		// user's role. This prevents a privilege escalation letting users
 		// upgrade their own account.
 		if !hasSystem && ur.Role != existingUser.Role.Slug {
+			JSONResponse(w, models.Response{Success: false, Message: ErrInsufficientPermission.Error()}, http.StatusBadRequest)
+			return
+		}
+		if !hasSystem && (ur.PasswordChangeRequired != existingUser.PasswordChangeRequired || ur.AccountLocked != existingUser.AccountLocked) {
 			JSONResponse(w, models.Response{Success: false, Message: ErrInsufficientPermission.Error()}, http.StatusBadRequest)
 			return
 		}

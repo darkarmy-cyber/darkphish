@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	log "github.com/gophish/gophish/logger"
+	log "github.com/darkarmy-cyber/darkphish/logger"
 )
 
 // Page contains the fields used for a Page model
@@ -23,6 +23,10 @@ type Page struct {
 
 // ErrPageNameNotSpecified is thrown if the name of the landing page is blank.
 var ErrPageNameNotSpecified = errors.New("Page Name not specified")
+
+// ErrPasswordCaptureDisabled is returned because Darkphish never stores
+// submitted passwords in the foundation security profile.
+var ErrPasswordCaptureDisabled = errors.New("capturing submitted password values is disabled; record submission metadata or field names instead")
 
 // parseHTML parses the page HTML on save to handle the
 // capturing (or lack thereof!) of credentials and passwords
@@ -46,15 +50,6 @@ func (p *Page) parseHTML() error {
 						input.RemoveAttr("name")
 					}
 				})
-			} else {
-				// If the user chooses to re-enable the capture passwords setting,
-				// we need to re-add the name attribute
-				inputs := f.Find("input")
-				inputs.Each(func(j int, input *goquery.Selection) {
-					if t, _ := input.Attr("type"); strings.EqualFold(t, "password") {
-						input.SetAttr("name", "password")
-					}
-				})
 			}
 		} else {
 			// Otherwise, remove the name from all
@@ -74,10 +69,8 @@ func (p *Page) Validate() error {
 	if p.Name == "" {
 		return ErrPageNameNotSpecified
 	}
-	// If the user specifies to capture passwords,
-	// we automatically capture credentials
-	if p.CapturePasswords && !p.CaptureCredentials {
-		p.CaptureCredentials = true
+	if p.CapturePasswords {
+		return ErrPasswordCaptureDisabled
 	}
 	if err := ValidateTemplate(p.HTML); err != nil {
 		return err

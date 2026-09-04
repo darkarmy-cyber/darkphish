@@ -20,7 +20,7 @@
             <br />
             {{if .ModifySystem }}
             <div class="row">
-                <label class="col-sm-2 control-label form-label">Gophish version</label>
+                <label class="col-sm-2 control-label form-label">Darkphish version</label>
                 <div class="col-md-6">
                     <label class="form-label">{{.Version}}</label>
                 </div>
@@ -28,14 +28,14 @@
             <br />
             {{end}}
             <div class="row">
-                <label for="api_key" class="col-sm-2 control-label form-label">API Key:</label>
+                <label for="api_key" class="col-sm-2 control-label form-label">Personal API token:</label>
                 <div class="col-md-6">
-                    <input type="text" id="api_key" onclick="this.select();" value="{{.User.ApiKey}}"
-                        class="form-control" readonly />
+                    <input type="password" id="api_key" onclick="this.select();" value=""
+                        placeholder="Existing token is not displayed" autocomplete="off" class="form-control" readonly />
+                    <p id="api_key_notice" class="help-block">Reset to create a replacement token. Existing API clients will stop working.</p>
                 </div>
                 <form id="apiResetForm">
-                    <button class="btn btn-primary"><i class="fa fa-refresh" type="submit"></i> Reset</button>
-                    <input type="hidden" name="csrf_token" value="{{.Token}}" />
+                    <button class="btn btn-primary"><i class="fa fa-refresh" type="submit"></i> Reset token</button>
                 </form>
             </div>
             <br />
@@ -79,7 +79,6 @@
                             class="form-control" />
                     </div>
                 </div>
-                <input type="hidden" name="csrf_token" value="{{.Token}}" />
                 <br />
                 <button class="btn btn-primary" type="submit"><i class="fa fa-save"></i> Save</button>
             </form>

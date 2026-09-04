@@ -7,16 +7,17 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/NYTimes/gziphandler"
-	"github.com/gophish/gophish/config"
-	ctx "github.com/gophish/gophish/context"
-	"github.com/gophish/gophish/controllers/api"
-	log "github.com/gophish/gophish/logger"
-	"github.com/gophish/gophish/models"
-	"github.com/gophish/gophish/util"
+	"github.com/darkarmy-cyber/darkphish/config"
+	ctx "github.com/darkarmy-cyber/darkphish/context"
+	"github.com/darkarmy-cyber/darkphish/controllers/api"
+	log "github.com/darkarmy-cyber/darkphish/logger"
+	"github.com/darkarmy-cyber/darkphish/models"
+	"github.com/darkarmy-cyber/darkphish/util"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/jordan-wright/unindexed"
@@ -38,7 +39,7 @@ type TransparencyResponse struct {
 	SendDate       time.Time `json:"send_date"`
 }
 
-// TransparencySuffix (when appended to a valid result ID), will cause Gophish
+// TransparencySuffix (when appended to a valid result ID), will cause Darkphish
 // to return a transparency response.
 const TransparencySuffix = "+"
 
@@ -58,9 +59,12 @@ type PhishingServer struct {
 // provided options applied.
 func NewPhishingServer(config config.PhishServer, options ...PhishingServerOption) *PhishingServer {
 	defaultServer := &http.Server{
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		Addr:         config.ListenURL,
+		ReadTimeout:       15 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+		Addr:              config.ListenURL,
 	}
 	ps := &PhishingServer{
 		server: defaultServer,
@@ -209,7 +213,7 @@ func (ps *PhishingServer) PhishHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("X-Server", config.ServerName) // Useful for checking if this is a GoPhish server (e.g. for campaign reporting plugins)
+	w.Header().Set("X-Server", config.ServerName) // Useful for checking if this is a Darkphish server (e.g. for campaign reporting plugins)
 	var ptx models.PhishingTemplateContext
 	// Check for a preview
 	if preview, ok := ctx.Get(r, "result").(models.EmailRequest); ok {
@@ -252,6 +256,7 @@ func (ps *PhishingServer) PhishHandler(w http.ResponseWriter, r *http.Request) {
 			log.Error(err)
 		}
 	case r.Method == "POST":
+		d.Payload = submittedFieldNames(r.Form, p.CaptureCredentials)
 		err = rs.HandleFormSubmit(d)
 		if err != nil {
 			log.Error(err)
@@ -367,10 +372,7 @@ func setupContext(r *http.Request) (*http.Request, error) {
 	if err != nil {
 		log.Error(err)
 	}
-	d := models.EventDetails{
-		Payload: r.Form,
-		Browser: make(map[string]string),
-	}
+	d := models.EventDetails{Browser: make(map[string]string)}
 	d.Browser["address"] = ip
 	d.Browser["user-agent"] = r.Header.Get("User-Agent")
 
@@ -379,4 +381,18 @@ func setupContext(r *http.Request) (*http.Request, error) {
 	r = ctx.Set(r, "campaign", c)
 	r = ctx.Set(r, "details", d)
 	return r, nil
+}
+
+func submittedFieldNames(form url.Values, enabled bool) url.Values {
+	if !enabled {
+		return nil
+	}
+	fields := make(url.Values)
+	for name := range form {
+		if name == models.RecipientParameter {
+			continue
+		}
+		fields[name] = []string{}
+	}
+	return fields
 }

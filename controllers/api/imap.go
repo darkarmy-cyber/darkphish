@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	ctx "github.com/gophish/gophish/context"
-	"github.com/gophish/gophish/imap"
-	"github.com/gophish/gophish/models"
+	ctx "github.com/darkarmy-cyber/darkphish/context"
+	"github.com/darkarmy-cyber/darkphish/imap"
+	"github.com/darkarmy-cyber/darkphish/models"
 )
 
 // IMAPServerValidate handles requests for the /api/imapserver/validate endpoint
@@ -21,6 +21,12 @@ func (as *Server) IMAPServerValidate(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			JSONResponse(w, models.Response{Success: false, Message: "Invalid request"}, http.StatusBadRequest)
 			return
+		}
+		if im.Password == "" {
+			existing, getErr := models.GetIMAP(ctx.Get(r, "user_id").(int64))
+			if getErr == nil && len(existing) > 0 {
+				im.Password = existing[0].Password
+			}
 		}
 		err = imap.Validate(&im)
 		if err != nil {

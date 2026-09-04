@@ -20,9 +20,9 @@ func (s *ModelsSuite) TestPostPage(c *check.C) {
 		HTML:        html,
 		RedirectURL: "http://example.com",
 	}
-	// Check the capturing credentials and passwords
+	// Check field-name collection while password values remain disabled.
 	p.CaptureCredentials = true
-	p.CapturePasswords = true
+	p.CapturePasswords = false
 	err := PostPage(&p)
 	c.Assert(err, check.Equals, nil)
 	c.Assert(p.RedirectURL, check.Equals, "http://example.com")
@@ -33,9 +33,9 @@ func (s *ModelsSuite) TestPostPage(c *check.C) {
 		// Check the action has been set
 		a, _ := f.Attr("action")
 		c.Assert(a, check.Equals, "")
-		// Check the password still has a name
+		// Check the password name is removed.
 		_, ok := f.Find("input[type=\"password\"]").Attr("name")
-		c.Assert(ok, check.Equals, true)
+		c.Assert(ok, check.Equals, false)
 		// Check the username is still correct
 		u, ok := f.Find("input").Attr("name")
 		c.Assert(ok, check.Equals, true)
@@ -85,19 +85,12 @@ func (s *ModelsSuite) TestPostPage(c *check.C) {
 		c.Assert(ok, check.Equals, false)
 	})
 
-	// Finally, re-enable capturing passwords (ref: #1267)
+	// Password value collection is rejected even if requested by a legacy API
+	// client.
 	p.CaptureCredentials = true
 	p.CapturePasswords = true
 	err = PutPage(&p)
-	c.Assert(err, check.Equals, nil)
-	d, err = goquery.NewDocumentFromReader(strings.NewReader(p.HTML))
-	c.Assert(err, check.Equals, nil)
-	forms = d.Find("form")
-	forms.Each(func(i int, f *goquery.Selection) {
-		// Check the password still has a name
-		_, ok := f.Find("input[type=\"password\"]").Attr("name")
-		c.Assert(ok, check.Equals, true)
-	})
+	c.Assert(err, check.Equals, ErrPasswordCaptureDisabled)
 }
 
 func (s *ModelsSuite) TestPageValidation(c *check.C) {
@@ -115,14 +108,12 @@ func (s *ModelsSuite) TestPageValidation(c *check.C) {
 
 	p.Name = "Test Page"
 
-	// Validate that CaptureCredentials is automatically set if somehow the
-	// user fails to set it, but does indicate that passwords should be
-	// captured
+	// Password value capture is not available in the secure foundation mode.
 	p.CapturePasswords = true
 	c.Assert(p.CaptureCredentials, check.Equals, false)
 	err = p.Validate()
-	c.Assert(err, check.Equals, nil)
-	c.Assert(p.CaptureCredentials, check.Equals, true)
+	c.Assert(err, check.Equals, ErrPasswordCaptureDisabled)
+	p.CapturePasswords = false
 
 	// Validate that if the HTML contains an invalid template tag, that we
 	// catch it

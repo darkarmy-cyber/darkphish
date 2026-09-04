@@ -11,17 +11,17 @@ import (
 	"time"
 
 	"github.com/NYTimes/gziphandler"
-	"github.com/gophish/gophish/auth"
-	"github.com/gophish/gophish/config"
-	ctx "github.com/gophish/gophish/context"
-	"github.com/gophish/gophish/controllers/api"
-	log "github.com/gophish/gophish/logger"
-	mid "github.com/gophish/gophish/middleware"
-	"github.com/gophish/gophish/middleware/ratelimit"
-	"github.com/gophish/gophish/models"
-	"github.com/gophish/gophish/util"
-	"github.com/gophish/gophish/worker"
-	"github.com/gorilla/csrf"
+	"github.com/darkarmy-cyber/darkphish/auth"
+	"github.com/darkarmy-cyber/darkphish/config"
+	ctx "github.com/darkarmy-cyber/darkphish/context"
+	"github.com/darkarmy-cyber/darkphish/controllers/api"
+	"github.com/darkarmy-cyber/darkphish/internal/audit"
+	log "github.com/darkarmy-cyber/darkphish/logger"
+	mid "github.com/darkarmy-cyber/darkphish/middleware"
+	"github.com/darkarmy-cyber/darkphish/middleware/ratelimit"
+	"github.com/darkarmy-cyber/darkphish/models"
+	"github.com/darkarmy-cyber/darkphish/util"
+	"github.com/darkarmy-cyber/darkphish/worker"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
@@ -32,7 +32,7 @@ import (
 // admin server
 type AdminServerOption func(*AdminServer)
 
-// AdminServer is an HTTP server that implements the administrative Gophish
+// AdminServer is an HTTP server that implements the administrative Darkphish
 // handlers, including the dashboard and REST API.
 type AdminServer struct {
 	server  *http.Server
@@ -42,7 +42,6 @@ type AdminServer struct {
 }
 
 var defaultTLSConfig = &tls.Config{
-	PreferServerCipherSuites: true,
 	CurvePreferences: []tls.CurveID{
 		tls.X25519,
 		tls.CurveP256,
@@ -71,18 +70,25 @@ func WithWorker(w worker.Worker) AdminServerOption {
 
 // NewAdminServer returns a new instance of the AdminServer with the
 // provided config and options applied.
-func NewAdminServer(config config.AdminServer, options ...AdminServerOption) *AdminServer {
+func NewAdminServer(conf config.AdminServer, options ...AdminServerOption) *AdminServer {
+	if conf.MaxRequestBodyBytes == 0 {
+		conf.MaxRequestBodyBytes = config.DefaultMaxRequestBodyBytes
+	}
 	defaultWorker, _ := worker.New()
 	defaultServer := &http.Server{
-		ReadTimeout: 10 * time.Second,
-		Addr:        config.ListenURL,
+		ReadTimeout:       30 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+		Addr:              conf.ListenURL,
 	}
 	defaultLimiter := ratelimit.NewPostLimiter()
 	as := &AdminServer{
 		worker:  defaultWorker,
 		server:  defaultServer,
 		limiter: defaultLimiter,
-		config:  config,
+		config:  conf,
 	}
 	for _, opt := range options {
 		opt(as)
@@ -122,6 +128,8 @@ func (as *AdminServer) Shutdown() error {
 // This function returns an http.Handler to be used in http.ListenAndServe().
 func (as *AdminServer) registerRoutes() {
 	router := mux.NewRouter()
+	router.HandleFunc("/healthz", as.Health).Methods(http.MethodGet, http.MethodHead)
+	router.HandleFunc("/readyz", as.Ready).Methods(http.MethodGet, http.MethodHead)
 	// Base Front-end routes
 	router.HandleFunc("/", mid.Use(as.Base, mid.RequireLogin))
 	router.HandleFunc("/login", mid.Use(as.Login, as.limiter.Limit))
@@ -141,23 +149,38 @@ func (as *AdminServer) registerRoutes() {
 	api := api.NewServer(
 		api.WithWorker(as.worker),
 		api.WithLimiter(as.limiter),
+		api.WithAllowedOrigins(as.config.CORSAllowedOrigins),
 	)
 	router.PathPrefix("/api/").Handler(api)
 
 	// Setup static file serving
 	router.PathPrefix("/").Handler(http.FileServer(unindexed.Dir("./static/")))
 
-	// Setup CSRF Protection
-	csrfKey := []byte(as.config.CSRFKey)
-	if len(csrfKey) == 0 {
-		csrfKey = []byte(auth.GenerateSecureKey(auth.APIKeyLength))
+	// Apply Go's scheme-aware cross-origin protection to all session-backed
+	// browser requests. Exact trusted origins are validated during config load.
+	crossOrigin := http.NewCrossOriginProtection()
+	for _, origin := range as.config.TrustedOrigins {
+		if err := crossOrigin.AddTrustedOrigin(origin); err != nil {
+			log.Errorf("Ignoring invalid trusted origin %q: %v", origin, err)
+		}
 	}
-	csrfHandler := csrf.Protect(csrfKey,
-		csrf.FieldName("csrf_token"),
-		csrf.Secure(as.config.UseTLS),
-		csrf.TrustedOrigins(as.config.TrustedOrigins))
-	adminHandler := csrfHandler(router)
-	adminHandler = mid.Use(adminHandler.ServeHTTP, mid.CSRFExceptions, mid.GetContext, mid.ApplySecurityHeaders)
+	crossOriginProtected := crossOrigin.Handler(router)
+	var adminHandler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Bearer-only API calls do not depend on ambient browser credentials.
+		// Their Authorization header is validated by the API middleware.
+		if strings.HasPrefix(r.URL.Path, "/api/") && r.Header.Get("Authorization") != "" {
+			router.ServeHTTP(w, r)
+			return
+		}
+		crossOriginProtected.ServeHTTP(w, r)
+	})
+	adminHandler = mid.Use(
+		adminHandler.ServeHTTP,
+		mid.LimitRequestBody(as.config.MaxRequestBodyBytes),
+		mid.GetContext,
+		mid.ApplyAdminSecurityHeaders(as.config.UseTLS),
+		mid.RequestID,
+	)
 
 	// Setup GZIP compression
 	gzipWrapper, _ := gziphandler.NewGzipLevelHandler(gzip.BestCompression)
@@ -172,23 +195,38 @@ func (as *AdminServer) registerRoutes() {
 	as.server.Handler = adminHandler
 }
 
+// Health reports that the HTTP process is alive.
+func (as *AdminServer) Health(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok\n"))
+}
+
+// Ready reports whether the database is currently reachable.
+func (as *AdminServer) Ready(w http.ResponseWriter, _ *http.Request) {
+	if err := models.Health(); err != nil {
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ready\n"))
+}
+
 type templateParams struct {
 	Title        string
 	Flashes      []interface{}
 	User         models.User
-	Token        string
 	Version      string
 	ModifySystem bool
 }
 
-// newTemplateParams returns the default template parameters for a user and
-// the CSRF token.
+// newTemplateParams returns the default template parameters for a user.
 func newTemplateParams(r *http.Request) templateParams {
 	user := ctx.Get(r, "user").(models.User)
 	session := ctx.Get(r, "session").(*sessions.Session)
 	modifySystem, _ := user.HasPermission(models.PermissionModifySystem)
 	return templateParams{
-		Token:        csrf.Token(r),
 		User:         user,
 		ModifySystem: modifySystem,
 		Version:      config.Version,
@@ -287,7 +325,7 @@ func (as *AdminServer) Settings(w http.ResponseWriter, r *http.Request) {
 }
 
 // UserManagement is an admin-only handler that allows for the registration
-// and management of user accounts within Gophish.
+// and management of user accounts within Darkphish.
 func (as *AdminServer) UserManagement(w http.ResponseWriter, r *http.Request) {
 	params := newTemplateParams(r)
 	params.Title = "User Management"
@@ -313,8 +351,7 @@ func (as *AdminServer) handleInvalidLogin(w http.ResponseWriter, r *http.Request
 		User    models.User
 		Title   string
 		Flashes []interface{}
-		Token   string
-	}{Title: "Login", Token: csrf.Token(r)}
+	}{Title: "Login"}
 	params.Flashes = session.Flashes()
 	session.Save(r, w)
 	templates := template.New("template")
@@ -325,6 +362,10 @@ func (as *AdminServer) handleInvalidLogin(w http.ResponseWriter, r *http.Request
 	// w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusUnauthorized)
 	template.Must(templates, err).ExecuteTemplate(w, "base", params)
+}
+
+func recordBrowserAudit(r *http.Request, actor string, actorID int64, action, target, result string) {
+	audit.Record(r, actor, actorID, action, target, result, "session")
 }
 
 // Webhooks is an admin-only handler that handles webhooks
@@ -338,16 +379,20 @@ func (as *AdminServer) Webhooks(w http.ResponseWriter, r *http.Request) {
 func (as *AdminServer) Impersonate(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == "POST" {
+		actor := ctx.Get(r, "user").(models.User)
 		username := r.FormValue("username")
 		u, err := models.GetUserByUsername(username)
 		if err != nil {
+			recordBrowserAudit(r, actor.Username, actor.Id, "user.impersonate", username, "failure")
 			log.Error(err)
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
 		session := ctx.Get(r, "session").(*sessions.Session)
+		session.Values = make(map[interface{}]interface{})
 		session.Values["id"] = u.Id
 		session.Save(r, w)
+		recordBrowserAudit(r, actor.Username, actor.Id, "user.impersonate", u.Username, "success")
 	}
 	http.Redirect(w, r, "/", http.StatusFound)
 }
@@ -359,8 +404,7 @@ func (as *AdminServer) Login(w http.ResponseWriter, r *http.Request) {
 		User    models.User
 		Title   string
 		Flashes []interface{}
-		Token   string
-	}{Title: "Login", Token: csrf.Token(r)}
+	}{Title: "Login"}
 	session := ctx.Get(r, "session").(*sessions.Session)
 	switch {
 	case r.Method == "GET":
@@ -377,6 +421,7 @@ func (as *AdminServer) Login(w http.ResponseWriter, r *http.Request) {
 		username, password := r.FormValue("username"), r.FormValue("password")
 		u, err := models.GetUserByUsername(username)
 		if err != nil {
+			recordBrowserAudit(r, username, 0, "auth.login", username, "failure")
 			log.Error(err)
 			as.handleInvalidLogin(w, r, "Invalid Username/Password")
 			return
@@ -384,11 +429,13 @@ func (as *AdminServer) Login(w http.ResponseWriter, r *http.Request) {
 		// Validate the user's password
 		err = auth.ValidatePassword(password, u.Hash)
 		if err != nil {
+			recordBrowserAudit(r, username, u.Id, "auth.login", username, "failure")
 			log.Error(err)
 			as.handleInvalidLogin(w, r, "Invalid Username/Password")
 			return
 		}
 		if u.AccountLocked {
+			recordBrowserAudit(r, username, u.Id, "auth.login", username, "failure")
 			as.handleInvalidLogin(w, r, "Account Locked")
 			return
 		}
@@ -400,21 +447,24 @@ func (as *AdminServer) Login(w http.ResponseWriter, r *http.Request) {
 		// If we've logged in, save the session and redirect to the dashboard
 		session.Values["id"] = u.Id
 		session.Save(r, w)
+		recordBrowserAudit(r, u.Username, u.Id, "auth.login", u.Username, "success")
 		as.nextOrIndex(w, r)
 	}
 }
 
 // Logout destroys the current user session
 func (as *AdminServer) Logout(w http.ResponseWriter, r *http.Request) {
+	u := ctx.Get(r, "user").(models.User)
 	session := ctx.Get(r, "session").(*sessions.Session)
-	delete(session.Values, "id")
-	Flash(w, r, "success", "You have successfully logged out")
+	session.Values = make(map[interface{}]interface{})
+	session.Options.MaxAge = -1
 	session.Save(r, w)
+	recordBrowserAudit(r, u.Username, u.Id, "auth.logout", u.Username, "success")
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
 // ResetPassword handles the password reset flow when a password change is
-// required either by the Gophish system or an administrator.
+// required either by the Darkphish system or an administrator.
 //
 // This handler is meant to be used when a user is required to reset their
 // password, not just when they want to.
@@ -463,6 +513,9 @@ func (as *AdminServer) ResetPassword(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			getTemplate(w, "reset_password").ExecuteTemplate(w, "base", params)
 			return
+		}
+		if u.Username == models.DefaultAdminUsername {
+			models.RemoveInitialAdminPasswordFile()
 		}
 		// TODO: We probably want to flash a message here that the password was
 		// changed successfully. The problem is that when the user resets their

@@ -9,11 +9,20 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// MinPasswordLength is the minimum number of characters required in a password
-const MinPasswordLength = 8
+// MinPasswordLength is the minimum number of characters required in a password.
+// Darkphish intentionally favors length over composition rules.
+const MinPasswordLength = 12
 
-// APIKeyLength is the length of Gophish API keys
+// APIKeyLength is the number of random bytes used for Darkphish API keys.
 const APIKeyLength = 32
+
+// ErrAccountLocked indicates that an authenticated account is disabled.
+var ErrAccountLocked = errors.New("account is locked")
+
+// ErrPasswordChangeRequired indicates that an authenticated account must
+// finish the local password-reset flow before using privileged application
+// functionality.
+var ErrPasswordChangeRequired = errors.New("password change required")
 
 // ErrInvalidPassword is thrown when a user provides an incorrect password.
 var ErrInvalidPassword = errors.New("Invalid Password")
@@ -55,7 +64,7 @@ func GeneratePasswordHash(password string) (string, error) {
 // CheckPasswordPolicy ensures the provided password is valid according to our
 // password policy.
 //
-// The current password policy is simply a minimum of 8 characters, though this
+// The current password policy is simply a minimum of 12 characters, though this
 // may change in the future (see #1538).
 func CheckPasswordPolicy(password string) error {
 	switch {
@@ -100,4 +109,17 @@ func ValidatePasswordChange(currentHash, newPassword, confirmPassword string) (s
 	}
 	// Generate the new hash
 	return GeneratePasswordHash(newPassword)
+}
+
+// CheckAccountState centralizes lifecycle checks shared by session and token
+// authentication. allowPasswordChange is only true for the browser password
+// reset endpoint; bearer tokens never bypass a required password change.
+func CheckAccountState(accountLocked, passwordChangeRequired, allowPasswordChange bool) error {
+	if accountLocked {
+		return ErrAccountLocked
+	}
+	if passwordChangeRequired && !allowPasswordChange {
+		return ErrPasswordChangeRequired
+	}
+	return nil
 }

@@ -6,27 +6,100 @@ import (
 	"net/http"
 	"strings"
 
-	ctx "github.com/gophish/gophish/context"
-	"github.com/gophish/gophish/models"
-	"github.com/gorilla/csrf"
+	"github.com/darkarmy-cyber/darkphish/auth"
+	ctx "github.com/darkarmy-cyber/darkphish/context"
+	"github.com/darkarmy-cyber/darkphish/internal/audit"
+	"github.com/darkarmy-cyber/darkphish/models"
+	"github.com/gorilla/sessions"
 )
 
-// CSRFExemptPrefixes are a list of routes that are exempt from CSRF protection
-var CSRFExemptPrefixes = []string{
-	"/api",
+// RequestID gives every administrative request an application-generated
+// correlation ID and returns it to the caller.
+func RequestID(handler http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := audit.NewRequestID()
+		w.Header().Set("X-Request-ID", id)
+		handler.ServeHTTP(w, audit.WithRequestID(r, id))
+	}
 }
 
-// CSRFExceptions is a middleware that prevents CSRF checks on routes listed in
-// CSRFExemptPrefixes.
-func CSRFExceptions(handler http.Handler) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		for _, prefix := range CSRFExemptPrefixes {
-			if strings.HasPrefix(r.URL.Path, prefix) {
-				r = csrf.UnsafeSkipCheck(r)
-				break
-			}
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusRecorder) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *statusRecorder) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.ResponseWriter.Write(body)
+}
+
+// AuditAPI records security-relevant API mutations and credential-result
+// access after authentication and authorization have run.
+func AuditAPI(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		action := apiAuditAction(r.Method, r.URL.Path)
+		if action == "" {
+			next.ServeHTTP(w, r)
+			return
 		}
-		handler.ServeHTTP(w, r)
+		recorder := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(recorder, r)
+		status := recorder.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		result := "success"
+		if status >= http.StatusBadRequest {
+			result = "failure"
+		}
+		actor := "anonymous"
+		var actorID int64
+		if value := ctx.Get(r, "user"); value != nil {
+			user := value.(models.User)
+			actor = user.Username
+			actorID = user.Id
+		}
+		authMethod, _ := ctx.Get(r, "auth_method").(string)
+		audit.Record(r, actor, actorID, action, r.URL.Path, result, authMethod)
+	})
+}
+
+func apiAuditAction(method, path string) string {
+	clean := strings.TrimSuffix(path, "/")
+	switch {
+	case method == http.MethodPost && clean == "/api/reset":
+		return "api_token.rotate"
+	case method == http.MethodGet && strings.HasSuffix(clean, "/results") && strings.HasPrefix(clean, "/api/campaigns/"):
+		return "credential_data.access"
+	case method == http.MethodPost && clean == "/api/campaigns":
+		return "campaign.create_and_launch"
+	case method == http.MethodPost && strings.HasSuffix(clean, "/complete"):
+		return "campaign.complete"
+	case method == http.MethodDelete && strings.HasPrefix(clean, "/api/campaigns/"):
+		return "campaign.delete"
+	case strings.HasPrefix(clean, "/api/users") && method == http.MethodPost:
+		return "user.create"
+	case strings.HasPrefix(clean, "/api/users/") && method == http.MethodDelete:
+		return "user.delete"
+	case strings.HasPrefix(clean, "/api/users/") && method == http.MethodPut:
+		return "user.update"
+	case strings.HasPrefix(clean, "/api/smtp") && method != http.MethodGet && method != http.MethodHead:
+		return "smtp.modify"
+	case strings.HasPrefix(clean, "/api/imap") && method != http.MethodGet && method != http.MethodHead:
+		return "imap.modify"
+	case strings.HasPrefix(clean, "/api/webhooks") && method != http.MethodGet && method != http.MethodHead:
+		return "webhook.modify"
+	case method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions:
+		return "api.modify"
+	default:
+		return ""
 	}
 }
 
@@ -51,12 +124,15 @@ func GetContext(handler http.Handler) http.HandlerFunc {
 		}
 		// Set the context appropriately here.
 		// Set the session
-		session, _ := Store.Get(r, "gophish")
+		session, err := Store.Get(r, CookieName)
+		if err != nil {
+			session, _ = Store.New(r, CookieName)
+		}
 		// Put the session in the context so that we can
 		// reuse the values in different handlers
 		r = ctx.Set(r, "session", session)
-		if id, ok := session.Values["id"]; ok {
-			u, err := models.GetUser(id.(int64))
+		if id, ok := session.Values["id"].(int64); ok {
+			u, err := models.GetUser(id)
 			if err != nil {
 				r = ctx.Set(r, "user", nil)
 			} else {
@@ -71,42 +147,56 @@ func GetContext(handler http.Handler) http.HandlerFunc {
 	}
 }
 
-// RequireAPIKey ensures that a valid API key is set as either the api_key GET
-// parameter, or a Bearer token.
+// RequireAPIKey authenticates external callers with a bearer token and browser
+// callers with their secure session. Query-string API keys are intentionally
+// rejected because URLs are routinely persisted in logs and browser history.
 func RequireAPIKey(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		if r.Method == "OPTIONS" {
-			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-			w.Header().Set("Access-Control-Max-Age", "1000")
-			w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
+		if r.URL.Query().Get("api_key") != "" {
+			JSONError(w, http.StatusUnauthorized, "API keys in URLs are disabled; use Authorization: Bearer")
 			return
 		}
-		r.ParseForm()
-		ak := r.Form.Get("api_key")
-		// If we can't get the API key, we'll also check for the
-		// Authorization Bearer token
-		if ak == "" {
-			tokens, ok := r.Header["Authorization"]
-			if ok && len(tokens) >= 1 {
-				ak = tokens[0]
-				ak = strings.TrimPrefix(ak, "Bearer ")
+
+		var u models.User
+		authorization := r.Header.Get("Authorization")
+		if authorization != "" {
+			token, ok := bearerToken(authorization)
+			if !ok {
+				JSONError(w, http.StatusUnauthorized, "Invalid Authorization header")
+				return
 			}
+			var err error
+			u, err = models.GetUserByAPIKey(token)
+			if err != nil {
+				JSONError(w, http.StatusUnauthorized, "Invalid API token")
+				return
+			}
+			r = ctx.Set(r, "auth_method", "bearer")
+		} else {
+			current := ctx.Get(r, "user")
+			if current == nil {
+				JSONError(w, http.StatusUnauthorized, "Authentication required")
+				return
+			}
+			u = current.(models.User)
+			r = ctx.Set(r, "auth_method", "session")
 		}
-		if ak == "" {
-			JSONError(w, http.StatusUnauthorized, "API Key not set")
-			return
-		}
-		u, err := models.GetUserByAPIKey(ak)
-		if err != nil {
-			JSONError(w, http.StatusUnauthorized, "Invalid API Key")
+		if err := auth.CheckAccountState(u.AccountLocked, u.PasswordChangeRequired, false); err != nil {
+			JSONError(w, http.StatusForbidden, err.Error())
 			return
 		}
 		r = ctx.Set(r, "user", u)
 		r = ctx.Set(r, "user_id", u.Id)
-		r = ctx.Set(r, "api_key", ak)
 		handler.ServeHTTP(w, r)
 	})
+}
+
+func bearerToken(value string) (string, bool) {
+	parts := strings.Fields(value)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || parts[1] == "" {
+		return "", false
+	}
+	return parts[1], true
 }
 
 // RequireLogin checks to see if the user is currently logged in.
@@ -114,10 +204,19 @@ func RequireAPIKey(handler http.Handler) http.Handler {
 func RequireLogin(handler http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if u := ctx.Get(r, "user"); u != nil {
-			// If a password change is required for the user, then redirect them
-			// to the login page
 			currentUser := u.(models.User)
-			if currentUser.PasswordChangeRequired && r.URL.Path != "/reset_password" {
+			allowPasswordChange := r.URL.Path == "/reset_password"
+			err := auth.CheckAccountState(currentUser.AccountLocked, currentUser.PasswordChangeRequired, allowPasswordChange)
+			if err == auth.ErrAccountLocked {
+				if session, ok := ctx.Get(r, "session").(*sessions.Session); ok {
+					session.Options.MaxAge = -1
+					delete(session.Values, "id")
+					_ = session.Save(r, w)
+				}
+				http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
+				return
+			}
+			if err == auth.ErrPasswordChangeRequired {
 				q := r.URL.Query()
 				q.Set("next", r.URL.Path)
 				http.Redirect(w, r, fmt.Sprintf("/reset_password?%s", q.Encode()), http.StatusTemporaryRedirect)
@@ -129,6 +228,57 @@ func RequireLogin(handler http.Handler) http.HandlerFunc {
 		q := r.URL.Query()
 		q.Set("next", r.URL.Path)
 		http.Redirect(w, r, fmt.Sprintf("/login?%s", q.Encode()), http.StatusTemporaryRedirect)
+	}
+}
+
+// CORS enables cross-origin administrative API access only for exact,
+// explicitly configured origins. It never emits a wildcard or credentials.
+func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
+	allowed := make(map[string]struct{}, len(allowedOrigins))
+	for _, origin := range allowedOrigins {
+		origin = strings.TrimSpace(origin)
+		if origin != "" && origin != "*" {
+			allowed[origin] = struct{}{}
+		}
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if _, ok := allowed[origin]; !ok {
+				if r.Method == http.MethodOptions {
+					JSONError(w, http.StatusForbidden, "CORS origin is not allowed")
+					return
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
+			w.Header().Add("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			if r.Method == http.MethodOptions {
+				w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+				w.Header().Set("Access-Control-Max-Age", "600")
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// LimitRequestBody caps request bodies before handlers decode forms or JSON.
+func LimitRequestBody(maxBytes int64) func(http.Handler) http.HandlerFunc {
+	return func(next http.Handler) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Body != nil && r.Method != http.MethodGet && r.Method != http.MethodHead {
+				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+			}
+			next.ServeHTTP(w, r)
+		}
 	}
 }
 
@@ -179,11 +329,26 @@ func RequirePermission(perm string) func(http.Handler) http.HandlerFunc {
 // ApplySecurityHeaders applies various security headers according to best-
 // practices.
 func ApplySecurityHeaders(next http.Handler) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		csp := "frame-ancestors 'none';"
-		w.Header().Set("Content-Security-Policy", csp)
-		w.Header().Set("X-Frame-Options", "DENY")
-		next.ServeHTTP(w, r)
+	return ApplyAdminSecurityHeaders(false)(next)
+}
+
+// ApplyAdminSecurityHeaders applies the administrative UI policy. Simulation
+// landing pages intentionally use a separate trust boundary and do not receive
+// this CSP.
+func ApplyAdminSecurityHeaders(tlsEnabled bool) func(http.Handler) http.HandlerFunc {
+	return func(next http.Handler) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			csp := "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'"
+			w.Header().Set("Content-Security-Policy", csp)
+			w.Header().Set("X-Frame-Options", "DENY")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Referrer-Policy", "no-referrer")
+			w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+			if tlsEnabled {
+				w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			}
+			next.ServeHTTP(w, r)
+		}
 	}
 }
 

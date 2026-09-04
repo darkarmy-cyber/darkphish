@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gophish/gophish/dialer"
-	"github.com/gophish/gophish/models"
+	"github.com/darkarmy-cyber/darkphish/dialer"
+	"github.com/darkarmy-cyber/darkphish/models"
 )
 
 func makeImportRequest(ctx *testContext, allowedHosts []string, url string) *httptest.ResponseRecorder {
@@ -54,7 +54,7 @@ func TestDefaultAllowedImport(t *testing.T) {
 		fmt.Fprintln(w, h)
 	}))
 	defer ts.Close()
-	response := makeImportRequest(ctx, []string{}, ts.URL)
+	response := makeImportRequest(ctx, []string{"127.0.0.1/32", "::1/128"}, ts.URL)
 	expectedCode := http.StatusOK
 	if response.Code != expectedCode {
 		t.Fatalf("incorrect status code received. expected %d got %d", expectedCode, response.Code)

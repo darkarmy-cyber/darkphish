@@ -1,11 +1,12 @@
 package models
 
 import (
+	"encoding/json"
 	"errors"
 	"net"
 	"time"
 
-	log "github.com/gophish/gophish/logger"
+	log "github.com/darkarmy-cyber/darkphish/logger"
 )
 
 const DefaultIMAPFolder = "INBOX"
@@ -19,7 +20,8 @@ type IMAP struct {
 	Host                        string    `json:"host"`
 	Port                        uint16    `json:"port,string,omitempty"`
 	Username                    string    `json:"username"`
-	Password                    string    `json:"password"`
+	Password                    string    `json:"-"`
+	PasswordSet                 bool      `json:"password_set" gorm:"-"`
 	TLS                         bool      `json:"tls"`
 	IgnoreCertErrors            bool      `json:"ignore_cert_errors"`
 	Folder                      string    `json:"folder"`
@@ -28,6 +30,32 @@ type IMAP struct {
 	LastLogin                   time.Time `json:"last_login,omitempty"`
 	ModifiedDate                time.Time `json:"modified_date"`
 	IMAPFreq                    uint32    `json:"imap_freq,string,omitempty"`
+}
+
+// UnmarshalJSON accepts a write-only password while normal serialization
+// exposes only password_set metadata.
+func (im *IMAP) UnmarshalJSON(data []byte) error {
+	type alias IMAP
+	payload := struct {
+		Password string `json:"password"`
+		*alias
+	}{alias: (*alias)(im)}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+	im.Password = payload.Password
+	im.PasswordSet = payload.Password != ""
+	return nil
+}
+
+func (im *IMAP) openPassword() error {
+	password, err := secretStore.Open(im.Password)
+	if err != nil {
+		return err
+	}
+	im.Password = password
+	im.PasswordSet = password != ""
+	return nil
 }
 
 // ErrIMAPHostNotSpecified is thrown when there is no Host specified
@@ -86,11 +114,6 @@ func (im *IMAP) Validate() error {
 		return ErrInvalidIMAPHost
 	}
 
-	// Make sure 1 >= port <= 65535
-	if im.Port < 1 || im.Port > 65535 {
-		return ErrInvalidIMAPPort
-	}
-
 	// Make sure the polling frequency is between every 30 seconds and every year
 	// If not set it to the default
 	if im.IMAPFreq < 30 || im.IMAPFreq > 31540000 {
@@ -109,6 +132,11 @@ func GetIMAP(uid int64) ([]IMAP, error) {
 	if err != nil {
 		log.Error(err)
 		return im, err
+	}
+	for i := range im {
+		if err = im[i].openPassword(); err != nil {
+			return im, err
+		}
 	}
 	return im, nil
 }
@@ -129,7 +157,15 @@ func PostIMAP(im *IMAP, uid int64) error {
 	}
 
 	// Insert new settings into the DB
+	plain := im.Password
+	protected, protectErr := secretStore.Seal(plain)
+	if protectErr != nil {
+		return protectErr
+	}
+	im.Password = protected
 	err = db.Save(im).Error
+	im.Password = plain
+	im.PasswordSet = plain != ""
 	if err != nil {
 		log.Error("Unable to save to database: ", err.Error())
 	}

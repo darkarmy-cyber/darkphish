@@ -2,6 +2,7 @@ package models
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"net/mail"
 	"os"
@@ -10,10 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/darkarmy-cyber/darkphish/dialer"
+	log "github.com/darkarmy-cyber/darkphish/logger"
+	"github.com/darkarmy-cyber/darkphish/mailer"
 	"github.com/gophish/gomail"
-	"github.com/gophish/gophish/dialer"
-	log "github.com/gophish/gophish/logger"
-	"github.com/gophish/gophish/mailer"
 	"github.com/jinzhu/gorm"
 )
 
@@ -38,11 +39,51 @@ type SMTP struct {
 	Name             string    `json:"name"`
 	Host             string    `json:"host"`
 	Username         string    `json:"username,omitempty"`
-	Password         string    `json:"password,omitempty"`
+	Password         string    `json:"-"`
+	PasswordSet      bool      `json:"password_set" gorm:"-"`
 	FromAddress      string    `json:"from_address"`
 	IgnoreCertErrors bool      `json:"ignore_cert_errors"`
 	Headers          []Header  `json:"headers"`
 	ModifiedDate     time.Time `json:"modified_date"`
+}
+
+// UnmarshalJSON accepts a write-only password while normal serialization
+// exposes only password_set metadata.
+func (s *SMTP) UnmarshalJSON(data []byte) error {
+	type alias SMTP
+	payload := struct {
+		Password string `json:"password"`
+		*alias
+	}{alias: (*alias)(s)}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+	s.Password = payload.Password
+	s.PasswordSet = payload.Password != ""
+	return nil
+}
+
+func (s *SMTP) openPassword() error {
+	password, err := secretStore.Open(s.Password)
+	if err != nil {
+		return err
+	}
+	s.Password = password
+	s.PasswordSet = password != ""
+	return nil
+}
+
+func (s *SMTP) saveWithProtectedPassword(query *gorm.DB) error {
+	plain := s.Password
+	protected, err := secretStore.Seal(plain)
+	if err != nil {
+		return err
+	}
+	s.Password = protected
+	err = query.Save(s).Error
+	s.Password = plain
+	s.PasswordSet = plain != ""
+	return err
 }
 
 // Header contains the fields and methods for a sending profile to have
@@ -104,7 +145,7 @@ func (s *SMTP) Validate() error {
 
 // validateFromAddress validates
 func validateFromAddress(email string) bool {
-	r, _ := regexp.Compile("^([a-zA-Z0-9_\\-\\.]+)@([a-zA-Z0-9_\\-\\.]+)\\.([a-zA-Z]{2,18})$")
+	r := regexp.MustCompile(`^([a-zA-Z0-9_\-.]+)@([a-zA-Z0-9_\-.]+)\.([a-zA-Z]{2,18})$`)
 	return r.MatchString(email)
 }
 
@@ -147,6 +188,9 @@ func GetSMTPs(uid int64) ([]SMTP, error) {
 		return ss, err
 	}
 	for i := range ss {
+		if err = ss[i].openPassword(); err != nil {
+			return ss, err
+		}
 		err = db.Where("smtp_id=?", ss[i].Id).Find(&ss[i].Headers).Error
 		if err != nil && err != gorm.ErrRecordNotFound {
 			log.Error(err)
@@ -162,6 +206,9 @@ func GetSMTP(id int64, uid int64) (SMTP, error) {
 	err := db.Where("user_id=? and id=?", uid, id).Find(&s).Error
 	if err != nil {
 		log.Error(err)
+		return s, err
+	}
+	if err = s.openPassword(); err != nil {
 		return s, err
 	}
 	err = db.Where("smtp_id=?", s.Id).Find(&s.Headers).Error
@@ -180,6 +227,9 @@ func GetSMTPByName(n string, uid int64) (SMTP, error) {
 		log.Error(err)
 		return s, err
 	}
+	if err = s.openPassword(); err != nil {
+		return s, err
+	}
 	err = db.Where("smtp_id=?", s.Id).Find(&s.Headers).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		log.Error(err)
@@ -195,7 +245,7 @@ func PostSMTP(s *SMTP) error {
 		return err
 	}
 	// Insert into the DB
-	err = db.Save(s).Error
+	err = s.saveWithProtectedPassword(db)
 	if err != nil {
 		log.Error(err)
 	}
@@ -219,7 +269,7 @@ func PutSMTP(s *SMTP) error {
 		log.Error(err)
 		return err
 	}
-	err = db.Where("id=?", s.Id).Save(s).Error
+	err = s.saveWithProtectedPassword(db.Where("id=?", s.Id))
 	if err != nil {
 		log.Error(err)
 	}

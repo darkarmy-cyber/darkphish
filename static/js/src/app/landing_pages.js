@@ -13,7 +13,7 @@ function save(idx) {
     editor = CKEDITOR.instances["html_editor"]
     page.html = editor.getData()
     page.capture_credentials = $("#capture_credentials_checkbox").prop("checked")
-    page.capture_passwords = $("#capture_passwords_checkbox").prop("checked")
+    page.capture_passwords = false
     page.redirect_url = $("#redirect_url_input").val()
     if (idx != -1) {
         page.id = pages[idx].id
@@ -44,7 +44,6 @@ function dismiss() {
     $("#url").val("")
     $("#redirect_url_input").val("")
     $("#modal").find("input[type='checkbox']").prop("checked", false)
-    $("#capture_passwords").hide()
     $("#redirect_url").hide()
     $("#modal").modal('hide')
 }
@@ -118,10 +117,8 @@ function edit(idx) {
         $("#name").val(page.name)
         $("#html_editor").val(page.html)
         $("#capture_credentials_checkbox").prop("checked", page.capture_credentials)
-        $("#capture_passwords_checkbox").prop("checked", page.capture_passwords)
         $("#redirect_url_input").val(page.redirect_url)
         if (page.capture_credentials) {
-            $("#capture_passwords").show()
             $("#redirect_url").show()
         }
     } else {
@@ -235,7 +232,6 @@ $(document).ready(function () {
         dismiss()
     });
     $("#capture_credentials_checkbox").change(function () {
-        $("#capture_passwords").toggle()
         $("#redirect_url").toggle()
     })
     CKEDITOR.on('dialogDefinition', function (ev) {

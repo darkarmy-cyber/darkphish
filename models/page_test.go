@@ -85,12 +85,17 @@ func (s *ModelsSuite) TestPostPage(c *check.C) {
 		c.Assert(ok, check.Equals, false)
 	})
 
-	// Password value collection is rejected even if requested by a legacy API
-	// client.
+	// Password inputs can be submitted for a campaign's explicit policy mode.
 	p.CaptureCredentials = true
 	p.CapturePasswords = true
+	p.HTML = html
 	err = PutPage(&p)
-	c.Assert(err, check.Equals, ErrPasswordCaptureDisabled)
+	c.Assert(err, check.Equals, nil)
+	d, err = goquery.NewDocumentFromReader(strings.NewReader(p.HTML))
+	c.Assert(err, check.Equals, nil)
+	passwordName, ok := d.Find("input[type=\"password\"]").Attr("name")
+	c.Assert(ok, check.Equals, true)
+	c.Assert(passwordName, check.Equals, "password")
 }
 
 func (s *ModelsSuite) TestPageValidation(c *check.C) {
@@ -108,11 +113,11 @@ func (s *ModelsSuite) TestPageValidation(c *check.C) {
 
 	p.Name = "Test Page"
 
-	// Password value capture is not available in the secure foundation mode.
+	// A page may submit password fields; the campaign mode controls handling.
 	p.CapturePasswords = true
 	c.Assert(p.CaptureCredentials, check.Equals, false)
 	err = p.Validate()
-	c.Assert(err, check.Equals, ErrPasswordCaptureDisabled)
+	c.Assert(err, check.Equals, nil)
 	p.CapturePasswords = false
 
 	// Validate that if the HTML contains an invalid template tag, that we

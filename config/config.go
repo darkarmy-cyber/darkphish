@@ -17,6 +17,8 @@ import (
 const (
 	DefaultMaxRequestBodyBytes  int64 = 16 << 20
 	DefaultSessionLifetimeHours       = 24
+	DefaultAuditRetentionDays         = 365
+	DefaultPATMaxLifetimeDays         = 90
 )
 
 // AdminServer represents the Admin server configuration details
@@ -52,8 +54,18 @@ type SessionConfig struct {
 
 // SecretsConfig configures encryption at rest for integration credentials.
 type SecretsConfig struct {
-	EncryptionKey     string `json:"encryption_key"`
-	EncryptionKeyFile string `json:"encryption_key_file"`
+	EncryptionKey     string            `json:"encryption_key"`
+	EncryptionKeyFile string            `json:"encryption_key_file"`
+	ActiveKeyID       string            `json:"active_key_id"`
+	Keys              map[string]string `json:"keys"`
+}
+
+type AuditConfig struct {
+	RetentionDays int `json:"retention_days"`
+}
+
+type PATConfig struct {
+	MaxLifetimeDays int `json:"max_lifetime_days"`
 }
 
 // Config represents the configuration information.
@@ -70,6 +82,8 @@ type Config struct {
 	ProductionMode bool          `json:"production_mode"`
 	Session        SessionConfig `json:"session"`
 	Secrets        SecretsConfig `json:"secrets"`
+	Audit          AuditConfig   `json:"audit"`
+	PAT            PATConfig     `json:"personal_access_tokens"`
 	ContactAddress string        `json:"contact_address"`
 	Logging        *log.Config   `json:"logging"`
 }
@@ -101,6 +115,12 @@ func LoadConfig(configPath string) (*Config, error) {
 	if config.Session.LifetimeHours == 0 {
 		config.Session.LifetimeHours = DefaultSessionLifetimeHours
 	}
+	if config.Audit.RetentionDays == 0 {
+		config.Audit.RetentionDays = DefaultAuditRetentionDays
+	}
+	if config.PAT.MaxLifetimeDays == 0 {
+		config.PAT.MaxLifetimeDays = DefaultPATMaxLifetimeDays
+	}
 	if value := os.Getenv("DARKPHISH_PRODUCTION"); value != "" {
 		production, parseErr := strconv.ParseBool(value)
 		if parseErr != nil {
@@ -120,6 +140,23 @@ func LoadConfig(configPath string) (*Config, error) {
 	config.Secrets.EncryptionKey, err = resolveSecret(config.Secrets.EncryptionKey, config.Secrets.EncryptionKeyFile, baseDir, "DARKPHISH_SECRET_ENCRYPTION_KEY", "GOPHISH_SECRET_ENCRYPTION_KEY")
 	if err != nil {
 		return nil, err
+	}
+	if config.Secrets.Keys == nil {
+		config.Secrets.Keys = make(map[string]string)
+	}
+	for _, entry := range os.Environ() {
+		name, value, ok := strings.Cut(entry, "=")
+		if !ok || !strings.HasPrefix(name, "DARKPHISH_SECRET_KEY_") || strings.TrimSpace(value) == "" {
+			continue
+		}
+		config.Secrets.Keys[strings.TrimPrefix(name, "DARKPHISH_SECRET_KEY_")] = strings.TrimSpace(value)
+	}
+	if active := strings.TrimSpace(os.Getenv("DARKPHISH_SECRET_ACTIVE_KEY")); active != "" {
+		config.Secrets.ActiveKeyID = active
+	}
+	if config.Secrets.ActiveKeyID == "" && config.Secrets.EncryptionKey != "" {
+		config.Secrets.ActiveKeyID = "legacy"
+		config.Secrets.Keys["legacy"] = config.Secrets.EncryptionKey
 	}
 	if err = config.ValidateSecurity(); err != nil {
 		return nil, err
@@ -161,11 +198,32 @@ func resolveSecret(configured, configuredFile, baseDir, primaryEnv, legacyEnv st
 
 // ValidateSecurity rejects incomplete production security configuration.
 func (c *Config) ValidateSecurity() error {
+	if c.Audit.RetentionDays == 0 {
+		c.Audit.RetentionDays = DefaultAuditRetentionDays
+	}
+	if c.PAT.MaxLifetimeDays == 0 {
+		c.PAT.MaxLifetimeDays = DefaultPATMaxLifetimeDays
+	}
+	if c.Secrets.EncryptionKey != "" {
+		if c.Secrets.Keys == nil {
+			c.Secrets.Keys = make(map[string]string)
+		}
+		c.Secrets.Keys["legacy"] = c.Secrets.EncryptionKey
+		if c.Secrets.ActiveKeyID == "" {
+			c.Secrets.ActiveKeyID = "legacy"
+		}
+	}
 	if c.AdminConf.MaxRequestBodyBytes < 1 {
 		return errors.New("admin_server.max_request_body_bytes must be positive")
 	}
 	if c.Session.LifetimeHours < 1 || c.Session.LifetimeHours > 24*30 {
 		return errors.New("session.lifetime_hours must be between 1 and 720")
+	}
+	if c.Audit.RetentionDays < 1 {
+		return errors.New("audit.retention_days must be positive")
+	}
+	if c.PAT.MaxLifetimeDays < 1 || c.PAT.MaxLifetimeDays > 3650 {
+		return errors.New("personal_access_tokens.max_lifetime_days must be between 1 and 3650")
 	}
 	for _, origin := range c.AdminConf.TrustedOrigins {
 		parsed, err := url.Parse(origin)
@@ -175,6 +233,17 @@ func (c *Config) ValidateSecurity() error {
 		}
 		if c.ProductionMode && parsed.Scheme != "https" {
 			return fmt.Errorf("admin_server.trusted_origins entry %q must use HTTPS in production", origin)
+		}
+	}
+	for id, value := range c.Secrets.Keys {
+		decoded, err := secretpkg.DecodeKey(value)
+		if err != nil || len(decoded) != 32 {
+			return fmt.Errorf("DARKPHISH_SECRET_KEY_%s must contain exactly 32 bytes", id)
+		}
+	}
+	if c.Secrets.ActiveKeyID != "" {
+		if _, ok := c.Secrets.Keys[c.Secrets.ActiveKeyID]; !ok {
+			return fmt.Errorf("secrets.active_key_id %q has no configured key", c.Secrets.ActiveKeyID)
 		}
 	}
 	if !c.ProductionMode {
@@ -187,8 +256,8 @@ func (c *Config) ValidateSecurity() error {
 	if c.Session.EncryptionKey == "" {
 		missing = append(missing, "DARKPHISH_SESSION_ENCRYPTION_KEY")
 	}
-	if c.Secrets.EncryptionKey == "" {
-		missing = append(missing, "DARKPHISH_SECRET_ENCRYPTION_KEY")
+	if c.Secrets.ActiveKeyID == "" {
+		missing = append(missing, "DARKPHISH_SECRET_ACTIVE_KEY and DARKPHISH_SECRET_KEY_<ID>")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("production security configuration is incomplete; set %s (or configured key files)", strings.Join(missing, ", "))
@@ -196,7 +265,6 @@ func (c *Config) ValidateSecurity() error {
 	for name, value := range map[string]string{
 		"DARKPHISH_SESSION_AUTH_KEY":       c.Session.AuthKey,
 		"DARKPHISH_SESSION_ENCRYPTION_KEY": c.Session.EncryptionKey,
-		"DARKPHISH_SECRET_ENCRYPTION_KEY":  c.Secrets.EncryptionKey,
 	} {
 		decoded, err := secretpkg.DecodeKey(value)
 		if err != nil {

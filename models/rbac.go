@@ -43,6 +43,8 @@ const (
 	// PermissionModifySystem determines if a role can manage system-level
 	// configuration.
 	PermissionModifySystem = "modify_system"
+	// PermissionViewCredentials permits individual, audited reveal operations.
+	PermissionViewCredentials = "credentials:view"
 )
 
 // Role represents a user role within Darkphish. Each user has a single role

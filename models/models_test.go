@@ -40,6 +40,11 @@ func (s *ModelsSuite) TearDownTest(c *check.C) {
 	db.Delete(Result{})
 	db.Delete(MailLog{})
 	db.Delete(Campaign{})
+	db.Delete(CredentialPolicy{})
+	db.Delete(CredentialPolicyResult{})
+	db.Delete(EncryptedCredential{})
+	db.Delete(PersonalAccessToken{})
+	db.Delete(auditEventRow{})
 
 	// Reset users table to default state.
 	db.Not("id", 1).Delete(User{})
@@ -132,6 +137,11 @@ func resetBenchmark(b *testing.B) {
 	db.Delete(Result{})
 	db.Delete(MailLog{})
 	db.Delete(Campaign{})
+	db.Delete(CredentialPolicy{})
+	db.Delete(CredentialPolicyResult{})
+	db.Delete(EncryptedCredential{})
+	db.Delete(PersonalAccessToken{})
+	db.Delete(auditEventRow{})
 
 	// Reset users table to default state.
 	db.Not("id", 1).Delete(User{})

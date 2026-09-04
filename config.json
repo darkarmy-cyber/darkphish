@@ -27,7 +27,15 @@
 		"lifetime_hours": 24
 	},
 	"secrets": {
+		"active_key_id": "",
+		"keys": {},
 		"encryption_key_file": ""
+	},
+	"audit": {
+		"retention_days": 365
+	},
+	"personal_access_tokens": {
+		"max_lifetime_days": 90
 	},
 	"contact_address": "",
 	"logging": {

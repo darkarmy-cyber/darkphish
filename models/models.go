@@ -43,12 +43,6 @@ const DefaultAdminUsername = "admin"
 const InitialAdminPassword = "DARKPHISH_INITIAL_ADMIN_PASSWORD"
 const LegacyInitialAdminPassword = "GOPHISH_INITIAL_ADMIN_PASSWORD"
 
-// InitialAdminAPIToken is the environment variable that specifies the
-// API token to seed the initial root login instead of generating one
-// randomly
-const InitialAdminAPIToken = "DARKPHISH_INITIAL_ADMIN_API_TOKEN"
-const LegacyInitialAdminAPIToken = "GOPHISH_INITIAL_ADMIN_API_TOKEN"
-
 func environmentValue(primary, legacy string) string {
 	if value := os.Getenv(primary); value != "" {
 		return value
@@ -57,19 +51,32 @@ func environmentValue(primary, legacy string) string {
 }
 
 func configureSecretStore(c *config.Config) error {
-	if c.Secrets.EncryptionKey == "" {
+	if c.Secrets.ActiveKeyID == "" || len(c.Secrets.Keys) == 0 {
 		if c.ProductionMode {
-			return fmt.Errorf("DARKPHISH_SECRET_ENCRYPTION_KEY is required in production mode")
+			return fmt.Errorf("a versioned secret keyring is required in production mode")
 		}
 		secretStore = secretpkg.PlaintextStore{}
 		log.Warn("integration secrets are stored as plaintext in development mode; configure DARKPHISH_SECRET_ENCRYPTION_KEY")
 		return nil
 	}
-	key, err := secretpkg.DecodeKey(c.Secrets.EncryptionKey)
-	if err != nil {
-		return err
+	keys := make(map[string][]byte, len(c.Secrets.Keys))
+	for id, value := range c.Secrets.Keys {
+		key, err := secretpkg.DecodeKey(value)
+		if err != nil {
+			return fmt.Errorf("decode secret key %s: %w", id, err)
+		}
+		keys[id] = key
 	}
-	secretStore, err = secretpkg.NewAESGCM(key)
+	var legacyKey []byte
+	if c.Secrets.EncryptionKey != "" {
+		var err error
+		legacyKey, err = secretpkg.DecodeKey(c.Secrets.EncryptionKey)
+		if err != nil {
+			return fmt.Errorf("decode legacy secret key: %w", err)
+		}
+	}
+	var err error
+	secretStore, err = secretpkg.NewKeyring(c.Secrets.ActiveKeyID, keys, legacyKey)
 	return err
 }
 
@@ -160,8 +167,8 @@ func RemoveInitialAdminPasswordFile() {
 // First, it establishes a connection to the database, then runs any migrations
 // newer than the version the database is on.
 //
-// Once the database is up-to-date, we create an admin user (if needed) that
-// has a randomly generated API key and password.
+// Once the database is up-to-date, we create an admin user when needed with a
+// disabled legacy-key placeholder and a generated initial password.
 func Setup(c *config.Config) error {
 	// Setup the package-scoped config
 	conf = c
@@ -238,6 +245,7 @@ func Setup(c *config.Config) error {
 		log.Error(err)
 		return err
 	}
+	configureAuditStore()
 	// Create the admin user if it doesn't exist
 	var userCount int64
 	var adminUser User
@@ -255,11 +263,7 @@ func Setup(c *config.Config) error {
 			PasswordChangeRequired: true,
 		}
 
-		if envToken := environmentValue(InitialAdminAPIToken, LegacyInitialAdminAPIToken); envToken != "" {
-			adminUser.ApiKey = envToken
-		} else {
-			adminUser.ApiKey = auth.GenerateSecureKey(auth.APIKeyLength)
-		}
+		adminUser.ApiKey = "disabled-" + auth.GenerateSecureKey(16)
 
 		err = db.Save(&adminUser).Error
 		if err != nil {

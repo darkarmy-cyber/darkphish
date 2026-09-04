@@ -65,6 +65,9 @@ func TestLoadConfig(t *testing.T) {
 	expectedConfig.TestFlag = false
 	expectedConfig.AdminConf.MaxRequestBodyBytes = DefaultMaxRequestBodyBytes
 	expectedConfig.Session.LifetimeHours = DefaultSessionLifetimeHours
+	expectedConfig.Secrets.Keys = map[string]string{}
+	expectedConfig.Audit.RetentionDays = DefaultAuditRetentionDays
+	expectedConfig.PAT.MaxLifetimeDays = DefaultPATMaxLifetimeDays
 	expectedConfig.Logging = &log.Config{}
 	if !reflect.DeepEqual(expectedConfig, conf) {
 		t.Fatalf("invalid config received. expected %#v got %#v", expectedConfig, conf)

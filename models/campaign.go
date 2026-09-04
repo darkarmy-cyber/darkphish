@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"errors"
 	"net/url"
 	"time"
@@ -13,24 +14,46 @@ import (
 
 // Campaign is a struct representing a created campaign
 type Campaign struct {
-	Id            int64     `json:"id"`
-	UserId        int64     `json:"-"`
-	Name          string    `json:"name" sql:"not null"`
-	CreatedDate   time.Time `json:"created_date"`
-	LaunchDate    time.Time `json:"launch_date"`
-	SendByDate    time.Time `json:"send_by_date"`
-	CompletedDate time.Time `json:"completed_date"`
-	TemplateId    int64     `json:"-"`
-	Template      Template  `json:"template"`
-	PageId        int64     `json:"-"`
-	Page          Page      `json:"page"`
-	Status        string    `json:"status"`
-	Results       []Result  `json:"results,omitempty"`
-	Groups        []Group   `json:"groups,omitempty"`
-	Events        []Event   `json:"timeline,omitempty"`
-	SMTPId        int64     `json:"-"`
-	SMTP          SMTP      `json:"smtp"`
-	URL           string    `json:"url"`
+	Id                           int64            `json:"id"`
+	UserId                       int64            `json:"-"`
+	Name                         string           `json:"name" sql:"not null"`
+	CreatedDate                  time.Time        `json:"created_date"`
+	LaunchDate                   time.Time        `json:"launch_date"`
+	SendByDate                   time.Time        `json:"send_by_date"`
+	CompletedDate                time.Time        `json:"completed_date"`
+	TemplateId                   int64            `json:"-"`
+	Template                     Template         `json:"template"`
+	PageId                       int64            `json:"-"`
+	Page                         Page             `json:"page"`
+	Status                       string           `json:"status"`
+	Results                      []Result         `json:"results,omitempty"`
+	Groups                       []Group          `json:"groups,omitempty"`
+	Events                       []Event          `json:"timeline,omitempty"`
+	SMTPId                       int64            `json:"-"`
+	SMTP                         SMTP             `json:"smtp"`
+	URL                          string           `json:"url"`
+	CredentialCaptureMode        string           `json:"credential_capture_mode"`
+	CredentialRetentionHours     int              `json:"credential_retention_hours"`
+	CredentialPolicy             CredentialPolicy `json:"credential_policy" gorm:"-"`
+	credentialRetentionSpecified bool
+}
+
+// UnmarshalJSON distinguishes an omitted retention setting (default 24 hours)
+// from an explicit zero (evaluate and immediately discard).
+func (c *Campaign) UnmarshalJSON(data []byte) error {
+	type campaignAlias Campaign
+	payload := struct {
+		CredentialRetentionHours *int `json:"credential_retention_hours"`
+		*campaignAlias
+	}{campaignAlias: (*campaignAlias)(c)}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+	if payload.CredentialRetentionHours != nil {
+		c.CredentialRetentionHours = *payload.CredentialRetentionHours
+		c.credentialRetentionSpecified = true
+	}
+	return nil
 }
 
 // CampaignResults is a struct representing the results from a campaign
@@ -131,6 +154,9 @@ const RecipientParameter = "rid"
 
 // Validate checks to make sure there are no invalid fields in a submitted campaign
 func (c *Campaign) Validate() error {
+	if err := validateCampaignCredentialControls(c); err != nil {
+		return err
+	}
 	switch {
 	case c.Name == "":
 		return ErrCampaignNameNotSpecified
@@ -181,6 +207,12 @@ func AddEvent(e *Event, campaignID int64) error {
 // an error is returned. Otherwise, the attribute name is set to [Deleted],
 // indicating the user deleted the attribute (template, smtp, etc.)
 func (c *Campaign) getDetails() error {
+	policy, policyErr := loadCredentialPolicy(c.Id)
+	if policyErr == nil {
+		c.CredentialPolicy = policy
+	} else if policyErr != gorm.ErrRecordNotFound {
+		return policyErr
+	}
 	err := db.Model(c).Related(&c.Results).Error
 	if err != nil {
 		log.Warnf("%s: results not found for campaign", err)
@@ -430,6 +462,9 @@ func GetCampaignResults(id int64, uid int64) (CampaignResults, error) {
 		log.Errorf("%s: results not found for campaign", err)
 		return cr, err
 	}
+	if err = attachCredentialFindings(cr.Results); err != nil {
+		return cr, err
+	}
 	err = db.Table("events").Where("campaign_id=?", cr.Id).Order("time ASC, id ASC").Find(&cr.Events).Error
 	if err != nil {
 		log.Errorf("%s: events not found for campaign", err)
@@ -540,6 +575,9 @@ func PostCampaign(c *Campaign, uid int64) error {
 		log.Error(err)
 		return err
 	}
+	if err = saveCredentialPolicy(c.Id, c.CredentialPolicy); err != nil {
+		return err
+	}
 	err = AddEvent(&Event{Message: "Campaign Created"}, c.Id)
 	if err != nil {
 		log.Error(err)
@@ -622,6 +660,9 @@ func DeleteCampaign(id int64) error {
 	log.WithFields(logrus.Fields{
 		"campaign_id": id,
 	}).Info("Deleting campaign")
+	if err := deleteCampaignCredentialData(id); err != nil {
+		return err
+	}
 	// Delete all the campaign results
 	err := db.Where("campaign_id=?", id).Delete(&Result{}).Error
 	if err != nil {

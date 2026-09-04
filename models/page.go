@@ -24,10 +24,6 @@ type Page struct {
 // ErrPageNameNotSpecified is thrown if the name of the landing page is blank.
 var ErrPageNameNotSpecified = errors.New("Page Name not specified")
 
-// ErrPasswordCaptureDisabled is returned because Darkphish never stores
-// submitted passwords in the foundation security profile.
-var ErrPasswordCaptureDisabled = errors.New("capturing submitted password values is disabled; record submission metadata or field names instead")
-
 // parseHTML parses the page HTML on save to handle the
 // capturing (or lack thereof!) of credentials and passwords
 func (p *Page) parseHTML() error {
@@ -68,9 +64,6 @@ func (p *Page) parseHTML() error {
 func (p *Page) Validate() error {
 	if p.Name == "" {
 		return ErrPageNameNotSpecified
-	}
-	if p.CapturePasswords {
-		return ErrPasswordCaptureDisabled
 	}
 	if err := ValidateTemplate(p.HTML); err != nil {
 		return err

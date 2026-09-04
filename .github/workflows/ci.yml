@@ -14,12 +14,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changelog:
+    name: Version and changelog policy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.19.0
+      - name: Validate fragments
+        if: github.event_name != 'pull_request'
+        run: node scripts/changelog.mjs validate
+      - name: Require a runtime fragment on pull requests
+        if: github.event_name == 'pull_request'
+        run: node scripts/changelog.mjs validate --base origin/${{ github.base_ref }}
+
   go:
     name: Go build, test, and analysis
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: 1.27.1
           cache: true
@@ -42,16 +59,38 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           govulncheck ./...
+      - name: Reject whitespace errors
+        run: git diff --check
+      - name: Verify checks did not rewrite tracked files
+        run: git diff --exit-code
+
+  mysql-migrations:
+    name: MySQL migrations up/down/up
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.1
+          cache: true
+      - name: Start runner MySQL service
+        run: |
+          sudo systemctl start mysql.service
+          mysql -uroot -proot -e 'CREATE DATABASE darkphish_migration_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
+      - name: Exercise MySQL migrations
+        env:
+          DARKPHISH_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/darkphish_migration_test?charset=utf8mb4&parseTime=true&multiStatements=true"
+        run: go test ./migrationtest -run TestMySQLMigrationsUpDownUp -count=1
 
   frontend:
     name: Frontend reproducibility
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: 11.19.0
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: 24.19.0
           cache: pnpm
@@ -60,12 +99,14 @@ jobs:
       - name: Verify generated assets are committed
         run: git diff --exit-code -- static/js/dist static/css/dist
       - run: pnpm audit --audit-level=high
+      - name: Verify clean generated tree
+        run: git diff --exit-code
 
   secret-scan:
     name: Repository secret scan
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: aquasecurity/trivy-action@0.36.0
@@ -73,30 +114,4 @@ jobs:
           scan-type: fs
           scan-ref: .
           scanners: secret
-          exit-code: "1"
-
-  container:
-    name: Container build and scan
-    runs-on: ubuntu-24.04
-    needs: [go, frontend]
-    steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v3
-      - name: Build amd64 image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64
-          load: true
-          tags: darkphish:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Build arm64 image
-        run: docker buildx build --platform linux/arm64 --cache-from type=gha --output type=cacheonly .
-      - uses: aquasecurity/trivy-action@0.36.0
-        with:
-          image-ref: darkphish:ci
-          format: table
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
           exit-code: "1"

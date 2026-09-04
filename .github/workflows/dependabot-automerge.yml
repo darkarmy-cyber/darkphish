@@ -1,0 +1,35 @@
+name: Conservative Dependabot auto-merge
+
+on:
+  schedule:
+    - cron: "23 5 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.19.0
+      - name: Enable auto-merge only for controlled patch/minor updates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh pr list --state open --author 'app/dependabot' --label dependencies --json number --jq '.[].number' | while read -r number; do
+            [ -n "$number" ] || continue
+            author="$(gh pr view "$number" --json author --jq '.author.login')"
+            [ "$author" = "app/dependabot" ] || [ "$author" = "dependabot" ] || continue
+            title="$(gh pr view "$number" --json title --jq '.title')"
+            files="$(gh pr view "$number" --json files --jq '.files[].path')"
+            if node scripts/dependabot-automerge.mjs "$title" "$files"; then
+              gh pr merge "$number" --auto --squash
+            fi
+          done

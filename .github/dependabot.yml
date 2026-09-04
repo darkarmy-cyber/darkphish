@@ -4,24 +4,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    groups:
-      go-dependencies:
-        patterns: ["*"]
+    labels: [dependencies]
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
-    groups:
-      frontend-dependencies:
-        patterns: ["*"]
+    labels: [dependencies]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    groups:
-      actions:
-        patterns: ["*"]
-  - package-ecosystem: docker
-    directory: /
-    schedule:
-      interval: weekly
+    labels: [dependencies]

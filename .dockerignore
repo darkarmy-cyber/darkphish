@@ -1,0 +1,12 @@
+.git
+.github
+.cache
+.pnpm-store
+.tools
+node_modules
+*.db
+*.db-*
+*.log
+darkphish
+darkphish.exe
+darkphish_initial_admin_password

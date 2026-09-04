@@ -9,6 +9,9 @@ _test
 
 # Node Modules
 node_modules
+.tools/
+.cache/
+.pnpm-store/
 
 # Architecture specific extensions/prefixes
 *.[568vq]
@@ -23,9 +26,10 @@ _cgo_export.*
 
 _testmain.go
 
-gophish_admin.crt
-gophish_admin.key
+darkphish_admin.crt
+darkphish_admin.key
 
 *.exe
-gophish.db*
-gophish
+darkphish.db*
+/darkphish
+darkphish_initial_admin_password

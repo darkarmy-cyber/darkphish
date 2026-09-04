@@ -1,15 +1,14 @@
 /*
  * gulpfile.js
  *
- * Description: The Gophish gulpfile
+ * Description: The Darkphish gulpfile
  */
 
 var gulp = require('gulp'),
     rename = require('gulp-rename'),
     concat = require('gulp-concat'),
-    uglify = require('gulp-uglify-es').default,
+    terser = require('gulp-terser'),
     cleanCSS = require('gulp-clean-css'),
-    babel = require('gulp-babel'),
 
     js_directory = 'static/js/src/',
     css_directory = 'static/css/',
@@ -44,12 +43,12 @@ vendorjs = function () {
         .pipe(rename({
             suffix: '.min'
         }))
-        .pipe(uglify())
+        .pipe(terser())
         .pipe(gulp.dest(dest_js_directory));
 }
 
 scripts = function () {
-    // Gophish app files - non-ES6
+    // Darkphish app files - non-ES6
     return gulp.src([
             app_directory + 'autocomplete.js',
             app_directory + 'campaign_results.js',
@@ -60,15 +59,14 @@ scripts = function () {
             app_directory + 'sending_profiles.js',
             app_directory + 'settings.js',
             app_directory + 'templates.js',
-            app_directory + 'gophish.js',
+            app_directory + 'darkphish.js',
             app_directory + 'users.js',
-            app_directory + 'webhooks.js',
-            app_directory + 'passwords.js'
+            app_directory + 'webhooks.js'
         ])
         .pipe(rename({
             suffix: '.min'
         }))
-        .pipe(uglify().on('error', function (e) {
+        .pipe(terser().on('error', function (e) {
             console.log(e);
         }))
         .pipe(gulp.dest(dest_js_directory + 'app/'));
@@ -92,7 +90,7 @@ styles = function () {
         .pipe(cleanCSS({
             compatibilty: 'ie9'
         }))
-        .pipe(concat('gophish.css'))
+        .pipe(concat('darkphish.css'))
         .pipe(gulp.dest(dest_css_directory));
 }
 

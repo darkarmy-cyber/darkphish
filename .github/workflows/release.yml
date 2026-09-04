@@ -1,153 +1,159 @@
-name: Build Gophish Release
+name: Release candidate
+
 on:
-    release:
-        types: [created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer tag to prepare (for example v0.1.0)
+        required: true
+        type: string
+      publish:
+        description: Publish artifacts, container, and GitHub release after verification
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
 
 jobs:
-    build:
-        name: Build Binary
-        runs-on: ${{ matrix.os }}
-        strategy:
-            matrix:
-                os: [windows-latest, ubuntu-latest, macos-latest]
-                arch: ['386', amd64]
-                # We sometimes use different verbiage for things (e.g. "darwin"
-                # for the GOOS build flag and "osx" in the actual release ZIP).
-                # We need to specify those here.
-                include:
-                    - os: windows-latest
-                      goos: windows
-                      bin: 'gophish.exe'
-                      releaseos: windows
-                    - os: ubuntu-latest
-                      goos: linux
-                      bin: 'gophish'
-                      releaseos: linux
-                    - os: macos-latest
-                      goos: darwin
-                      bin: 'gophish'
-                      releaseos: osx
-                # Don't build windows-32bit due to missing MinGW dependencies
-                # Don't build osx-32bit due to eventual drop in Go support
-                exclude:
-                    - os: windows-latest
-                      arch: '386'
-                    - os: macos-latest
-                      arch: '386'
-        steps:
-            - name: Set up Go
-              uses: actions/setup-go@v2
-              with:
-                go-version: 1.22
-            - if: matrix.os == 'ubuntu-latest'
-              run: sudo apt-get update && sudo apt-get install -y gcc-multilib
-            - if: matrix.arch == '386'
-              run: echo "RELEASE=gophish-${{ github.event.release.tag_name }}-${{ matrix.releaseos }}-32bit" >> $GITHUB_ENV
-            - if: matrix.arch == 'amd64'
-              run: echo "RELEASE=gophish-${{ github.event.release.tag_name }}-${{ matrix.releaseos }}-64bit" >> $GITHUB_ENV
-            - if: matrix.os == 'windows-latest'
-              run: echo "RELEASE=gophish-${{ github.event.release.tag_name }}-${{ matrix.releaseos }}-64bit" | Out-File -FilePath $env:GITHUB_ENV -Append # https://github.com/actions/runner/issues/1636
-            - uses: actions/checkout@v4
-            - name: Build ${{ matrix.goos }}/${{ matrix.arch }}
-              run: go build -o ${{ matrix.bin }}
-              env:
-                GOOS: ${{ matrix.goos }}
-                GOARCH: ${{ matrix.arch }}
-                CGO_ENABLED: 1
-            - name: Upload to artifacts
-              uses: actions/upload-artifact@v4
-              with:
-                name: ${{ env.RELEASE }}
-                path: ${{ matrix.bin }}
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.27.1
+          cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+      - run: go test ./...
+      - run: go vet ./...
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: git diff --exit-code -- static/js/dist static/css/dist
 
-    package:
-        name: Package Assets
-        runs-on: ubuntu-latest
-        needs: build
-        steps:
-            - uses: actions/checkout@v4
-            - uses: actions/download-artifact@v4
-              with:
-                path: bin
-            - name: Package Releases
-              run: |
-                mkdir releases;
-                for RELEASE_DIR in bin/*
-                do
-                  echo "Creating release $RELEASE_DIR"
-                  for BINARY in $RELEASE_DIR/*
-                  do
-                    cp $BINARY .;
-                    zip -r releases/$(basename $RELEASE_DIR).zip \
-                      $(basename ${BINARY}) \
-                      static/js/dist \
-                      static/js/src/vendor/ckeditor \
-                      static/css/dist \
-                      static/images \
-                      static/font \
-                      static/db \
-                      db \
-                      templates \
-                      README.md \
-                      VERSION \
-                      LICENSE \
-                      config.json;
-                    rm $BINARY;
-                  done
-                done
-            - name: Upload to artifacts
-              uses: actions/upload-artifact@v4
-              with:
-                name: releases
-                path: releases/*.zip
-    
-    upload:
-        name: Upload to the Release
-        runs-on: ubuntu-latest
-        needs: package
-        steps:
-            - uses: actions/download-artifact@v4
-              with:
-                name: releases
-                path: releases/
-            # I would love to use @actions/upload-release-asset, but they don't
-            # support wildcards in the asset path. Ref #9, #24, and #47
-            - name: Upload Archives to Release
-              env:
-                UPLOAD_URL: ${{ github.event.release.upload_url }}
-                API_HEADER: "Accept: application/vnd.github.v3+json"
-                AUTH_HEADER: "Authorization: token ${{ secrets.GITHUB_TOKEN }}"
-              run: |
-                UPLOAD_URL=$(echo -n $UPLOAD_URL | sed s/\{.*//g)
-                for FILE in releases/*
-                do
-                  echo "Uploading ${FILE}";
-                  curl \
-                    -H "${API_HEADER}" \
-                    -H "${AUTH_HEADER}" \
-                    -H "Content-Type: $(file -b --mime-type ${FILE})" \
-                    --data-binary "@${FILE}" \
-                    "${UPLOAD_URL}?name=$(basename ${FILE})";
-                done
-            - name: Generate SHA256 Hashes
-              env:
-                API_HEADER: "Accept: application/vnd.github.v3+json"
-                AUTH_HEADER: "Authorization: token ${{ secrets.GITHUB_TOKEN }}"
-                RELEASE_URL: ${{ github.event.release.url }}
-              run: |
-                HASH_TABLE="| SHA256 Hash | Filename |"
-                HASH_TABLE="${HASH_TABLE}\n|-----|-----|\n"
-                for FILE in releases/*
-                do
-                  FILENAME=$(basename ${FILE})
-                  HASH=$(sha256sum ${FILE} | cut -d ' ' -f 1)
-                  HASH_TABLE="${HASH_TABLE}|${HASH}|${FILENAME}|\n"
-                done
-                echo "${HASH_TABLE}"
-                curl \
-                  -XPATCH \
-                  -H "${API_HEADER}" \
-                  -H "${AUTH_HEADER}" \
-                  -H "Content-Type: application/json" \
-                  -d "{\"body\": \"${HASH_TABLE}\"}" \
-                  "${RELEASE_URL}";
+  binaries:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            goos: linux
+            goarch: amd64
+            binary: darkphish
+          - runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            binary: darkphish
+          - runner: windows-2025
+            goos: windows
+            goarch: amd64
+            binary: darkphish.exe
+          - runner: macos-15-large
+            goos: darwin
+            goarch: amd64
+            binary: darkphish
+          - runner: macos-15
+            goos: darwin
+            goarch: arm64
+            binary: darkphish
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.27.1
+          cache: true
+      - name: Build and package
+        shell: pwsh
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_BINARY: ${{ matrix.binary }}
+        run: |
+          $name = "darkphish-$env:RELEASE_VERSION-$env:GOOS-$env:GOARCH"
+          New-Item -ItemType Directory -Force -Path "dist/$name" | Out-Null
+          go build -trimpath -ldflags "-s -w" -o "dist/$name/$env:RELEASE_BINARY" ./
+          Copy-Item VERSION,LICENSE,NOTICE.md,README.md -Destination "dist/$name"
+          Copy-Item db,templates -Recurse -Destination "dist/$name"
+          New-Item -ItemType Directory -Force -Path "dist/$name/static/js","dist/$name/static/css" | Out-Null
+          Copy-Item static/images,static/font,static/db,static/endpoint -Recurse -Destination "dist/$name/static"
+          Copy-Item static/js/dist,static/js/src -Recurse -Destination "dist/$name/static/js"
+          Copy-Item static/css/dist -Recurse -Destination "dist/$name/static/css"
+          Compress-Archive -Path "dist/$name/*" -DestinationPath "dist/$name.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darkphish-${{ inputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  assemble:
+    needs: binaries
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: darkphish-*
+          path: dist
+          merge-multiple: true
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum *.zip > SHA256SUMS
+      - uses: anchore/sbom-action@v0.20.6
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/darkphish-${{ inputs.version }}.spdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darkphish-${{ inputs.version }}-release-candidate
+          path: dist/*
+      - uses: actions/attest-build-provenance@v3
+        if: inputs.publish
+        with:
+          subject-path: dist/*
+      - uses: softprops/action-gh-release@v2
+        if: inputs.publish
+        with:
+          tag_name: ${{ inputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: dist/*
+
+  container:
+    needs: verify
+    if: inputs.publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ inputs.version }}
+          provenance: mode=max
+          sbom: true
+      - uses: sigstore/cosign-installer@v4
+      - name: Keyless-sign container manifest
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}:${{ inputs.version }}
+        run: cosign sign --yes "$IMAGE"

@@ -1,6 +1,6 @@
 {
   "name": "darkphish",
-  "version": "0.1.0",
+  "version": "0.0.0-private",
   "private": true,
   "packageManager": "pnpm@11.19.0",
   "engines": {

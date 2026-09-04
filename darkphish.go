@@ -26,10 +26,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 import (
+	_ "embed"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
+	"time"
 
 	"github.com/alecthomas/kingpin/v2"
 
@@ -37,6 +40,7 @@ import (
 	"github.com/darkarmy-cyber/darkphish/controllers"
 	"github.com/darkarmy-cyber/darkphish/dialer"
 	"github.com/darkarmy-cyber/darkphish/imap"
+	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/middleware"
 	"github.com/darkarmy-cyber/darkphish/models"
@@ -54,20 +58,47 @@ var (
 	disableMailer = kingpin.Flag("disable-mailer", "Disable the mailer (for use with multi-system deployments)").Bool()
 	mode          = kingpin.Flag("mode", fmt.Sprintf("Run the binary in one of the modes (%s, %s or %s)", modeAll, modeAdmin, modePhish)).
 			Default("all").Enum(modeAll, modeAdmin, modePhish)
+	versionCommand = kingpin.Command("version", "Print Darkphish version and build information.")
+	rotateSecrets  = kingpin.Flag("rotate-secrets", "Re-encrypt stored secrets with the active key and exit.").Bool()
+	commitSHA      = "unknown"
+	builtAt        = "unknown"
+	releaseVersion = ""
 )
 
-func main() {
-	// Load the version
+// versionFile is the single authoritative release version. Release builds set
+// releaseVersion, commitSHA, and builtAt through -ldflags.
+//
+//go:embed VERSION
+var versionFile string
 
-	version, err := os.ReadFile("./VERSION")
-	if err != nil {
-		log.Fatal(err)
+func semanticVersion() string { return strings.TrimSpace(versionFile) }
+
+func displayVersion() string {
+	parts := strings.Split(semanticVersion(), ".")
+	if len(parts) < 2 {
+		return semanticVersion() + "-dev"
 	}
-	kingpin.Version(string(version))
+	value := strings.Join(parts[:2], ".")
+	if strings.TrimSpace(releaseVersion) != semanticVersion() {
+		value += "-dev"
+	}
+	return value
+}
+
+func versionSummary() string {
+	return fmt.Sprintf("Darkphish %s (version %s, commit %s, built %s)", displayVersion(), semanticVersion(), commitSHA, builtAt)
+}
+
+func main() {
+	kingpin.Version(versionSummary())
 
 	// Parse the CLI flags and load the config
 	kingpin.CommandLine.HelpFlag.Short('h')
-	kingpin.Parse()
+	command := kingpin.Parse()
+	if command == versionCommand.FullCommand() {
+		fmt.Println(versionSummary())
+		return
+	}
 
 	// Load the config
 	conf, err := config.LoadConfig(*configPath)
@@ -79,7 +110,7 @@ func main() {
 		log.Warnf("No contact address has been configured.")
 		log.Warnf("Please consider adding a contact_address entry in your config.json")
 	}
-	config.Version = string(version)
+	config.Version = displayVersion()
 	if err = middleware.ConfigureSession(
 		conf.Session.AuthKey,
 		conf.Session.EncryptionKey,
@@ -109,6 +140,18 @@ func main() {
 	err = models.Setup(conf)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if _, _, err = models.CleanupSecurityRetention(time.Now().UTC()); err != nil {
+		log.Errorf("initial security retention cleanup failed: %v", err)
+	}
+	if *rotateSecrets {
+		rotated, rotateErr := models.RotateSecrets()
+		if rotateErr != nil {
+			log.Fatal(rotateErr)
+		}
+		audit.RecordSystem("secret.rotate", "secrets", "active-key", "success")
+		fmt.Printf("Re-encrypted %d protected values with the active key.\n", rotated)
+		return
 	}
 
 	// Unlock any maillogs that may have been locked for processing

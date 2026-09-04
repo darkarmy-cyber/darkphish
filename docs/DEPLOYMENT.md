@@ -18,6 +18,9 @@ DARKPHISH_SECRET_KEY_V1=base64:<32-byte-value>
 Raw, `base64:`, and `hex:` encodings are accepted. Keep key IDs stable and use
 only letters, digits, dots, underscores, or hyphens. Never commit key material.
 Production startup fails when the active key is absent or invalid.
+For 0.2 compatibility, the deprecated `DARKPHISH_SECRET_ENCRYPTION_KEY`
+automatically becomes the active `legacy` key; migrate to the explicit keyring
+variables before the compatibility fallback is removed.
 
 To rotate without downtime, deploy the old and new keys together, select the new
 ID with `DARKPHISH_SECRET_ACTIVE_KEY`, then run:

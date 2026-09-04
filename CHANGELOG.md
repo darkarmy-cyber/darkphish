@@ -24,11 +24,11 @@ Semantic Versioning while the public API and schema are still pre-1.0.
 
 - Docker is no longer part of required CI or the release path; supported release artifacts are native binaries.
 - The CLI reports the display version, authoritative SemVer, commit SHA, and build timestamp; local builds identify themselves as `0.2-dev`.
+- The deprecated single `DARKPHISH_SECRET_ENCRYPTION_KEY` remains accepted for one release and is mapped to the `legacy` key ID; operators should migrate to the active-key/keyring variables before rotating.
 
 ### Breaking
 
 - Existing permanent API keys stop authenticating. Create a scoped personal access token in Account Settings.
-- Encrypted credential review requires `DARKPHISH_SECRET_ACTIVE_KEY` and the matching `DARKPHISH_SECRET_KEY_<ID>` key.
 
 ## 0.1.0 - 2026-09-04
 

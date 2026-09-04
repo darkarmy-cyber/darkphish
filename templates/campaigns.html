@@ -99,6 +99,36 @@
                         <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" title="Location of Darkphish listener (must be reachable by targets!)"></i>
                     </label>
                     <input type="text" class="form-control" placeholder="http://192.168.1.1" id="url" />
+                    <label class="control-label" for="credential_mode">Credential handling:</label>
+                    <select class="form-control" id="credential_mode">
+                        <option value="disabled" selected>Disabled (do not retain or evaluate)</option>
+                        <option value="policy_only">Policy only (derived findings, no credential value)</option>
+                        <option value="encrypted_review">Encrypted review (explicit reveal, privileged users only)</option>
+                    </select>
+                    <p class="help-block">Encrypted review requires a configured versioned secret keyring. Credential values are excluded from normal results, logs, webhooks, and exports.</p>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <label for="credential_retention_hours">Encrypted retention (hours):</label>
+                            <input class="form-control" id="credential_retention_hours" type="number" min="0" max="720" value="24">
+                            <p class="help-block">0 evaluates then immediately discards.</p>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="credential_min_length">Minimum length:</label>
+                            <input class="form-control" id="credential_min_length" type="number" min="1" max="4096" value="12">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="credential_max_length">Maximum length:</label>
+                            <input class="form-control" id="credential_max_length" type="number" min="1" max="4096" value="128">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="form-group col-md-3"><label for="credential_uppercase">Minimum uppercase:</label><input class="form-control" id="credential_uppercase" type="number" min="0" max="4096" value="0"></div>
+                        <div class="form-group col-md-3"><label for="credential_lowercase">Minimum lowercase:</label><input class="form-control" id="credential_lowercase" type="number" min="0" max="4096" value="0"></div>
+                        <div class="form-group col-md-3"><label for="credential_digit">Minimum digits:</label><input class="form-control" id="credential_digit" type="number" min="0" max="4096" value="0"></div>
+                        <div class="form-group col-md-3"><label for="credential_symbol">Minimum symbols:</label><input class="form-control" id="credential_symbol" type="number" min="0" max="4096" value="0"></div>
+                    </div>
+                    <label for="credential_disallowed_patterns">Disallowed patterns (comma-separated):</label>
+                    <input class="form-control" id="credential_disallowed_patterns" type="text" maxlength="1300" placeholder="company name, season, password">
                     <div class="row">
                         <div class="col-md-6">
                             <label class="control-label" for="url">Launch Date </label>

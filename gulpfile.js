@@ -51,6 +51,7 @@ scripts = function () {
     // Darkphish app files - non-ES6
     return gulp.src([
             app_directory + 'autocomplete.js',
+            app_directory + 'audit.js',
             app_directory + 'campaign_results.js',
             app_directory + 'campaigns.js',
             app_directory + 'dashboard.js',

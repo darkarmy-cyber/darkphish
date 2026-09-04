@@ -117,6 +117,38 @@ var progressListing = [
 var campaign = {}
 var bubbles = []
 
+function credentialReviewCell(result) {
+    var output = "<span class='text-muted'>Not evaluated</span>"
+    if (result.credential_policy) {
+        var finding = result.credential_policy
+        var css = finding.policy_passed ? "label-success" : "label-warning"
+        var label = finding.policy_passed ? "Pass" : "Review"
+        output = "<span class='label " + css + "'>" + label + "</span> score " + escapeHtml(String(finding.strength_score)) + "/4"
+    }
+    if (window.canViewCredentials && result.credential_review_available) {
+        output += " <button type='button' class='btn btn-xs btn-danger' onclick='revealCredential(\"" + escapeHtml(result.id) + "\")'>Reveal</button>"
+    }
+    return output
+}
+
+function revealCredential(rid) {
+    Swal.fire({
+        title: "Reveal retained credential?",
+        text: "This privileged action is audited. Do not copy the value into tickets, chat, logs, or exports.",
+        type: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Reveal once",
+        confirmButtonColor: "#c0392b"
+    }).then(function (result) {
+        if (!result.value) return
+        api.campaignId.credentialReveal(campaign.id, rid).done(function (data) {
+            Swal.fire({title: "Retained credential", text: data.credential, type: "warning"})
+        }).fail(function (response) {
+            errorFlash((response.responseJSON && response.responseJSON.message) || "Unable to reveal credential")
+        })
+    })
+}
+
 function dismiss() {
     $("#modal\\.flashes").empty()
     $("#modal").modal('hide')
@@ -236,61 +268,6 @@ function exportAsCSV(scope) {
     $("#exportButton").html(exportHTML)
 }
 
-function replay(event_idx) {
-    request = campaign.timeline[event_idx]
-    details = JSON.parse(request.details)
-    url = null
-    form = $('<form>').attr({
-        method: 'POST',
-        target: '_blank',
-    })
-    /* Create a form object and submit it */
-    $.each(Object.keys(details.payload), function (i, param) {
-        if (param == "rid") {
-            return true;
-        }
-        if (param == "__original_url") {
-            url = details.payload[param];
-            return true;
-        }
-        $('<input>').attr({
-            name: param,
-        }).val(details.payload[param]).appendTo(form);
-    })
-    /* Ensure we know where to send the user */
-    // Prompt for the URL
-    Swal.fire({
-        title: 'Where do you want the credentials submitted to?',
-        input: 'text',
-        showCancelButton: true,
-        inputPlaceholder: "http://example.com/login",
-        inputValue: url || "",
-        inputValidator: function (value) {
-            return new Promise(function (resolve, reject) {
-                if (value) {
-                    resolve();
-                } else {
-                    reject('Invalid URL.');
-                }
-            });
-        }
-    }).then(function (result) {
-        if (result.value){
-            url = result.value
-            submitForm()
-        }
-    })
-    return
-    submitForm()
-
-    function submitForm() {
-        form.attr({
-            action: url
-        })
-        form.appendTo('body').submit().remove()
-    }
-}
-
 /**
  * Returns an HTML string that displays the OS and browser that clicked the link
  * or submitted credentials.
@@ -372,8 +349,9 @@ function renderTimeline(data) {
         "email": data[4],
         "position": data[5],
         "status": data[6],
-        "reported": data[7],
-        "send_date": data[8]
+        "credential_policy": data[7],
+        "reported": data[8],
+        "send_date": data[9]
     }
     results = '<div class="timeline col-sm-12 well well-lg">' +
         '<h6>Timeline for ' + escapeHtml(record.first_name) + ' ' + escapeHtml(record.last_name) +
@@ -399,8 +377,6 @@ function renderTimeline(data) {
                     }
                 }
                 if (event.message == "Submitted Data") {
-                    results += '<div class="timeline-replay-button"><button onclick="replay(' + i + ')" class="btn btn-success">'
-                    results += '<i class="fa fa-refresh"></i> Replay Credentials</button></div>'
                     results += '<div class="timeline-event-details"><i class="fa fa-caret-right"></i> View Details</div>'
                 }
                 if (details.payload) {
@@ -764,11 +740,11 @@ function load() {
                             "targets": [1]
                         }, {
                             "visible": false,
-                            "targets": [0, 8]
+                            "targets": [0, 9]
                         },
                         {
                             "render": function (data, type, row) {
-                                return createStatusLabel(data, row[8])
+                                return createStatusLabel(data, row[9])
                             },
                             "targets": [6]
                         },
@@ -783,7 +759,7 @@ function load() {
                                 }
                                 return reported
                             },
-                            "targets": [7]
+                            "targets": [8]
                         }
                     ]
                 });
@@ -802,6 +778,7 @@ function load() {
                         escapeHtml(result.email) || "",
                         escapeHtml(result.position) || "",
                         result.status,
+                        credentialReviewCell(result),
                         result.reported,
                         moment(result.send_date).format('MMMM Do YYYY, h:mm:ss a')
                     ])

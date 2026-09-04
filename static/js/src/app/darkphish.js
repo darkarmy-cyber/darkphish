@@ -97,6 +97,9 @@ var api = {
         results: function (id) {
             return query("/campaigns/" + id + "/results", "GET", {}, true)
         },
+		credentialReveal: function (id, rid) {
+			return query("/campaigns/" + id + "/results/" + encodeURIComponent(rid) + "/credential/reveal", "POST", {}, true)
+		},
         // complete() - Completes a campaign at POST /campaigns/:id/complete
         complete: function (id) {
             return query("/campaigns/" + id + "/complete", "POST", {}, true)
@@ -288,6 +291,11 @@ var api = {
     },
     reset: function () {
         return query("/reset", "POST", {}, true)
+    },
+    pats: {
+        get: function () { return query("/pats/", "GET", {}, true) },
+        post: function (request) { return query("/pats/", "POST", request, true) },
+        revoke: function (id) { return query("/pats/" + id, "DELETE", {}, true) }
     }
 }
 window.api = api

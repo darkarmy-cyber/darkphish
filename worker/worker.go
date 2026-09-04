@@ -2,8 +2,10 @@ package worker
 
 import (
 	"context"
+	"strconv"
 	"time"
 
+	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/mailer"
 	"github.com/darkarmy-cyber/darkphish/models"
@@ -104,7 +106,21 @@ func (w *DefaultWorker) processCampaigns(t time.Time) error {
 func (w *DefaultWorker) Start() {
 	log.Info("Background Worker Started Successfully - Waiting for Campaigns")
 	go w.mailer.Start(context.Background())
-	for t := range time.Tick(1 * time.Minute) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+	for t := range ticker.C {
+		credentials, auditEvents, cleanupErr := models.CleanupSecurityRetention(t)
+		if cleanupErr != nil {
+			log.Errorf("security retention cleanup failed: %v", cleanupErr)
+		} else if credentials > 0 || auditEvents > 0 {
+			log.WithFields(logrus.Fields{"credential_records": credentials, "audit_events": auditEvents}).Info("security retention cleanup completed")
+			if credentials > 0 {
+				audit.RecordSystem("credential.delete", "credentials", strconv.FormatInt(credentials, 10), "success")
+			}
+			if auditEvents > 0 {
+				audit.RecordSystem("retention.cleanup", "audit", strconv.FormatInt(auditEvents, 10), "success")
+			}
+		}
 		err := w.processCampaigns(t)
 		if err != nil {
 			log.Error(err)
@@ -117,6 +133,7 @@ func (w *DefaultWorker) Start() {
 func (w *DefaultWorker) LaunchCampaign(c models.Campaign) {
 	ms, err := models.GetMailLogsByCampaign(c.Id)
 	if err != nil {
+		audit.RecordSystem("campaign.start", "campaigns", strconv.FormatInt(c.Id, 10), "failure")
 		log.Error(err)
 		return
 	}
@@ -127,6 +144,7 @@ func (w *DefaultWorker) LaunchCampaign(c models.Campaign) {
 	currentTime := time.Now().UTC()
 	campaignMailCtx, err := models.GetCampaignMailContext(c.Id, c.UserId)
 	if err != nil {
+		audit.RecordSystem("campaign.start", "campaigns", strconv.FormatInt(c.Id, 10), "failure")
 		log.Error(err)
 		return
 	}
@@ -144,6 +162,7 @@ func (w *DefaultWorker) LaunchCampaign(c models.Campaign) {
 		}
 		mailEntries = append(mailEntries, m)
 	}
+	audit.RecordSystem("campaign.start", "campaigns", strconv.FormatInt(c.Id, 10), "success")
 	w.mailer.Queue(mailEntries)
 }
 

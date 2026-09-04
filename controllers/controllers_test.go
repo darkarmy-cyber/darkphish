@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/darkarmy-cyber/darkphish/auth"
 	"github.com/darkarmy-cyber/darkphish/config"
@@ -28,6 +29,12 @@ func setupTest(t *testing.T) *testContext {
 		DBName:         "sqlite3",
 		DBPath:         ":memory:",
 		MigrationsPath: "../db/db_sqlite3/migrations/",
+		Secrets: config.SecretsConfig{
+			ActiveKeyID: "TEST",
+			Keys: map[string]string{
+				"TEST": "0123456789abcdef0123456789abcdef",
+			},
+		},
 	}
 	abs, _ := filepath.Abs("../db/db_sqlite3/migrations/")
 	fmt.Printf("in controllers_test.go: %s\n", abs)
@@ -61,7 +68,10 @@ func setupTest(t *testing.T) *testContext {
 		t.Fatalf("error creating new user: %v", err)
 	}
 
-	ctx.apiKey = u.ApiKey
+	_, ctx.apiKey, err = models.CreatePersonalAccessToken(u.Id, "controller tests", models.AllowedPATScopes(), time.Now().UTC().Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("error creating test personal access token: %v", err)
+	}
 	// Start the phishing server
 	ctx.phishServer = httptest.NewUnstartedServer(NewPhishingServer(ctx.config.PhishConf).server.Handler)
 	ctx.phishServer.Config.Addr = ctx.config.PhishConf.ListenURL

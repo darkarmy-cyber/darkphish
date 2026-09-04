@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/darkarmy-cyber/darkphish/config"
 	ctx "github.com/darkarmy-cyber/darkphish/context"
+	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	"github.com/darkarmy-cyber/darkphish/models"
 )
 
@@ -17,6 +19,7 @@ var successHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Reques
 
 type testContext struct {
 	apiKey string
+	userID int64
 }
 
 func setupTest(t *testing.T) *testContext {
@@ -39,7 +42,11 @@ func setupTest(t *testing.T) *testContext {
 		t.Fatalf("error activating test user: %v", err)
 	}
 	ctx := &testContext{}
-	ctx.apiKey = u.ApiKey
+	_, ctx.apiKey, err = models.CreatePersonalAccessToken(u.Id, "middleware tests", models.AllowedPATScopes(), time.Now().UTC().Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("error creating test personal access token: %v", err)
+	}
+	ctx.userID = u.Id
 	return ctx
 }
 
@@ -123,13 +130,13 @@ func TestRequirePermission(t *testing.T) {
 	}
 }
 
-func TestRequireAPIKey(t *testing.T) {
+func TestRequireAPIAuthentication(t *testing.T) {
 	setupTest(t)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	// Test that making a request without an API key is denied
-	RequireAPIKey(successHandler).ServeHTTP(response, req)
+	RequireAPIAuthentication(successHandler).ServeHTTP(response, req)
 	expected := http.StatusUnauthorized
 	got := response.Code
 	if got != expected {
@@ -175,7 +182,7 @@ func TestInvalidAPIKey(t *testing.T) {
 	req.URL.RawQuery = query.Encode()
 	req.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
-	RequireAPIKey(successHandler).ServeHTTP(response, req)
+	RequireAPIAuthentication(successHandler).ServeHTTP(response, req)
 	expected := http.StatusUnauthorized
 	got := response.Code
 	if got != expected {
@@ -189,11 +196,53 @@ func TestBearerToken(t *testing.T) {
 	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", testCtx.apiKey))
 	req.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
-	RequireAPIKey(successHandler).ServeHTTP(response, req)
+	RequireAPIAuthentication(successHandler).ServeHTTP(response, req)
 	expected := http.StatusOK
 	got := response.Code
 	if got != expected {
 		t.Fatalf("incorrect status code received. expected %d got %d", expected, got)
+	}
+	_, total, err := audit.Query(audit.Filter{Action: "pat.auth.success", Page: 1, PerPage: 10})
+	if err != nil || total != 1 {
+		t.Fatalf("expected one PAT authentication audit event, got total=%d err=%v", total, err)
+	}
+}
+
+func TestPATAuthorizationFailureIsAudited(t *testing.T) {
+	testCtx := setupTest(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/unknown", nil)
+	req.Header.Set("Authorization", "Bearer "+testCtx.apiKey)
+	response := httptest.NewRecorder()
+	RequireAPIAuthentication(EnforcePATScopes(successHandler)).ServeHTTP(response, req)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected %d, got %d", http.StatusForbidden, response.Code)
+	}
+	_, total, err := audit.Query(audit.Filter{Action: "pat.authorization.failure", Page: 1, PerPage: 10})
+	if err != nil || total != 1 {
+		t.Fatalf("expected one PAT authorization failure event, got total=%d err=%v", total, err)
+	}
+}
+
+func TestRequiredPATScopesAreResourceSpecific(t *testing.T) {
+	tests := []struct {
+		method string
+		path   string
+		want   string
+	}{
+		{http.MethodGet, "/api/groups/", "groups:read"},
+		{http.MethodPost, "/api/groups/", "groups:write"},
+		{http.MethodGet, "/api/templates/1", "templates:read"},
+		{http.MethodPut, "/api/pages/1", "landing-pages:write"},
+		{http.MethodPost, "/api/smtp/", "sending-profiles:write"},
+		{http.MethodGet, "/api/imap/", "integrations:read"},
+		{http.MethodPost, "/api/import/site", "landing-pages:write"},
+		{http.MethodPost, "/api/campaigns/1/results/rid/credential/reveal", "credentials:view"},
+		{http.MethodGet, "/api/unknown", ""},
+	}
+	for _, test := range tests {
+		if got := requiredPATScope(test.method, test.path); got != test.want {
+			t.Errorf("%s %s: got %q, want %q", test.method, test.path, got, test.want)
+		}
 	}
 }
 
@@ -201,7 +250,7 @@ func TestAPIKeyInURLIsRejected(t *testing.T) {
 	testCtx := setupTest(t)
 	req := httptest.NewRequest(http.MethodGet, "/?api_key="+testCtx.apiKey, nil)
 	response := httptest.NewRecorder()
-	RequireAPIKey(successHandler).ServeHTTP(response, req)
+	RequireAPIAuthentication(successHandler).ServeHTTP(response, req)
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("expected %d, got %d", http.StatusUnauthorized, response.Code)
 	}
@@ -219,7 +268,7 @@ func TestBearerTokenEnforcesAccountState(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testCtx := setupTest(t)
-			u, err := models.GetUserByAPIKey(testCtx.apiKey)
+			u, err := models.GetUser(testCtx.userID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -231,7 +280,7 @@ func TestBearerTokenEnforcesAccountState(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testCtx.apiKey))
 			response := httptest.NewRecorder()
-			RequireAPIKey(successHandler).ServeHTTP(response, req)
+			RequireAPIAuthentication(successHandler).ServeHTTP(response, req)
 			if response.Code != http.StatusForbidden {
 				t.Fatalf("expected %d, got %d", http.StatusForbidden, response.Code)
 			}
@@ -248,7 +297,7 @@ func TestSessionAuthentication(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req = ctx.Set(req, "user", u)
 	response := httptest.NewRecorder()
-	RequireAPIKey(successHandler).ServeHTTP(response, req)
+	RequireAPIAuthentication(successHandler).ServeHTTP(response, req)
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected %d, got %d", http.StatusOK, response.Code)
 	}

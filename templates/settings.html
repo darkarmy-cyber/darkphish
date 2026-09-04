@@ -27,17 +27,39 @@
             </div>
             <br />
             {{end}}
-            <div class="row">
-                <label for="api_key" class="col-sm-2 control-label form-label">Personal API token:</label>
-                <div class="col-md-6">
-                    <input type="password" id="api_key" onclick="this.select();" value=""
-                        placeholder="Existing token is not displayed" autocomplete="off" class="form-control" readonly />
-                    <p id="api_key_notice" class="help-block">Reset to create a replacement token. Existing API clients will stop working.</p>
-                </div>
-                <form id="apiResetForm">
-                    <button class="btn btn-primary"><i class="fa fa-refresh" type="submit"></i> Reset token</button>
-                </form>
-            </div>
+            <h3>Personal access tokens</h3>
+            <p>Tokens are scoped and expiring. The secret is shown once and is never stored by Darkphish.</p>
+            <form id="patCreateForm" class="form-inline">
+                <input id="pat_name" class="form-control" maxlength="128" placeholder="Token name" required>
+                <select id="pat_expiry" class="form-control">
+                    <option value="7">7 days</option>
+                    <option value="30" selected>30 days</option>
+                    <option value="90">90 days</option>
+                </select>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="campaigns:read" checked> campaigns:read</label>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="campaigns:write"> campaigns:write</label>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="reports:read" checked> reports:read</label>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="groups:read"> groups:read</label>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="groups:write"> groups:write</label>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="templates:read"> templates:read</label>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="templates:write"> templates:write</label>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="landing-pages:read"> landing-pages:read</label>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="landing-pages:write"> landing-pages:write</label>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="sending-profiles:read"> sending-profiles:read</label>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="sending-profiles:write"> sending-profiles:write</label>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="integrations:read"> integrations:read</label>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="integrations:write"> integrations:write</label>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="users:read"> users:read</label>
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="users:write"> users:write</label>
+                {{if .ViewCredentials}}<label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="credentials:view"> credentials:view</label>{{end}}
+                {{if .ModifySystem}}<label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="audit:read"> audit:read</label>{{end}}
+                <label class="checkbox-inline"><input class="pat_scope" type="checkbox" value="tokens:manage"> tokens:manage</label>
+                <button class="btn btn-primary" type="submit"><i class="fa fa-key"></i> Create token</button>
+            </form>
+            <table class="table" id="pat_table">
+                <thead><tr><th>Name</th><th>Prefix</th><th>Scopes</th><th>Expires</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+                <tbody></tbody>
+            </table>
             <br />
             <form id="settingsForm">
                 <div class="row">

@@ -2,10 +2,16 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
+	"unicode/utf8"
 
+	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -51,14 +57,25 @@ func GenerateSecureKey(n int) string {
 	return fmt.Sprintf("%x", k)
 }
 
-// GeneratePasswordHash returns the bcrypt hash for the provided password using
-// the default bcrypt cost.
+const (
+	argon2Time        = uint32(2)
+	argon2Memory      = uint32(19 * 1024)
+	argon2Parallelism = uint8(1)
+	argon2SaltLength  = 16
+	argon2KeyLength   = uint32(32)
+)
+
+// GeneratePasswordHash returns an Argon2id hash using the centrally managed
+// password-hashing policy.
 func GeneratePasswordHash(password string) (string, error) {
-	h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
+	salt := make([]byte, argon2SaltLength)
+	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	return string(h), nil
+	hash := argon2.IDKey([]byte(password), salt, argon2Time, argon2Memory, argon2Parallelism, argon2KeyLength)
+	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s",
+		argon2Memory, argon2Time, argon2Parallelism,
+		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(hash)), nil
 }
 
 // CheckPasswordPolicy ensures the provided password is valid according to our
@@ -72,16 +89,83 @@ func CheckPasswordPolicy(password string) error {
 	// helps to provide a more specific error message
 	case password == "":
 		return ErrEmptyPassword
-	case len(password) < MinPasswordLength:
+	case !utf8.ValidString(password) || utf8.RuneCountInString(password) < MinPasswordLength:
 		return ErrPasswordTooShort
 	}
 	return nil
 }
 
-// ValidatePassword validates that the provided password matches the provided
-// bcrypt hash.
+// ValidatePassword validates that the provided password matches the stored
+// Argon2id or legacy bcrypt hash.
 func ValidatePassword(password string, hash string) error {
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	_, err := ValidatePasswordWithUpgrade(password, hash)
+	return err
+}
+
+// ValidatePasswordWithUpgrade validates current Argon2id hashes and legacy
+// bcrypt hashes. A successful legacy or stale-policy check returns a fresh
+// Argon2id hash for the caller to persist.
+func ValidatePasswordWithUpgrade(password, encoded string) (string, error) {
+	if strings.HasPrefix(encoded, "$2") {
+		if err := bcrypt.CompareHashAndPassword([]byte(encoded), []byte(password)); err != nil {
+			return "", ErrInvalidPassword
+		}
+		return GeneratePasswordHash(password)
+	}
+	if !strings.HasPrefix(encoded, "$argon2id$") {
+		return "", ErrInvalidPassword
+	}
+	params, salt, expected, err := parseArgon2id(encoded)
+	if err != nil {
+		return "", ErrInvalidPassword
+	}
+	actual := argon2.IDKey([]byte(password), salt, params.time, params.memory, params.parallelism, uint32(len(expected)))
+	if subtle.ConstantTimeCompare(actual, expected) != 1 {
+		return "", ErrInvalidPassword
+	}
+	if params.time != argon2Time || params.memory != argon2Memory || params.parallelism != argon2Parallelism || len(expected) != int(argon2KeyLength) {
+		return GeneratePasswordHash(password)
+	}
+	return "", nil
+}
+
+type argon2Parameters struct {
+	time        uint32
+	memory      uint32
+	parallelism uint8
+}
+
+func parseArgon2id(encoded string) (argon2Parameters, []byte, []byte, error) {
+	var params argon2Parameters
+	parts := strings.Split(encoded, "$")
+	if len(parts) != 6 || parts[1] != "argon2id" || parts[2] != "v=19" {
+		return params, nil, nil, ErrInvalidPassword
+	}
+	settings := strings.Split(parts[3], ",")
+	if len(settings) != 3 || !strings.HasPrefix(settings[0], "m=") || !strings.HasPrefix(settings[1], "t=") || !strings.HasPrefix(settings[2], "p=") {
+		return params, nil, nil, ErrInvalidPassword
+	}
+	memory, memoryErr := strconv.ParseUint(strings.TrimPrefix(settings[0], "m="), 10, 32)
+	timeCost, timeErr := strconv.ParseUint(strings.TrimPrefix(settings[1], "t="), 10, 32)
+	parallelism, parallelismErr := strconv.ParseUint(strings.TrimPrefix(settings[2], "p="), 10, 8)
+	if memoryErr != nil || timeErr != nil || parallelismErr != nil || memory < 8 || memory > 256*1024 || timeCost == 0 || timeCost > 10 || parallelism == 0 || parallelism > 16 {
+		return params, nil, nil, ErrInvalidPassword
+	}
+	params.memory = uint32(memory)
+	params.time = uint32(timeCost)
+	params.parallelism = uint8(parallelism)
+	if len(parts[4]) > 128 || len(parts[5]) > 128 {
+		return params, nil, nil, ErrInvalidPassword
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil || len(salt) < 8 || len(salt) > 64 {
+		return params, nil, nil, ErrInvalidPassword
+	}
+	hash, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil || len(hash) < 16 || len(hash) > 64 {
+		return params, nil, nil, ErrInvalidPassword
+	}
+	return params, salt, hash, nil
 }
 
 // ValidatePasswordChange validates that the new password matches the

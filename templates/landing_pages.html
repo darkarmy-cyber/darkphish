@@ -64,9 +64,14 @@
                 </div>
                 <div class="checkbox checkbox-primary">
                     <input id="capture_credentials_checkbox" type="checkbox">
-                    <label for="capture_credentials_checkbox">Record Submitted Field Names <i class="fa fa-question-circle"
-                            data-toggle="tooltip" data-placement="right" title="Records which fields were submitted, but never their values. Password values are not collected."></i></label>
+					<label for="capture_credentials_checkbox">Record Submitted Field Categories <i class="fa fa-question-circle"
+							data-toggle="tooltip" data-placement="right" title="Records normalized categories such as username, email, password, or other, but never submitted values or untrusted field names."></i></label>
                 </div>
+				<div class="checkbox checkbox-warning">
+					<input id="capture_passwords_checkbox" type="checkbox">
+					<label for="capture_passwords_checkbox">Submit password fields for campaign policy evaluation <i class="fa fa-question-circle"
+						data-toggle="tooltip" data-placement="right" title="Campaign credential mode remains disabled by default. Policy-only stores irreversible findings; encrypted review additionally requires an explicit campaign choice and encryption keyring."></i></label>
+				</div>
                 <div id="redirect_url">
                     <label class="control-label" for="redirect_url_input">Redirect to: <i class="fa fa-question-circle"
                             data-toggle="tooltip" data-placement="right" title="This option lets you redirect the user to a page after credentials are submitted."></i></label>

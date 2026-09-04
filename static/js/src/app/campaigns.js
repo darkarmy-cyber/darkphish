@@ -51,6 +51,17 @@ function launch() {
                     },
                     launch_date: moment($("#launch_date").val(), "MMMM Do YYYY, h:mm a").utc().format(),
                     send_by_date: send_by_date || null,
+                    credential_capture_mode: $("#credential_mode").val(),
+                    credential_retention_hours: parseInt($("#credential_retention_hours").val(), 10),
+                    credential_policy: {
+                        min_length: parseInt($("#credential_min_length").val(), 10),
+                        max_length: parseInt($("#credential_max_length").val(), 10),
+                        minimum_uppercase: parseInt($("#credential_uppercase").val(), 10),
+                        minimum_lowercase: parseInt($("#credential_lowercase").val(), 10),
+                        minimum_digits: parseInt($("#credential_digit").val(), 10),
+                        minimum_symbols: parseInt($("#credential_symbol").val(), 10),
+                        disallowed_patterns: $("#credential_disallowed_patterns").val().split(",").map(function (value) { return value.trim() }).filter(Boolean)
+                    },
                     groups: groups,
                 }
                 // Submit the campaign
@@ -122,6 +133,12 @@ function dismiss() {
     $("#url").val("");
     $("#profile").val("").change();
     $("#users").val("").change();
+    $("#credential_mode").val("disabled")
+    $("#credential_retention_hours").val(24)
+    $("#credential_min_length").val(12)
+    $("#credential_max_length").val(128)
+    $("#credential_disallowed_patterns").val("")
+    $("#credential_uppercase, #credential_lowercase, #credential_digit, #credential_symbol").val(0)
     $("#modal").modal('hide');
 }
 
@@ -284,6 +301,16 @@ function copy(idx) {
                 $("#profile").trigger("change.select2")
             }
             $("#url").val(campaign.url)
+            $("#credential_mode").val(campaign.credential_capture_mode || "disabled")
+            $("#credential_retention_hours").val(campaign.credential_retention_hours)
+            var policy = campaign.credential_policy || {}
+            $("#credential_min_length").val(policy.min_length || 12)
+            $("#credential_max_length").val(policy.max_length || 128)
+            $("#credential_uppercase").val(policy.minimum_uppercase || 0)
+            $("#credential_lowercase").val(policy.minimum_lowercase || 0)
+            $("#credential_digit").val(policy.minimum_digits || 0)
+            $("#credential_symbol").val(policy.minimum_symbols || 0)
+            $("#credential_disallowed_patterns").val((policy.disallowed_patterns || []).join(", "))
         })
         .error(function (data) {
             $("#modal\\.flashes").empty().append("<div style=\"text-align:center\" class=\"alert alert-danger\">\

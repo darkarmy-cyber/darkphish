@@ -144,6 +144,7 @@ func (as *AdminServer) registerRoutes() {
 	router.HandleFunc("/settings", mid.Use(as.Settings, mid.RequireLogin))
 	router.HandleFunc("/users", mid.Use(as.UserManagement, mid.RequirePermission(models.PermissionModifySystem), mid.RequireLogin))
 	router.HandleFunc("/webhooks", mid.Use(as.Webhooks, mid.RequirePermission(models.PermissionModifySystem), mid.RequireLogin))
+	router.HandleFunc("/audit", mid.Use(as.Audit, mid.RequirePermission(models.PermissionModifySystem), mid.RequireLogin))
 	router.HandleFunc("/impersonate", mid.Use(as.Impersonate, mid.RequirePermission(models.PermissionModifySystem), mid.RequireLogin))
 	// Create the API routes
 	api := api.NewServer(
@@ -214,11 +215,12 @@ func (as *AdminServer) Ready(w http.ResponseWriter, _ *http.Request) {
 }
 
 type templateParams struct {
-	Title        string
-	Flashes      []interface{}
-	User         models.User
-	Version      string
-	ModifySystem bool
+	Title           string
+	Flashes         []interface{}
+	User            models.User
+	Version         string
+	ModifySystem    bool
+	ViewCredentials bool
 }
 
 // newTemplateParams returns the default template parameters for a user.
@@ -226,11 +228,13 @@ func newTemplateParams(r *http.Request) templateParams {
 	user := ctx.Get(r, "user").(models.User)
 	session := ctx.Get(r, "session").(*sessions.Session)
 	modifySystem, _ := user.HasPermission(models.PermissionModifySystem)
+	viewCredentials, _ := user.HasPermission(models.PermissionViewCredentials)
 	return templateParams{
-		User:         user,
-		ModifySystem: modifySystem,
-		Version:      config.Version,
-		Flashes:      session.Flashes(),
+		User:            user,
+		ModifySystem:    modifySystem,
+		ViewCredentials: viewCredentials,
+		Version:         config.Version,
+		Flashes:         session.Flashes(),
 	}
 }
 
@@ -320,6 +324,7 @@ func (as *AdminServer) Settings(w http.ResponseWriter, r *http.Request) {
 			api.JSONResponse(w, msg, http.StatusInternalServerError)
 			return
 		}
+		recordBrowserAudit(r, u.Username, u.Id, "password.change", u.Username, "success")
 		api.JSONResponse(w, msg, http.StatusOK)
 	}
 }
@@ -375,6 +380,12 @@ func (as *AdminServer) Webhooks(w http.ResponseWriter, r *http.Request) {
 	getTemplate(w, "webhooks").ExecuteTemplate(w, "base", params)
 }
 
+func (as *AdminServer) Audit(w http.ResponseWriter, r *http.Request) {
+	params := newTemplateParams(r)
+	params.Title = "Audit Log"
+	getTemplate(w, "audit").ExecuteTemplate(w, "base", params)
+}
+
 // Impersonate allows an admin to login to a user account without needing the password
 func (as *AdminServer) Impersonate(w http.ResponseWriter, r *http.Request) {
 
@@ -383,7 +394,7 @@ func (as *AdminServer) Impersonate(w http.ResponseWriter, r *http.Request) {
 		username := r.FormValue("username")
 		u, err := models.GetUserByUsername(username)
 		if err != nil {
-			recordBrowserAudit(r, actor.Username, actor.Id, "user.impersonate", username, "failure")
+			recordBrowserAudit(r, actor.Username, actor.Id, "impersonation.start", username, "failure")
 			log.Error(err)
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -391,8 +402,10 @@ func (as *AdminServer) Impersonate(w http.ResponseWriter, r *http.Request) {
 		session := ctx.Get(r, "session").(*sessions.Session)
 		session.Values = make(map[interface{}]interface{})
 		session.Values["id"] = u.Id
+		session.Values["impersonator_id"] = actor.Id
+		session.Values["impersonator_username"] = actor.Username
 		session.Save(r, w)
-		recordBrowserAudit(r, actor.Username, actor.Id, "user.impersonate", u.Username, "success")
+		recordBrowserAudit(r, actor.Username, actor.Id, "impersonation.start", u.Username, "success")
 	}
 	http.Redirect(w, r, "/", http.StatusFound)
 }
@@ -421,25 +434,29 @@ func (as *AdminServer) Login(w http.ResponseWriter, r *http.Request) {
 		username, password := r.FormValue("username"), r.FormValue("password")
 		u, err := models.GetUserByUsername(username)
 		if err != nil {
-			recordBrowserAudit(r, username, 0, "auth.login", username, "failure")
+			recordBrowserAudit(r, username, 0, "auth.login.failure", username, "failure")
 			log.Error(err)
 			as.handleInvalidLogin(w, r, "Invalid Username/Password")
 			return
 		}
 		// Validate the user's password
-		err = auth.ValidatePassword(password, u.Hash)
+		upgradedHash, validationErr := auth.ValidatePasswordWithUpgrade(password, u.Hash)
+		err = validationErr
 		if err != nil {
-			recordBrowserAudit(r, username, u.Id, "auth.login", username, "failure")
+			recordBrowserAudit(r, username, u.Id, "auth.login.failure", username, "failure")
 			log.Error(err)
 			as.handleInvalidLogin(w, r, "Invalid Username/Password")
 			return
 		}
 		if u.AccountLocked {
-			recordBrowserAudit(r, username, u.Id, "auth.login", username, "failure")
+			recordBrowserAudit(r, username, u.Id, "auth.login.failure", username, "failure")
 			as.handleInvalidLogin(w, r, "Account Locked")
 			return
 		}
 		u.LastLogin = time.Now().UTC()
+		if upgradedHash != "" {
+			u.Hash = upgradedHash
+		}
 		err = models.PutUser(&u)
 		if err != nil {
 			log.Error(err)
@@ -447,7 +464,7 @@ func (as *AdminServer) Login(w http.ResponseWriter, r *http.Request) {
 		// If we've logged in, save the session and redirect to the dashboard
 		session.Values["id"] = u.Id
 		session.Save(r, w)
-		recordBrowserAudit(r, u.Username, u.Id, "auth.login", u.Username, "success")
+		recordBrowserAudit(r, u.Username, u.Id, "auth.login.success", u.Username, "success")
 		as.nextOrIndex(w, r)
 	}
 }
@@ -456,9 +473,14 @@ func (as *AdminServer) Login(w http.ResponseWriter, r *http.Request) {
 func (as *AdminServer) Logout(w http.ResponseWriter, r *http.Request) {
 	u := ctx.Get(r, "user").(models.User)
 	session := ctx.Get(r, "session").(*sessions.Session)
+	impersonatorID, impersonating := session.Values["impersonator_id"].(int64)
+	impersonatorUsername, _ := session.Values["impersonator_username"].(string)
 	session.Values = make(map[interface{}]interface{})
 	session.Options.MaxAge = -1
 	session.Save(r, w)
+	if impersonating {
+		recordBrowserAudit(r, impersonatorUsername, impersonatorID, "impersonation.stop", u.Username, "success")
+	}
 	recordBrowserAudit(r, u.Username, u.Id, "auth.logout", u.Username, "success")
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
@@ -517,6 +539,7 @@ func (as *AdminServer) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		if u.Username == models.DefaultAdminUsername {
 			models.RemoveInitialAdminPasswordFile()
 		}
+		recordBrowserAudit(r, u.Username, u.Id, "password.change", u.Username, "success")
 		// TODO: We probably want to flash a message here that the password was
 		// changed successfully. The problem is that when the user resets their
 		// password on first use, they will see two flashes on the dashboard-

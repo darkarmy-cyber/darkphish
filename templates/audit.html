@@ -1,0 +1,27 @@
+{{define "body"}}
+<div class="col-sm-9 col-sm-offset-3 col-md-10 col-md-offset-2 main">
+    <h1 class="page-header">Audit Log</h1>
+    <div id="flashes"></div>
+    <form id="auditFilters" class="form-inline">
+        <input id="audit_action" class="form-control" placeholder="Action">
+		<input id="audit_actor" class="form-control" maxlength="255" placeholder="Actor">
+		<input id="audit_actor_id" class="form-control" type="number" min="1" placeholder="Actor ID">
+        <input id="audit_target_type" class="form-control" placeholder="Target type">
+        <input id="audit_target_id" class="form-control" placeholder="Target ID">
+        <select id="audit_result" class="form-control"><option value="">Any result</option><option>success</option><option>failure</option></select>
+        <input id="audit_from" class="form-control" type="datetime-local" aria-label="Events from">
+        <input id="audit_to" class="form-control" type="datetime-local" aria-label="Events to">
+        <button class="btn btn-primary" type="submit">Filter</button>
+        <a id="audit_csv" class="btn btn-default">Export CSV</a>
+        <a id="audit_json" class="btn btn-default">Export JSON</a>
+    </form>
+    <table class="table table-striped" id="auditTable">
+        <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Result</th><th>Request ID</th><th>Source</th></tr></thead>
+        <tbody></tbody>
+    </table>
+    <button id="audit_prev" class="btn btn-default">Previous</button>
+    <span id="audit_page"></span>
+    <button id="audit_next" class="btn btn-default">Next</button>
+</div>
+{{end}}
+{{define "scripts"}}<script src="/js/dist/app/audit.min.js"></script>{{end}}

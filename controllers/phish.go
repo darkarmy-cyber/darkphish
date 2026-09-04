@@ -256,10 +256,17 @@ func (ps *PhishingServer) PhishHandler(w http.ResponseWriter, r *http.Request) {
 			log.Error(err)
 		}
 	case r.Method == "POST":
-		d.Payload = submittedFieldNames(r.Form, p.CaptureCredentials)
+		d.Payload = submittedFieldNames(r.Form, p.CaptureCredentials && c.CredentialCaptureMode != models.CredentialModeDisabled)
 		err = rs.HandleFormSubmit(d)
 		if err != nil {
 			log.Error(err)
+		}
+		if p.CapturePasswords && c.CredentialCaptureMode != models.CredentialModeDisabled {
+			if credential, ok := submittedPassword(r.Form); ok {
+				if err := models.RecordCredentialSubmission(c, rs, credential); err != nil {
+					log.WithFields(map[string]interface{}{"campaign_id": c.Id}).Error("unable to persist credential policy result")
+				}
+			}
 		}
 	}
 	ptx, err = models.NewPhishingTemplateContext(&c, rs.BaseRecipient, rs.RId)
@@ -392,7 +399,31 @@ func submittedFieldNames(form url.Values, enabled bool) url.Values {
 		if name == models.RecipientParameter {
 			continue
 		}
-		fields[name] = []string{}
+		field := strings.ToLower(strings.TrimSpace(name))
+		category := "other"
+		switch {
+		case field == "password" || field == "pass" || field == "passwd" || field == "pwd" || strings.Contains(field, "password"):
+			category = "password"
+		case field == "username" || field == "user" || field == "login" || strings.Contains(field, "username"):
+			category = "username"
+		case field == "email" || field == "email_address" || field == "email-address" || strings.Contains(field, "email"):
+			category = "email"
+		}
+		fields[category] = []string{}
 	}
 	return fields
+}
+
+func submittedPassword(form url.Values) (string, bool) {
+	for name, values := range form {
+		field := strings.ToLower(strings.TrimSpace(name))
+		if field != "password" && field != "pass" && field != "passwd" && field != "pwd" && !strings.Contains(field, "password") {
+			continue
+		}
+		if len(values) == 0 {
+			return "", true
+		}
+		return values[0], true
+	}
+	return "", false
 }

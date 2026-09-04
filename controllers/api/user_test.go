@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
-	"golang.org/x/crypto/bcrypt"
-
+	"github.com/darkarmy-cyber/darkphish/auth"
 	ctx "github.com/darkarmy-cyber/darkphish/context"
 	"github.com/darkarmy-cyber/darkphish/models"
 )
@@ -30,6 +30,12 @@ func createUnpriviledgedUser(t *testing.T, slug string) *models.User {
 	if err != nil {
 		t.Fatalf("error saving unpriviledged user: %v", err)
 	}
+	_, rawToken, err := models.CreatePersonalAccessToken(unauthorizedUser.Id, "user tests", models.AllowedPATScopes(), time.Now().UTC().Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("error creating test personal access token: %v", err)
+	}
+	// The legacy field is used only as transient test storage for the raw PAT.
+	unauthorizedUser.ApiKey = rawToken
 	return unauthorizedUser
 }
 
@@ -140,7 +146,7 @@ func TestModifyUser(t *testing.T) {
 	if response.Username != got.Username {
 		t.Fatalf("unexpected username received. expected %s got %s", response.Username, got.Username)
 	}
-	err = bcrypt.CompareHashAndPassword([]byte(got.Hash), []byte(newPassword))
+	err = auth.ValidatePassword(newPassword, got.Hash)
 	if err != nil {
 		t.Fatalf("incorrect hash received for created user. expected %s got %s", []byte(newPassword), []byte(got.Hash))
 	}

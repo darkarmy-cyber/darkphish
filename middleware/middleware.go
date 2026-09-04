@@ -74,12 +74,18 @@ func AuditAPI(next http.Handler) http.Handler {
 func apiAuditAction(method, path string) string {
 	clean := strings.TrimSuffix(path, "/")
 	switch {
-	case method == http.MethodPost && clean == "/api/reset":
-		return "api_token.rotate"
+	case method == http.MethodGet && clean == "/api/audit/export":
+		return "data.export"
+	case method == http.MethodPost && strings.HasSuffix(clean, "/credential/reveal"):
+		return "credential.view"
+	case method == http.MethodPost && clean == "/api/pats":
+		return "pat.create"
+	case method == http.MethodDelete && strings.HasPrefix(clean, "/api/pats/"):
+		return "pat.revoke"
 	case method == http.MethodGet && strings.HasSuffix(clean, "/results") && strings.HasPrefix(clean, "/api/campaigns/"):
-		return "credential_data.access"
+		return "campaign.results.view"
 	case method == http.MethodPost && clean == "/api/campaigns":
-		return "campaign.create_and_launch"
+		return "campaign.create"
 	case method == http.MethodPost && strings.HasSuffix(clean, "/complete"):
 		return "campaign.complete"
 	case method == http.MethodDelete && strings.HasPrefix(clean, "/api/campaigns/"):
@@ -91,11 +97,11 @@ func apiAuditAction(method, path string) string {
 	case strings.HasPrefix(clean, "/api/users/") && method == http.MethodPut:
 		return "user.update"
 	case strings.HasPrefix(clean, "/api/smtp") && method != http.MethodGet && method != http.MethodHead:
-		return "smtp.modify"
+		return "smtp.update"
 	case strings.HasPrefix(clean, "/api/imap") && method != http.MethodGet && method != http.MethodHead:
-		return "imap.modify"
+		return "imap.update"
 	case strings.HasPrefix(clean, "/api/webhooks") && method != http.MethodGet && method != http.MethodHead:
-		return "webhook.modify"
+		return "webhook.update"
 	case method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions:
 		return "api.modify"
 	default:
@@ -147,12 +153,13 @@ func GetContext(handler http.Handler) http.HandlerFunc {
 	}
 }
 
-// RequireAPIKey authenticates external callers with a bearer token and browser
+// RequireAPIAuthentication authenticates external callers with a PAT and browser
 // callers with their secure session. Query-string API keys are intentionally
 // rejected because URLs are routinely persisted in logs and browser history.
-func RequireAPIKey(handler http.Handler) http.Handler {
+func RequireAPIAuthentication(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("api_key") != "" {
+			audit.Record(r, "anonymous", 0, "pat.auth.failure", "api", "failure", "pat")
 			JSONError(w, http.StatusUnauthorized, "API keys in URLs are disabled; use Authorization: Bearer")
 			return
 		}
@@ -162,19 +169,24 @@ func RequireAPIKey(handler http.Handler) http.Handler {
 		if authorization != "" {
 			token, ok := bearerToken(authorization)
 			if !ok {
+				audit.Record(r, "anonymous", 0, "pat.auth.failure", "api", "failure", "pat")
 				JSONError(w, http.StatusUnauthorized, "Invalid Authorization header")
 				return
 			}
-			var err error
-			u, err = models.GetUserByAPIKey(token)
+			authentication, err := models.AuthenticatePersonalAccessToken(token)
 			if err != nil {
+				audit.Record(r, "anonymous", 0, "pat.auth.failure", "api", "failure", "pat")
 				JSONError(w, http.StatusUnauthorized, "Invalid API token")
 				return
 			}
-			r = ctx.Set(r, "auth_method", "bearer")
+			u = authentication.User
+			r = ctx.Set(r, "auth_method", "pat")
+			r = ctx.Set(r, "pat_id", authentication.Token.ID)
+			r = ctx.Set(r, "pat_scopes", authentication.Scopes)
 		} else {
 			current := ctx.Get(r, "user")
 			if current == nil {
+				audit.Record(r, "anonymous", 0, "auth.session.failure", "api", "failure", "session")
 				JSONError(w, http.StatusUnauthorized, "Authentication required")
 				return
 			}
@@ -182,13 +194,109 @@ func RequireAPIKey(handler http.Handler) http.Handler {
 			r = ctx.Set(r, "auth_method", "session")
 		}
 		if err := auth.CheckAccountState(u.AccountLocked, u.PasswordChangeRequired, false); err != nil {
+			if authorization != "" {
+				audit.Record(r, u.Username, u.Id, "pat.auth.failure", "api", "failure", "pat")
+			}
 			JSONError(w, http.StatusForbidden, err.Error())
 			return
 		}
 		r = ctx.Set(r, "user", u)
 		r = ctx.Set(r, "user_id", u.Id)
+		if authorization != "" {
+			audit.Record(r, u.Username, u.Id, "pat.auth.success", "api", "success", "pat")
+		}
 		handler.ServeHTTP(w, r)
 	})
+}
+
+// EnforcePATScopes applies least-privilege scopes in addition to normal user
+// role permissions. Browser sessions are unaffected.
+func EnforcePATScopes(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if method, _ := ctx.Get(r, "auth_method").(string); method != "pat" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		required := requiredPATScope(r.Method, r.URL.Path)
+		scopes, _ := ctx.Get(r, "pat_scopes").(map[string]struct{})
+		if required == "" {
+			recordPATAuthorizationFailure(r)
+			JSONError(w, http.StatusForbidden, "Personal access tokens cannot access this route")
+			return
+		}
+		if _, ok := scopes[required]; !ok {
+			recordPATAuthorizationFailure(r)
+			JSONError(w, http.StatusForbidden, "Personal access token lacks required scope: "+required)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func recordPATAuthorizationFailure(r *http.Request) {
+	user, _ := ctx.Get(r, "user").(models.User)
+	audit.Record(r, user.Username, user.Id, "pat.authorization.failure", r.URL.Path, "failure", "pat")
+}
+
+func requiredPATScope(method, path string) string {
+	clean := strings.TrimSuffix(path, "/")
+	write := method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions
+	switch {
+	case strings.HasPrefix(clean, "/api/pats"):
+		return "tokens:manage"
+	case strings.HasPrefix(clean, "/api/audit"):
+		return "audit:read"
+	case strings.HasSuffix(clean, "/credential/reveal"):
+		return "credentials:view"
+	case strings.HasPrefix(clean, "/api/campaigns"):
+		if !write && (strings.HasSuffix(clean, "/results") || strings.HasSuffix(clean, "/summary")) {
+			return "reports:read"
+		}
+		if write {
+			return "campaigns:write"
+		}
+		return "campaigns:read"
+	case strings.HasPrefix(clean, "/api/groups"):
+		if write {
+			return "groups:write"
+		}
+		return "groups:read"
+	case strings.HasPrefix(clean, "/api/templates"):
+		if write {
+			return "templates:write"
+		}
+		return "templates:read"
+	case strings.HasPrefix(clean, "/api/pages"):
+		if write {
+			return "landing-pages:write"
+		}
+		return "landing-pages:read"
+	case strings.HasPrefix(clean, "/api/smtp") || strings.HasPrefix(clean, "/api/util/send_test_email"):
+		if write {
+			return "sending-profiles:write"
+		}
+		return "sending-profiles:read"
+	case strings.HasPrefix(clean, "/api/users"):
+		if write {
+			return "users:write"
+		}
+		return "users:read"
+	case strings.HasPrefix(clean, "/api/imap") || strings.HasPrefix(clean, "/api/webhooks"):
+		if write {
+			return "integrations:write"
+		}
+		return "integrations:read"
+	case clean == "/api/import/group":
+		return "groups:write"
+	case clean == "/api/import/email":
+		return "templates:write"
+	case clean == "/api/import/site":
+		return "landing-pages:write"
+	case strings.HasPrefix(clean, "/api/reset"):
+		return ""
+	default:
+		return ""
+	}
 }
 
 func bearerToken(value string) (string, bool) {

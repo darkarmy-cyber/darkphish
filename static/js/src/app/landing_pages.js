@@ -13,7 +13,7 @@ function save(idx) {
     editor = CKEDITOR.instances["html_editor"]
     page.html = editor.getData()
     page.capture_credentials = $("#capture_credentials_checkbox").prop("checked")
-    page.capture_passwords = false
+    page.capture_passwords = $("#capture_passwords_checkbox").prop("checked")
     page.redirect_url = $("#redirect_url_input").val()
     if (idx != -1) {
         page.id = pages[idx].id
@@ -116,7 +116,8 @@ function edit(idx) {
         page = pages[idx]
         $("#name").val(page.name)
         $("#html_editor").val(page.html)
-        $("#capture_credentials_checkbox").prop("checked", page.capture_credentials)
+		$("#capture_credentials_checkbox").prop("checked", page.capture_credentials)
+		$("#capture_passwords_checkbox").prop("checked", page.capture_passwords)
         $("#redirect_url_input").val(page.redirect_url)
         if (page.capture_credentials) {
             $("#redirect_url").show()

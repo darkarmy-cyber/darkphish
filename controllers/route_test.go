@@ -8,8 +8,10 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/darkarmy-cyber/darkphish/models"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func attemptLogin(t *testing.T, ctx *testContext, client *http.Client, username, password, optionalPath string) *http.Response {
@@ -50,6 +52,33 @@ func attemptLogin(t *testing.T, ctx *testContext, client *http.Client, username,
 		t.Fatalf("error requesting the /login endpoint: %v", err)
 	}
 	return resp
+}
+
+func TestSuccessfulLegacyBcryptLoginUpgradesHash(t *testing.T) {
+	ctx := setupTest(t)
+	defer tearDown(t, ctx)
+	user, err := models.GetUser(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := bcrypt.GenerateFromPassword([]byte("legacy-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user.Hash = string(legacy)
+	user.PasswordChangeRequired = false
+	if err := models.PutUser(&user); err != nil {
+		t.Fatal(err)
+	}
+	response := attemptLogin(t, ctx, &http.Client{}, user.Username, "legacy-password", "")
+	response.Body.Close()
+	user, err = models.GetUser(user.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(user.Hash, "$argon2id$") {
+		t.Fatalf("legacy hash was not upgraded: %q", user.Hash)
+	}
 }
 
 func TestLoginCSRF(t *testing.T) {
@@ -128,9 +157,10 @@ func TestBearerAPIBypassesBrowserCrossOriginProtection(t *testing.T) {
 	if err := models.PutUser(&user); err != nil {
 		t.Fatalf("error enabling normal API access: %v", err)
 	}
-	req, err := http.NewRequest(http.MethodPost, ctx.adminServer.URL+"/api/reset", strings.NewReader("{}"))
+	body := fmt.Sprintf(`{"name":"cross-origin client","scopes":["campaigns:read"],"expires_at":%q}`, time.Now().UTC().Add(time.Hour).Format(time.RFC3339))
+	req, err := http.NewRequest(http.MethodPost, ctx.adminServer.URL+"/api/pats/", strings.NewReader(body))
 	if err != nil {
-		t.Fatalf("error creating token rotation request: %v", err)
+		t.Fatalf("error creating PAT request: %v", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+ctx.apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -138,11 +168,11 @@ func TestBearerAPIBypassesBrowserCrossOriginProtection(t *testing.T) {
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("error rotating API token: %v", err)
+		t.Fatalf("error creating PAT: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusCreated)
 	}
 }
 

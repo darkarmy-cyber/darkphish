@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/darkarmy-cyber/darkphish/config"
 	"github.com/darkarmy-cyber/darkphish/models"
@@ -23,6 +24,12 @@ func setupTest(t *testing.T) *testContext {
 		DBName:         "sqlite3",
 		DBPath:         ":memory:",
 		MigrationsPath: "../../db/db_sqlite3/migrations/",
+		Secrets: config.SecretsConfig{
+			ActiveKeyID: "TEST",
+			Keys: map[string]string{
+				"TEST": "0123456789abcdef0123456789abcdef",
+			},
+		},
 	}
 	err := models.Setup(conf)
 	if err != nil {
@@ -39,7 +46,10 @@ func setupTest(t *testing.T) *testContext {
 	if err := models.PutUser(&u); err != nil {
 		t.Fatalf("error activating admin user: %v", err)
 	}
-	ctx.apiKey = u.ApiKey
+	_, ctx.apiKey, err = models.CreatePersonalAccessToken(u.Id, "api tests", models.AllowedPATScopes(), time.Now().UTC().Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("error creating test personal access token: %v", err)
+	}
 	ctx.admin = u
 	ctx.apiServer = NewServer()
 	return ctx

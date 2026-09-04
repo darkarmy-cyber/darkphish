@@ -17,7 +17,7 @@ type User struct {
 	Id                     int64     `json:"id"`
 	Username               string    `json:"username" sql:"not null;unique"`
 	Hash                   string    `json:"-"`
-	ApiKey                 string    `json:"-" sql:"not null;unique"`
+	ApiKey                 string    `json:"-" sql:"not null;unique"` // Legacy schema placeholder; never used for authentication.
 	Role                   Role      `json:"role" gorm:"association_autoupdate:false;association_autocreate:false"`
 	RoleID                 int64     `json:"-"`
 	PasswordChangeRequired bool      `json:"password_change_required"`
@@ -38,14 +38,6 @@ func GetUsers() ([]User, error) {
 	us := []User{}
 	err := db.Preload("Role").Find(&us).Error
 	return us, err
-}
-
-// GetUserByAPIKey returns the user that the given API Key corresponds to. If no user is found, an
-// error is thrown.
-func GetUserByAPIKey(key string) (User, error) {
-	u := User{}
-	err := db.Preload("Role").Where("api_key = ?", key).First(&u).Error
-	return u, err
 }
 
 // GetUserByUsername returns the user that the given username corresponds to. If no user is found, an

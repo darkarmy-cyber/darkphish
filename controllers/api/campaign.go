@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -98,6 +99,29 @@ func (as *Server) CampaignResults(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, cr, http.StatusOK)
 		return
 	}
+}
+
+// CampaignCredentialReveal returns one retained credential only after an
+// explicit POST to the dedicated reveal route. The value is never included in
+// normal campaign results or export routes.
+func (as *Server) CampaignCredentialReveal(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, _ := strconv.ParseInt(vars["id"], 10, 64)
+	w.Header().Set("Cache-Control", "no-store, max-age=0")
+	w.Header().Set("Pragma", "no-cache")
+	reveal, err := models.RevealCredential(id, vars["rid"], ctx.Get(r, "user_id").(int64))
+	if err != nil {
+		switch {
+		case errors.Is(err, models.ErrCredentialExpired):
+			JSONResponse(w, models.Response{Success: false, Message: "Retained credential has expired"}, http.StatusGone)
+		case errors.Is(err, models.ErrCredentialReviewDisabled):
+			JSONResponse(w, models.Response{Success: false, Message: "Credential review is not enabled"}, http.StatusForbidden)
+		default:
+			JSONResponse(w, models.Response{Success: false, Message: "Retained credential not found"}, http.StatusNotFound)
+		}
+		return
+	}
+	JSONResponse(w, reveal, http.StatusOK)
 }
 
 // CampaignSummary returns the summary for a given campaign.

@@ -1,17 +1,44 @@
 $(document).ready(function () {
     $('[data-toggle="tooltip"]').tooltip();
-    $("#apiResetForm").submit(function (e) {
-        api.reset()
-            .success(function (response) {
-                successFlash(response.message)
-                $("#api_key").val(response.data)
-                $("#api_key_notice").text("Copy this token now. It will not be shown again.")
+    function loadPATs() {
+        api.pats.get().done(function (tokens) {
+            var body = $("#pat_table tbody").empty()
+            tokens.forEach(function (token) {
+                var status = token.revoked_at ? "Revoked" : (moment.utc(token.expires_at).isBefore(moment.utc()) ? "Expired" : "Active")
+                var revoke = status === "Active" ? "<button class='btn btn-xs btn-danger pat-revoke' data-id='" + token.id + "'>Revoke</button>" : ""
+                $("<tr>").append(
+                    $("<td>").text(token.name),
+                    $("<td>").text("darkphish_pat_" + token.prefix + "_…"),
+                    $("<td>").text(token.scopes.join(", ")),
+                    $("<td>").text(moment.utc(token.expires_at).local().format("MMMM Do YYYY, h:mm a")),
+                    $("<td>").text(token.last_used_at ? moment.utc(token.last_used_at).local().fromNow() : "Never"),
+                    $("<td>").text(status),
+                    $("<td>").html(revoke)
+                ).appendTo(body)
             })
-            .error(function (data) {
-                errorFlash(data.message)
-            })
+        })
+    }
+    $("#patCreateForm").submit(function () {
+        var scopes = $(".pat_scope:checked").map(function () { return this.value }).get()
+        api.pats.post({
+            name: $("#pat_name").val(),
+            scopes: scopes,
+            expires_at: moment.utc().add(parseInt($("#pat_expiry").val(), 10), "days").format()
+        }).done(function (response) {
+            $("#pat_name").val("")
+            Swal.fire({title: "Copy this token now", text: response.token, type: "warning"})
+            loadPATs()
+        }).fail(function (data) {
+            errorFlash((data.responseJSON && data.responseJSON.message) || "Unable to create token")
+        })
         return false
     })
+    $("#pat_table").on("click", ".pat-revoke", function () {
+        api.pats.revoke($(this).data("id")).done(loadPATs).fail(function (data) {
+            errorFlash((data.responseJSON && data.responseJSON.message) || "Unable to revoke token")
+        })
+    })
+    loadPATs()
     $("#settingsForm").submit(function (e) {
         $.post("/settings", $(this).serialize())
             .done(function (data) {

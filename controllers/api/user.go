@@ -8,6 +8,7 @@ import (
 
 	"github.com/darkarmy-cyber/darkphish/auth"
 	ctx "github.com/darkarmy-cyber/darkphish/context"
+	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/gorilla/mux"
@@ -105,7 +106,7 @@ func (as *Server) Users(w http.ResponseWriter, r *http.Request) {
 		user := models.User{
 			Username:               ur.Username,
 			Hash:                   hash,
-			ApiKey:                 auth.GenerateSecureKey(auth.APIKeyLength),
+			ApiKey:                 "disabled-" + auth.GenerateSecureKey(16),
 			Role:                   role,
 			RoleID:                 role.ID,
 			PasswordChangeRequired: ur.PasswordChangeRequired,
@@ -156,6 +157,7 @@ func (as *Server) User(w http.ResponseWriter, r *http.Request) {
 		log.Infof("Deleted user account for %s", existingUser.Username)
 		JSONResponse(w, models.Response{Success: true, Message: "User deleted Successfully!"}, http.StatusOK)
 	case r.Method == "PUT":
+		wasLocked := existingUser.AccountLocked
 		ur := &userRequest{}
 		err = json.NewDecoder(r.Body).Decode(ur)
 		if err != nil {
@@ -204,7 +206,7 @@ func (as *Server) User(w http.ResponseWriter, r *http.Request) {
 		// password policy.
 		//
 		// Note that we don't force the current password to be provided. The
-		// assumption here is that the API key is a proper bearer token proving
+		// assumption here is that the authenticated session or PAT proves
 		// authenticated access to the account.
 		existingUser.PasswordChangeRequired = ur.PasswordChangeRequired
 		if ur.Password != "" {
@@ -225,6 +227,14 @@ func (as *Server) User(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusInternalServerError)
 			return
+		}
+		if wasLocked != existingUser.AccountLocked {
+			action := "user.unlock"
+			if existingUser.AccountLocked {
+				action = "user.lock"
+			}
+			authMethod, _ := ctx.Get(r, "auth_method").(string)
+			audit.Record(r, currentUser.Username, currentUser.Id, action, "users/"+strconv.FormatInt(existingUser.Id, 10), "success", authMethod)
 		}
 		JSONResponse(w, existingUser, http.StatusOK)
 	}

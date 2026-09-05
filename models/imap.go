@@ -15,21 +15,21 @@ const DefaultIMAPFreq = 60 // Every 60 seconds
 // IMAP contains the attributes needed to handle logging into an IMAP server to check
 // for reported emails
 type IMAP struct {
-	UserId                      int64     `json:"-" gorm:"column:user_id"`
-	Enabled                     bool      `json:"enabled"`
-	Host                        string    `json:"host"`
-	Port                        uint16    `json:"port,string,omitempty"`
-	Username                    string    `json:"username"`
-	Password                    string    `json:"-"`
-	PasswordSet                 bool      `json:"password_set" gorm:"-"`
-	TLS                         bool      `json:"tls"`
-	IgnoreCertErrors            bool      `json:"ignore_cert_errors"`
-	Folder                      string    `json:"folder"`
-	RestrictDomain              string    `json:"restrict_domain"`
-	DeleteReportedCampaignEmail bool      `json:"delete_reported_campaign_email"`
-	LastLogin                   time.Time `json:"last_login,omitempty"`
-	ModifiedDate                time.Time `json:"modified_date"`
-	IMAPFreq                    uint32    `json:"imap_freq,string,omitempty"`
+	UserId                      int64      `json:"-" gorm:"column:user_id"`
+	Enabled                     bool       `json:"enabled"`
+	Host                        string     `json:"host"`
+	Port                        uint16     `json:"port,string,omitempty"`
+	Username                    string     `json:"username"`
+	Password                    string     `json:"-"`
+	PasswordSet                 bool       `json:"password_set" gorm:"-"`
+	TLS                         bool       `json:"tls"`
+	IgnoreCertErrors            bool       `json:"ignore_cert_errors"`
+	Folder                      string     `json:"folder"`
+	RestrictDomain              string     `json:"restrict_domain"`
+	DeleteReportedCampaignEmail bool       `json:"delete_reported_campaign_email"`
+	LastLogin                   *time.Time `json:"last_login,omitempty"`
+	ModifiedDate                time.Time  `json:"modified_date"`
+	IMAPFreq                    uint32     `json:"imap_freq,string,omitempty"`
 }
 
 // UnmarshalJSON accepts a write-only password while normal serialization
@@ -143,6 +143,9 @@ func GetIMAP(uid int64) ([]IMAP, error) {
 
 // PostIMAP updates IMAP settings for a user in the database.
 func PostIMAP(im *IMAP, uid int64) error {
+	if im.ModifiedDate.IsZero() {
+		im.ModifiedDate = time.Now().UTC()
+	}
 	err := im.Validate()
 	if err != nil {
 		log.Error(err)

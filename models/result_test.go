@@ -61,7 +61,7 @@ func (s *ModelsSuite) TestResultScheduledStatus(ch *check.C) {
 func (s *ModelsSuite) TestResultVariableStatus(ch *check.C) {
 	c := s.createCampaignDependencies(ch)
 	c.LaunchDate = time.Now().UTC()
-	c.SendByDate = c.LaunchDate.Add(2 * time.Minute)
+	c.SendByDate = nullableTime(c.LaunchDate.Add(2 * time.Minute))
 	ch.Assert(PostCampaign(&c, c.UserId), check.Equals, nil)
 
 	// The campaign has a window smaller than our group size, so we expect some

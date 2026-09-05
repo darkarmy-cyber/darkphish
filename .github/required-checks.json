@@ -1,0 +1,12 @@
+[
+  "Version and changelog policy",
+  "Go build, test, and analysis",
+  "Go race tests",
+  "Workflow and automation checks",
+  "MySQL migrations up/down/up",
+  "PostgreSQL migrations up/down/up",
+  "Frontend reproducibility",
+  "Repository secret scan",
+  "CodeQL (go)",
+  "CodeQL (javascript-typescript)"
+]

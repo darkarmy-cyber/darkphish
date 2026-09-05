@@ -79,6 +79,9 @@ func TestSuccessfulLegacyBcryptLoginUpgradesHash(t *testing.T) {
 	if !strings.HasPrefix(user.Hash, "$argon2id$") {
 		t.Fatalf("legacy hash was not upgraded: %q", user.Hash)
 	}
+	if user.LastLogin == nil || time.Since(*user.LastLogin) > time.Minute {
+		t.Fatal("successful login did not persist a real last-login timestamp")
+	}
 }
 
 func TestLoginCSRF(t *testing.T) {

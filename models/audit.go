@@ -149,7 +149,14 @@ func (databaseAuditStore) Append(event audit.Event) (int64, error) {
 		_ = tx.Rollback().Error
 		return 0, err
 	}
-	event.ID = row.ID
+	// Hash the persisted representation: MySQL/PostgreSQL round timestamps to
+	// microseconds, unlike SQLite. Hashing the pre-insert nanoseconds would
+	// make an untampered chain fail verification after it is read back.
+	if err := tx.Where("id=?", row.ID).First(&row).Error; err != nil {
+		_ = tx.Rollback().Error
+		return 0, err
+	}
+	event = rowEvent(row)
 	hash, err := audit.HashEvent(event, previousHash)
 	if err != nil {
 		_ = tx.Rollback().Error
@@ -328,7 +335,7 @@ func createAuditCheckpointLocked(lastSequence int64) (audit.Checkpoint, error) {
 	value = audit.Checkpoint{
 		FormatVersion: audit.CheckpointFormatVersion, ChainID: audit.DefaultChainID,
 		FirstEventID: first.ID, LastEventID: last.ID, FirstSequence: first.ChainSequence, LastSequence: last.ChainSequence,
-		FinalHash: last.EventHash, CreatedAt: time.Now().UTC(),
+		FinalHash: last.EventHash, CreatedAt: time.Now().UTC().Truncate(time.Microsecond),
 	}
 	if err := auditSigner.SignCheckpoint(&value); err != nil {
 		return value, err

@@ -1,4 +1,4 @@
-name: Maintainer-approved auto-merge
+name: Protected native auto-merge
 
 on:
   pull_request:
@@ -21,4 +21,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge "$PR_URL" --auto --squash
+          GH_REPO: ${{ github.repository }}
+        run: |
+          test "$(gh api "repos/$GH_REPO/branches/main" --jq '.protected')" = true
+          test "$(gh api "repos/$GH_REPO" --jq '.allow_auto_merge')" = true
+          pr_id="$(gh pr view "$PR_URL" --json id --jq '.id')"
+          gh api graphql -f query="mutation(\$id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: \$id, mergeMethod: SQUASH}) { pullRequest { number } } }" -f id="$pr_id"

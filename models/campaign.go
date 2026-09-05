@@ -19,8 +19,8 @@ type Campaign struct {
 	Name                         string           `json:"name" sql:"not null"`
 	CreatedDate                  time.Time        `json:"created_date"`
 	LaunchDate                   time.Time        `json:"launch_date"`
-	SendByDate                   time.Time        `json:"send_by_date"`
-	CompletedDate                time.Time        `json:"completed_date"`
+	SendByDate                   *time.Time       `json:"send_by_date"`
+	CompletedDate                *time.Time       `json:"completed_date"`
 	TemplateId                   int64            `json:"-"`
 	Template                     Template         `json:"template"`
 	PageId                       int64            `json:"-"`
@@ -76,8 +76,8 @@ type CampaignSummary struct {
 	Id            int64         `json:"id"`
 	CreatedDate   time.Time     `json:"created_date"`
 	LaunchDate    time.Time     `json:"launch_date"`
-	SendByDate    time.Time     `json:"send_by_date"`
-	CompletedDate time.Time     `json:"completed_date"`
+	SendByDate    *time.Time    `json:"send_by_date"`
+	CompletedDate *time.Time    `json:"completed_date"`
 	Status        string        `json:"status"`
 	Name          string        `json:"name"`
 	Stats         CampaignStats `json:"stats"`
@@ -168,7 +168,7 @@ func (c *Campaign) Validate() error {
 		return ErrPageNotSpecified
 	case c.SMTP.Name == "":
 		return ErrSMTPNotSpecified
-	case !c.SendByDate.IsZero() && !c.LaunchDate.IsZero() && c.SendByDate.Before(c.LaunchDate):
+	case c.SendByDate != nil && !c.SendByDate.IsZero() && !c.LaunchDate.IsZero() && c.SendByDate.Before(c.LaunchDate):
 		return ErrInvalidSendByDate
 	}
 	return nil
@@ -281,7 +281,7 @@ func (c *Campaign) getFromAddress() string {
 // generateSendDate creates a sendDate
 func (c *Campaign) generateSendDate(idx int, totalRecipients int) time.Time {
 	// If no send date is specified, just return the launch date
-	if c.SendByDate.IsZero() || c.SendByDate.Equal(c.LaunchDate) {
+	if c.SendByDate == nil || c.SendByDate.IsZero() || c.SendByDate.Equal(c.LaunchDate) {
 		return c.LaunchDate
 	}
 	// Otherwise, we can calculate the range of minutes to send emails
@@ -566,15 +566,15 @@ func PostCampaign(c *Campaign, uid int64) error {
 	// Fill in the details
 	c.UserId = uid
 	c.CreatedDate = time.Now().UTC()
-	c.CompletedDate = time.Time{}
+	c.CompletedDate = nil
 	c.Status = CampaignQueued
 	if c.LaunchDate.IsZero() {
 		c.LaunchDate = c.CreatedDate
 	} else {
 		c.LaunchDate = c.LaunchDate.UTC()
 	}
-	if !c.SendByDate.IsZero() {
-		c.SendByDate = c.SendByDate.UTC()
+	if c.SendByDate != nil {
+		c.SendByDate = nullableTime(*c.SendByDate)
 	}
 	if c.LaunchDate.Before(c.CreatedDate) || c.LaunchDate.Equal(c.CreatedDate) {
 		c.Status = CampaignInProgress
@@ -779,7 +779,7 @@ func CompleteCampaign(id int64, uid int64) error {
 		return nil
 	}
 	// Mark the campaign as complete
-	c.CompletedDate = time.Now().UTC()
+	c.CompletedDate = nullableTime(time.Now().UTC())
 	c.Status = CampaignComplete
 	err = db.Model(&Campaign{}).Where("id=? and user_id=?", id, uid).
 		Select([]string{"completed_date", "status"}).UpdateColumns(&c).Error

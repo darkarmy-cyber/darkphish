@@ -244,8 +244,8 @@ $(document).ready(function () {
                 $("#folder").val(imap.folder)
                 $("#restrictdomain").val(imap.restrict_domain)
                 $('#deletecampaign').prop('checked', imap.delete_reported_campaign_email)
-                $('#lastloginraw').val(imap.last_login)
-                $('#lastlogin').val(moment.utc(imap.last_login).fromNow())
+                $('#lastloginraw').val(imap.last_login || '')
+                $('#lastlogin').val(imap.last_login ? moment.utc(imap.last_login).fromNow() : '')
                 $('#imapfreq').val(imap.imap_freq)
             }  
 

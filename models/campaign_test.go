@@ -46,7 +46,7 @@ func (s *ModelsSuite) TestGenerateSendDate(c *check.C) {
 	// correctly.
 	campaign = s.createCampaignDependencies(c)
 	campaign.LaunchDate = time.Now().UTC()
-	campaign.SendByDate = campaign.LaunchDate.Add(2 * time.Minute)
+	campaign.SendByDate = nullableTime(campaign.LaunchDate.Add(2 * time.Minute))
 	err = PostCampaign(&campaign, campaign.UserId)
 	c.Assert(err, check.Equals, nil)
 
@@ -79,14 +79,14 @@ func (s *ModelsSuite) TestCampaignDateValidation(c *check.C) {
 	//problem
 	campaign = s.createCampaignDependencies(c)
 	campaign.LaunchDate = time.Now().UTC()
-	campaign.SendByDate = campaign.LaunchDate.Add(1 * time.Minute)
+	campaign.SendByDate = nullableTime(campaign.LaunchDate.Add(1 * time.Minute))
 	err = campaign.Validate()
 	c.Assert(err, check.Equals, nil)
 
 	// If the send date is less than the launch date, then there's an issue
 	campaign = s.createCampaignDependencies(c)
 	campaign.LaunchDate = time.Now().UTC()
-	campaign.SendByDate = campaign.LaunchDate.Add(-1 * time.Minute)
+	campaign.SendByDate = nullableTime(campaign.LaunchDate.Add(-1 * time.Minute))
 	err = campaign.Validate()
 	c.Assert(err, check.Equals, ErrInvalidSendByDate)
 }

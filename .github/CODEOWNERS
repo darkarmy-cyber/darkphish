@@ -1,0 +1,11 @@
+# Security ownership records the actual single maintainer. Required approvals
+# remain zero; no artificial second-reviewer gate or automated approval exists.
+/.github/ @oliverkko
+/auth/ @oliverkko
+/middleware/ @oliverkko
+/internal/secrets/ @oliverkko
+/internal/audit/ @oliverkko
+/db/ @oliverkko
+/models/ @oliverkko
+/scripts/ @oliverkko
+/SECURITY.md @oliverkko

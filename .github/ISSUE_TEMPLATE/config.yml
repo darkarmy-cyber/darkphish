@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security vulnerability report
+    url: https://github.com/darkarmy-cyber/darkphish/security/advisories/new
+    about: Report security vulnerabilities privately; never post secret material in issues.

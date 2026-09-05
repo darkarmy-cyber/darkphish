@@ -1,57 +1,60 @@
 name: Native release
 
 on:
-  push:
-    branches: [main, master]
-    paths: [VERSION, CHANGELOG.md]
+  workflow_run:
+    workflows: [CI, CodeQL]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
+  checks: read
+  pull-requests: read
 
 concurrency:
-  group: native-release
+  group: release-lifecycle
   cancel-in-progress: false
 
 jobs:
   metadata:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      startsWith(github.event.head_commit.message, 'release: Darkphish ')
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-24.04
     outputs:
+      ready: ${{ steps.version.outputs.ready }}
+      sha: ${{ steps.version.outputs.sha }}
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       built_at: ${{ steps.version.outputs.built_at }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: main
       - uses: actions/setup-node@v6
         with:
           node-version: 24.19.0
       - run: node scripts/changelog.mjs validate
       - id: version
-        shell: bash
-        run: |
-          version="$(tr -d '[:space:]' < VERSION)"
-          grep -q "^## $version " CHANGELOG.md
-          if git ls-remote --exit-code --tags origin "refs/tags/v$version"; then
-            echo "tag already exists"
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-publish.mjs metadata
 
   verify:
     needs: metadata
+    if: needs.metadata.outputs.ready == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.metadata.outputs.sha }}
       - uses: actions/setup-go@v7
         with:
           go-version: 1.27.1
           cache: true
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 11.19.0
       - uses: actions/setup-node@v6
@@ -83,7 +86,7 @@ jobs:
             goos: windows
             goarch: amd64
             binary: darkphish.exe
-          - runner: macos-15-large
+          - runner: macos-15-intel
             goos: darwin
             goarch: amd64
             binary: darkphish
@@ -94,6 +97,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.metadata.outputs.sha }}
       - uses: actions/setup-go@v7
         with:
           go-version: 1.27.1
@@ -117,12 +122,13 @@ jobs:
           RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
           RELEASE_BINARY: ${{ matrix.binary }}
           BUILT_AT: ${{ needs.metadata.outputs.built_at }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ needs.metadata.outputs.sha }}
         run: |
           $name = "darkphish-$env:RELEASE_TAG-$env:GOOS-$env:GOARCH"
           New-Item -ItemType Directory -Force -Path "dist/$name" | Out-Null
           $ldflags = "-s -w -X main.releaseVersion=$env:RELEASE_VERSION -X main.commitSHA=$env:COMMIT_SHA -X main.builtAt=$env:BUILT_AT"
           go build -trimpath -ldflags $ldflags -o "dist/$name/$env:RELEASE_BINARY" ./
+          if ($LASTEXITCODE -ne 0) { throw "Native build failed" }
           $versionOutput = & "dist/$name/$env:RELEASE_BINARY" version
           $versionParts = $env:RELEASE_VERSION -split '\.'
           $displayVersion = $versionParts[0..1] -join '.'
@@ -153,30 +159,38 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: read
+      checks: read
+      pull-requests: read
       id-token: write
       attestations: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.metadata.outputs.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.19.0
       - uses: actions/download-artifact@v8
         with:
           pattern: darkphish-*
           path: dist
           merge-multiple: true
-      - uses: anchore/sbom-action@v0.20.6
+      - uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
         with:
           path: .
           format: spdx-json
           output-file: dist/darkphish-${{ needs.metadata.outputs.tag }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
       - name: Generate checksums
         working-directory: dist
         run: sha256sum *.zip *.tar.gz *.spdx.json > SHA256SUMS
       - uses: actions/attest@v4
+        if: vars.RELEASE_ATTESTATIONS_SUPPORTED == 'true'
         with:
           subject-path: dist/*
-      - uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.metadata.outputs.tag }}
-          target_commitish: ${{ github.sha }}
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          files: dist/*
+      - name: Publish verified assets without overwriting an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-publish.mjs publish

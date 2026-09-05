@@ -18,10 +18,11 @@ type ServerOption func(*Server)
 // stopped. Rather, it's meant to be used as an http.Handler in the
 // AdminServer.
 type Server struct {
-	handler        http.Handler
-	worker         worker.Worker
-	limiter        *ratelimit.PostLimiter
-	allowedOrigins []string
+	handler          http.Handler
+	worker           worker.Worker
+	limiter          *ratelimit.PostLimiter
+	sensitiveLimiter *ratelimit.PostLimiter
+	allowedOrigins   []string
 }
 
 // NewServer returns a new instance of the API handler with the provided
@@ -30,8 +31,9 @@ func NewServer(options ...ServerOption) *Server {
 	defaultWorker, _ := worker.New()
 	defaultLimiter := ratelimit.NewPostLimiter()
 	as := &Server{
-		worker:  defaultWorker,
-		limiter: defaultLimiter,
+		worker:           defaultWorker,
+		limiter:          defaultLimiter,
+		sensitiveLimiter: ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(5)),
 	}
 	for _, opt := range options {
 		opt(as)
@@ -73,6 +75,7 @@ func (as *Server) registerRoutes() {
 	router.HandleFunc("/reset", as.Reset)
 	router.HandleFunc("/pats/", as.PersonalAccessTokens)
 	router.HandleFunc("/pats/{id:[0-9]+}", as.PersonalAccessToken).Methods(http.MethodDelete)
+	router.HandleFunc("/reauthenticate", as.limitSensitive(http.HandlerFunc(as.Reauthenticate))).Methods(http.MethodPost)
 	router.HandleFunc("/audit/", mid.Use(as.AuditEvents, mid.RequirePermission(models.PermissionModifySystem))).Methods(http.MethodGet)
 	router.HandleFunc("/audit/export", mid.Use(as.AuditExport, mid.RequirePermission(models.PermissionModifySystem))).Methods(http.MethodGet)
 	router.HandleFunc("/campaigns/", as.Campaigns)
@@ -80,7 +83,9 @@ func (as *Server) registerRoutes() {
 	router.HandleFunc("/campaigns/{id:[0-9]+}", as.Campaign)
 	router.HandleFunc("/campaigns/{id:[0-9]+}/results", as.CampaignResults)
 	router.HandleFunc("/campaigns/{id:[0-9]+}/results/{rid:[^/]+}/credential/reveal",
-		mid.Use(as.CampaignCredentialReveal, mid.RequirePermission(models.PermissionViewCredentials))).Methods(http.MethodPost)
+		mid.Use(as.CampaignCredentialReveal, mid.RequirePermission(models.PermissionViewCredentials), mid.RequireCampaignCredentialReview, as.limitSensitive)).Methods(http.MethodPost)
+	router.HandleFunc("/campaigns/{id:[0-9]+}/reviewers", as.CampaignReviewers).Methods(http.MethodGet, http.MethodPost)
+	router.HandleFunc("/campaigns/{id:[0-9]+}/reviewers/{user_id:[0-9]+}", as.CampaignReviewer).Methods(http.MethodDelete)
 	router.HandleFunc("/campaigns/{id:[0-9]+}/summary", as.CampaignSummary)
 	router.HandleFunc("/campaigns/{id:[0-9]+}/complete", as.CampaignComplete).Methods(http.MethodPost)
 	router.HandleFunc("/groups/", as.Groups)

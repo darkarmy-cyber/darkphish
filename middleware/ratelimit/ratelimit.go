@@ -80,7 +80,7 @@ func NewPostLimiter(opts ...PostLimiterOption) *PostLimiter {
 }
 
 func (limiter *PostLimiter) pollCleanup() {
-	ticker := time.NewTicker(time.Duration(limiter.cleanupInterval) * time.Second)
+	ticker := time.NewTicker(limiter.cleanupInterval)
 	for range ticker.C {
 		limiter.Cleanup()
 	}
@@ -122,6 +122,11 @@ func (limiter *PostLimiter) allow(ip string) bool {
 	bucket.lastSeen = time.Now()
 	return bucket.limiter.Allow()
 }
+
+// AllowKey checks a caller-defined identity bucket. Sensitive authenticated
+// endpoints use a user-and-source key so one client cannot globally lock out
+// every reviewer.
+func (limiter *PostLimiter) AllowKey(key string) bool { return limiter.allow(key) }
 
 // Limit enforces the configured rate limit for POST requests.
 //

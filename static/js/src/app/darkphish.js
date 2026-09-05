@@ -100,6 +100,15 @@ var api = {
 		credentialReveal: function (id, rid) {
 			return query("/campaigns/" + id + "/results/" + encodeURIComponent(rid) + "/credential/reveal", "POST", {}, true)
 		},
+		reviewers: function (id) {
+			return query("/campaigns/" + id + "/reviewers", "GET", {}, true)
+		},
+		assignReviewer: function (id, assignment) {
+			return query("/campaigns/" + id + "/reviewers", "POST", assignment, true)
+		},
+		removeReviewer: function (id, userId) {
+			return query("/campaigns/" + id + "/reviewers/" + userId, "DELETE", {}, true)
+		},
         // complete() - Completes a campaign at POST /campaigns/:id/complete
         complete: function (id) {
             return query("/campaigns/" + id + "/complete", "POST", {}, true)

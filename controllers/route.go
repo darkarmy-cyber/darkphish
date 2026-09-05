@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -221,6 +222,8 @@ type templateParams struct {
 	Version         string
 	ModifySystem    bool
 	ViewCredentials bool
+	ManageReviewers bool
+	OperateCampaign bool
 }
 
 // newTemplateParams returns the default template parameters for a user.
@@ -256,6 +259,9 @@ func (as *AdminServer) Campaigns(w http.ResponseWriter, r *http.Request) {
 func (as *AdminServer) CampaignID(w http.ResponseWriter, r *http.Request) {
 	params := newTemplateParams(r)
 	params.Title = "Campaign Results"
+	campaignID, _ := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
+	params.ManageReviewers, _ = models.CanManageCampaignReviewers(campaignID, params.User)
+	params.OperateCampaign = params.ManageReviewers
 	getTemplate(w, "campaign_results").ExecuteTemplate(w, "base", params)
 }
 
@@ -324,6 +330,7 @@ func (as *AdminServer) Settings(w http.ResponseWriter, r *http.Request) {
 			api.JSONResponse(w, msg, http.StatusInternalServerError)
 			return
 		}
+		_ = models.RevokeUserPrivilegedSessions(u.Id)
 		recordBrowserAudit(r, u.Username, u.Id, "password.change", u.Username, "success")
 		api.JSONResponse(w, msg, http.StatusOK)
 	}
@@ -402,6 +409,12 @@ func (as *AdminServer) Impersonate(w http.ResponseWriter, r *http.Request) {
 		session := ctx.Get(r, "session").(*sessions.Session)
 		session.Values = make(map[interface{}]interface{})
 		session.Values["id"] = u.Id
+		binding, bindingErr := models.NewSessionBinding()
+		if bindingErr != nil {
+			http.Error(w, "Unable to create session", http.StatusInternalServerError)
+			return
+		}
+		session.Values["session_id"] = binding
 		session.Values["impersonator_id"] = actor.Id
 		session.Values["impersonator_username"] = actor.Username
 		session.Save(r, w)
@@ -462,7 +475,12 @@ func (as *AdminServer) Login(w http.ResponseWriter, r *http.Request) {
 			log.Error(err)
 		}
 		// If we've logged in, save the session and redirect to the dashboard
-		session.Values["id"] = u.Id
+		binding, bindingErr := models.NewSessionBinding()
+		if bindingErr != nil {
+			as.handleInvalidLogin(w, r, "Unable to create session")
+			return
+		}
+		session.Values = map[interface{}]interface{}{"id": u.Id, "session_id": binding}
 		session.Save(r, w)
 		recordBrowserAudit(r, u.Username, u.Id, "auth.login.success", u.Username, "success")
 		as.nextOrIndex(w, r)
@@ -473,6 +491,8 @@ func (as *AdminServer) Login(w http.ResponseWriter, r *http.Request) {
 func (as *AdminServer) Logout(w http.ResponseWriter, r *http.Request) {
 	u := ctx.Get(r, "user").(models.User)
 	session := ctx.Get(r, "session").(*sessions.Session)
+	binding, _ := session.Values["session_id"].(string)
+	_ = models.RevokePrivilegedSession(binding)
 	impersonatorID, impersonating := session.Values["impersonator_id"].(int64)
 	impersonatorUsername, _ := session.Values["impersonator_username"].(string)
 	session.Values = make(map[interface{}]interface{})
@@ -539,6 +559,7 @@ func (as *AdminServer) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		if u.Username == models.DefaultAdminUsername {
 			models.RemoveInitialAdminPasswordFile()
 		}
+		_ = models.RevokeUserPrivilegedSessions(u.Id)
 		recordBrowserAudit(r, u.Username, u.Id, "password.change", u.Username, "success")
 		// TODO: We probably want to flash a message here that the password was
 		// changed successfully. The problem is that when the user resets their

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/darkarmy-cyber/darkphish/auth"
 	ctx "github.com/darkarmy-cyber/darkphish/context"
@@ -78,10 +80,10 @@ func apiAuditAction(method, path string) string {
 		return "data.export"
 	case method == http.MethodPost && strings.HasSuffix(clean, "/credential/reveal"):
 		return "credential.view"
-	case method == http.MethodPost && clean == "/api/pats":
-		return "pat.create"
-	case method == http.MethodDelete && strings.HasPrefix(clean, "/api/pats/"):
-		return "pat.revoke"
+	case clean == "/api/reauthenticate" || strings.Contains(clean, "/reviewers"):
+		return ""
+	case clean == "/api/pats" || strings.HasPrefix(clean, "/api/pats/"):
+		return ""
 	case method == http.MethodGet && strings.HasSuffix(clean, "/results") && strings.HasPrefix(clean, "/api/campaigns/"):
 		return "campaign.results.view"
 	case method == http.MethodPost && clean == "/api/campaigns":
@@ -90,12 +92,12 @@ func apiAuditAction(method, path string) string {
 		return "campaign.complete"
 	case method == http.MethodDelete && strings.HasPrefix(clean, "/api/campaigns/"):
 		return "campaign.delete"
-	case strings.HasPrefix(clean, "/api/users") && method == http.MethodPost:
-		return "user.create"
+	case clean == "/api/users" && method == http.MethodPost:
+		return ""
 	case strings.HasPrefix(clean, "/api/users/") && method == http.MethodDelete:
 		return "user.delete"
 	case strings.HasPrefix(clean, "/api/users/") && method == http.MethodPut:
-		return "user.update"
+		return ""
 	case strings.HasPrefix(clean, "/api/smtp") && method != http.MethodGet && method != http.MethodHead:
 		return "smtp.update"
 	case strings.HasPrefix(clean, "/api/imap") && method != http.MethodGet && method != http.MethodHead:
@@ -398,6 +400,11 @@ func EnforceViewOnly(next http.Handler) http.Handler {
 		// or DELETE, we need to ensure the user has the appropriate
 		// permission.
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+			clean := strings.TrimSuffix(r.URL.Path, "/")
+			if clean == "/api/reauthenticate" || strings.HasSuffix(clean, "/credential/reveal") || strings.Contains(clean, "/reviewers") {
+				next.ServeHTTP(w, r)
+				return
+			}
 			user := ctx.Get(r, "user").(models.User)
 			access, err := user.HasPermission(models.PermissionModifyObjects)
 			if err != nil {
@@ -411,6 +418,48 @@ func EnforceViewOnly(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// RequireCampaignCredentialReview centralizes the role and assignment check,
+// plus the browser-only privileged-session boundary. PAT callers remain
+// subject to both credentials:view scope and the user's RBAC permissions.
+func RequireCampaignCredentialReview(next http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user := ctx.Get(r, "user").(models.User)
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		if len(parts) < 3 {
+			JSONError(w, http.StatusBadRequest, "Invalid campaign")
+			return
+		}
+		campaignID, err := strconv.ParseInt(parts[2], 10, 64)
+		if err != nil {
+			JSONError(w, http.StatusBadRequest, "Invalid campaign")
+			return
+		}
+		allowed, err := models.CanReviewCredential(user, campaignID, time.Now().UTC())
+		if err != nil {
+			JSONError(w, http.StatusInternalServerError, "Unable to authorize credential review")
+			return
+		}
+		if !allowed {
+			JSONError(w, http.StatusForbidden, "Credential review is not authorized for this campaign")
+			return
+		}
+		if method, _ := ctx.Get(r, "auth_method").(string); method == "session" {
+			session, _ := ctx.Get(r, "session").(*sessions.Session)
+			binding, _ := session.Values["session_id"].(string)
+			fresh, freshErr := models.IsPrivilegedSessionFresh(user.Id, binding, time.Now().UTC())
+			if freshErr != nil {
+				JSONError(w, http.StatusInternalServerError, "Unable to validate privileged session")
+				return
+			}
+			if !fresh {
+				JSONError(w, http.StatusPreconditionRequired, "Fresh privileged reauthentication is required")
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	}
 }
 
 // RequirePermission checks to see if the user has the requested permission

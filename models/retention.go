@@ -14,6 +14,12 @@ func CleanupSecurityRetention(now time.Time) (int64, int64, error) {
 	if err != nil {
 		return 0, 0, err
 	}
+	if _, err := DeleteExpiredPrivilegedSessions(now); err != nil {
+		return credentials, 0, err
+	}
+	if _, err := AuditExpiredCampaignReviewers(now); err != nil {
+		return credentials, 0, err
+	}
 	days := config.DefaultAuditRetentionDays
 	if conf != nil && conf.Audit.RetentionDays > 0 {
 		days = conf.Audit.RetentionDays

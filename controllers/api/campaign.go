@@ -5,8 +5,10 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	ctx "github.com/darkarmy-cyber/darkphish/context"
+	secretpkg "github.com/darkarmy-cyber/darkphish/internal/secrets"
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/gorilla/mux"
@@ -18,7 +20,7 @@ import (
 func (as *Server) Campaigns(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodGet:
-		cs, err := models.GetCampaigns(ctx.Get(r, "user_id").(int64))
+		cs, err := models.GetAccessibleCampaigns(ctx.Get(r, "user").(models.User), time.Now().UTC())
 		if err != nil {
 			log.Error(err)
 		}
@@ -50,7 +52,7 @@ func (as *Server) Campaigns(w http.ResponseWriter, r *http.Request) {
 func (as *Server) CampaignsSummary(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == "GET":
-		cs, err := models.GetCampaignSummaries(ctx.Get(r, "user_id").(int64))
+		cs, err := models.GetAccessibleCampaignSummaries(ctx.Get(r, "user").(models.User), time.Now().UTC())
 		if err != nil {
 			log.Error(err)
 			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusInternalServerError)
@@ -65,7 +67,7 @@ func (as *Server) CampaignsSummary(w http.ResponseWriter, r *http.Request) {
 func (as *Server) Campaign(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, _ := strconv.ParseInt(vars["id"], 0, 64)
-	c, err := models.GetCampaign(id, ctx.Get(r, "user_id").(int64))
+	c, err := models.GetAccessibleCampaign(id, ctx.Get(r, "user").(models.User))
 	if err != nil {
 		log.Error(err)
 		JSONResponse(w, models.Response{Success: false, Message: "Campaign not found"}, http.StatusNotFound)
@@ -116,6 +118,10 @@ func (as *Server) CampaignCredentialReveal(w http.ResponseWriter, r *http.Reques
 			JSONResponse(w, models.Response{Success: false, Message: "Retained credential has expired"}, http.StatusGone)
 		case errors.Is(err, models.ErrCredentialReviewDisabled):
 			JSONResponse(w, models.Response{Success: false, Message: "Credential review is not enabled"}, http.StatusForbidden)
+		case errors.Is(err, secretpkg.ErrProviderUnavailable), errors.Is(err, secretpkg.ErrWrongProvider):
+			JSONResponse(w, models.Response{Success: false, Message: "Credential key provider is unavailable"}, http.StatusServiceUnavailable)
+		case errors.Is(err, secretpkg.ErrUnknownKey), errors.Is(err, secretpkg.ErrInvalidCiphertext), errors.Is(err, models.ErrCredentialEncryption):
+			JSONResponse(w, models.Response{Success: false, Message: "Retained credential is unavailable"}, http.StatusServiceUnavailable)
 		default:
 			JSONResponse(w, models.Response{Success: false, Message: "Retained credential not found"}, http.StatusNotFound)
 		}
@@ -130,7 +136,7 @@ func (as *Server) CampaignSummary(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(vars["id"], 0, 64)
 	switch {
 	case r.Method == "GET":
-		cs, err := models.GetCampaignSummary(id, ctx.Get(r, "user_id").(int64))
+		cs, err := models.GetAccessibleCampaignSummary(id, ctx.Get(r, "user").(models.User))
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
 				JSONResponse(w, models.Response{Success: false, Message: "Campaign not found"}, http.StatusNotFound)

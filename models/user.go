@@ -2,9 +2,12 @@ package models
 
 import (
 	"errors"
+	"strconv"
 	"time"
 
+	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	log "github.com/darkarmy-cyber/darkphish/logger"
+	"github.com/jinzhu/gorm"
 )
 
 // ErrModifyingOnlyAdmin occurs when there is an attempt to modify the only
@@ -51,6 +54,28 @@ func GetUserByUsername(username string) (User, error) {
 // PutUser updates the given user
 func PutUser(u *User) error {
 	err := db.Save(u).Error
+	return err
+}
+
+// PutUserWithAudit commits a security-sensitive account/role mutation, any
+// privileged-session revocation, and its durable audit record as one unit.
+func PutUserWithAudit(u *User, revokePrivileged bool, event audit.Event) error {
+	err := withSecurityTransaction(func(tx *gorm.DB) error {
+		if err := tx.Save(u).Error; err != nil {
+			return err
+		}
+		if revokePrivileged {
+			if err := tx.Where("user_id=?", u.Id).Delete(&PrivilegedSession{}).Error; err != nil {
+				return err
+			}
+		}
+		event.TargetType = "user"
+		event.TargetID = strconv.FormatInt(u.Id, 10)
+		return (gormAuditRepository{db: tx}).Enqueue(event)
+	})
+	if err == nil {
+		flushAuditOutboxAfterCommit()
+	}
 	return err
 }
 

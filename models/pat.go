@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	"github.com/jinzhu/gorm"
 )
 
@@ -116,9 +117,7 @@ func parsePAT(raw string) (string, string, bool) {
 	return prefix, secret, true
 }
 
-// CreatePersonalAccessToken returns the raw token exactly once. Only its
-// SHA-256 digest is persisted; the secret has 256 bits of random entropy.
-func CreatePersonalAccessToken(userID int64, name string, scopes []string, expiresAt time.Time) (PersonalAccessToken, string, error) {
+func newPersonalAccessToken(userID int64, name string, scopes []string, expiresAt time.Time) (PersonalAccessToken, string, error) {
 	var pat PersonalAccessToken
 	name = strings.TrimSpace(name)
 	if name == "" || len(name) > 128 {
@@ -152,9 +151,42 @@ func CreatePersonalAccessToken(userID int64, name string, scopes []string, expir
 		UserID: userID, Name: name, Prefix: prefix, TokenHash: hashPATSecret(secret),
 		ScopesRaw: string(encodedScopes), Scopes: scopes, CreatedAt: now, ExpiresAt: expiresAt,
 	}
-	if err := db.Save(&pat).Error; err != nil {
+	return pat, raw, nil
+}
+
+// CreatePersonalAccessToken returns the raw token exactly once and only after
+// its digest has been durably persisted. The secret has 256 bits of entropy.
+func CreatePersonalAccessToken(userID int64, name string, scopes []string, expiresAt time.Time) (PersonalAccessToken, string, error) {
+	pat, raw, err := newPersonalAccessToken(userID, name, scopes, expiresAt)
+	if err != nil {
 		return PersonalAccessToken{}, "", err
 	}
+	if err := (gormTokenRepository{db: db}).CreateToken(&pat); err != nil {
+		return PersonalAccessToken{}, "", err
+	}
+	return pat, raw, nil
+}
+
+// CreatePersonalAccessTokenWithAudit atomically persists the token digest and
+// durable audit outbox record before allowing the one-time raw value to escape.
+func CreatePersonalAccessTokenWithAudit(userID int64, name string, scopes []string, expiresAt time.Time, event audit.Event) (PersonalAccessToken, string, error) {
+	pat, raw, err := newPersonalAccessToken(userID, name, scopes, expiresAt)
+	if err != nil {
+		return PersonalAccessToken{}, "", err
+	}
+	err = withSecurityTransaction(func(tx *gorm.DB) error {
+		if err := (gormTokenRepository{db: tx}).CreateToken(&pat); err != nil {
+			return err
+		}
+		event.Action = "pat.create"
+		event.TargetType = "pat"
+		event.TargetID = pat.Prefix
+		return (gormAuditRepository{db: tx}).Enqueue(event)
+	})
+	if err != nil {
+		return PersonalAccessToken{}, "", err
+	}
+	flushAuditOutboxAfterCommit()
 	return pat, raw, nil
 }
 
@@ -187,14 +219,34 @@ func GetPersonalAccessTokens(userID int64) ([]PersonalAccessToken, error) {
 
 func RevokePersonalAccessToken(id, userID int64) error {
 	now := time.Now().UTC()
-	query := db.Model(&PersonalAccessToken{}).Where("id=? AND user_id=? AND revoked_at IS NULL", id, userID).Update("revoked_at", now)
-	if query.Error != nil {
-		return query.Error
+	revoked, err := (gormTokenRepository{db: db}).RevokeToken(id, userID, now)
+	if err != nil {
+		return err
 	}
-	if query.RowsAffected == 0 {
+	if !revoked {
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+func RevokePersonalAccessTokenWithAudit(id, userID int64, event audit.Event) error {
+	err := withSecurityTransaction(func(tx *gorm.DB) error {
+		revoked, err := (gormTokenRepository{db: tx}).RevokeToken(id, userID, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		if !revoked {
+			return gorm.ErrRecordNotFound
+		}
+		event.Action = "pat.revoke"
+		event.TargetType = "pat"
+		event.TargetID = fmt.Sprintf("%d", id)
+		return (gormAuditRepository{db: tx}).Enqueue(event)
+	})
+	if err == nil {
+		flushAuditOutboxAfterCommit()
+	}
+	return err
 }
 
 func AuthenticatePersonalAccessToken(raw string) (PATAuthentication, error) {

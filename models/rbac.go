@@ -33,6 +33,9 @@ const (
 	// RoleUser is used for standard Darkphish users. Users with this role can
 	// create, manage, and view Darkphish objects and campaigns.
 	RoleUser = "user"
+	// RoleSecurityReviewer is intentionally narrower than an administrator and
+	// only gains sensitive campaign access through an explicit assignment.
+	RoleSecurityReviewer = "security_reviewer"
 
 	// PermissionViewObjects determines if a role can view standard Darkphish
 	// objects such as campaigns, groups, landing pages, etc.
@@ -44,7 +47,11 @@ const (
 	// configuration.
 	PermissionModifySystem = "modify_system"
 	// PermissionViewCredentials permits individual, audited reveal operations.
-	PermissionViewCredentials = "credentials:view"
+	PermissionViewCredentials        = "credentials:view"
+	PermissionCampaignsRead          = "campaigns:read"
+	PermissionReportsRead            = "reports:read"
+	PermissionCredentialPolicyRead   = "credential-policy:read"
+	PermissionAuditSelfSensitiveRead = "audit:self-sensitive-read"
 )
 
 // Role represents a user role within Darkphish. Each user has a single role

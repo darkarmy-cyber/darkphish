@@ -112,7 +112,10 @@ func (as *Server) Users(w http.ResponseWriter, r *http.Request) {
 			PasswordChangeRequired: ur.PasswordChangeRequired,
 			AccountLocked:          ur.AccountLocked,
 		}
-		err = models.PutUser(&user)
+		actor := ctx.Get(r, "user").(models.User)
+		authMethod, _ := ctx.Get(r, "auth_method").(string)
+		event := audit.NewRequestEvent(r, actor.Username, actor.Id, "user.create", "", "success", authMethod)
+		err = models.PutUserWithAudit(&user, false, event)
 		if err != nil {
 			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusInternalServerError)
 			return
@@ -223,18 +226,19 @@ func (as *Server) User(w http.ResponseWriter, r *http.Request) {
 			existingUser.Hash = hash
 		}
 		existingUser.AccountLocked = ur.AccountLocked
-		err = models.PutUser(&existingUser)
-		if err != nil {
-			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusInternalServerError)
-			return
-		}
+		action := "user.update"
 		if wasLocked != existingUser.AccountLocked {
-			action := "user.unlock"
+			action = "user.unlock"
 			if existingUser.AccountLocked {
 				action = "user.lock"
 			}
-			authMethod, _ := ctx.Get(r, "auth_method").(string)
-			audit.Record(r, currentUser.Username, currentUser.Id, action, "users/"+strconv.FormatInt(existingUser.Id, 10), "success", authMethod)
+		}
+		authMethod, _ := ctx.Get(r, "auth_method").(string)
+		event := audit.NewRequestEvent(r, currentUser.Username, currentUser.Id, action, "", "success", authMethod)
+		err = models.PutUserWithAudit(&existingUser, true, event)
+		if err != nil {
+			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusInternalServerError)
+			return
 		}
 		JSONResponse(w, existingUser, http.StatusOK)
 	}

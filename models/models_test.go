@@ -27,6 +27,10 @@ func (s *ModelsSuite) SetUpSuite(c *check.C) {
 	if err != nil {
 		c.Fatalf("Failed creating database: %v", err)
 	}
+	var admin User
+	c.Assert(db.Where("id=?", 1).First(&admin).Error, check.IsNil)
+	admin.PasswordChangeRequired = false
+	c.Assert(db.Save(&admin).Error, check.IsNil)
 }
 
 func (s *ModelsSuite) TearDownTest(c *check.C) {
@@ -44,11 +48,15 @@ func (s *ModelsSuite) TearDownTest(c *check.C) {
 	db.Delete(CredentialPolicyResult{})
 	db.Delete(EncryptedCredential{})
 	db.Delete(PersonalAccessToken{})
+	db.Delete(PrivilegedSession{})
+	db.Delete(CampaignReviewer{})
+	db.Delete(auditOutboxRow{})
+	db.Delete(auditCheckpointRow{})
 	db.Delete(auditEventRow{})
 
 	// Reset users table to default state.
 	db.Not("id", 1).Delete(User{})
-	db.Model(User{}).Update("username", "admin")
+	db.Model(User{}).Where("id=?", 1).Updates(map[string]interface{}{"username": "admin", "account_locked": false, "password_change_required": false})
 }
 
 func (s *ModelsSuite) createCampaignDependencies(ch *check.C, optional ...string) Campaign {

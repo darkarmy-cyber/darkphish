@@ -7,6 +7,7 @@ import (
 	"time"
 
 	ctx "github.com/darkarmy-cyber/darkphish/context"
+	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/gorilla/mux"
 )
@@ -24,6 +25,8 @@ type createPATResponse struct {
 
 func (as *Server) PersonalAccessTokens(w http.ResponseWriter, r *http.Request) {
 	userID := ctx.Get(r, "user_id").(int64)
+	user := ctx.Get(r, "user").(models.User)
+	authMethod, _ := ctx.Get(r, "auth_method").(string)
 	switch r.Method {
 	case http.MethodGet:
 		values, err := models.GetPersonalAccessTokens(userID)
@@ -38,7 +41,8 @@ func (as *Server) PersonalAccessTokens(w http.ResponseWriter, r *http.Request) {
 			JSONResponse(w, models.Response{Success: false, Message: "Invalid JSON structure"}, http.StatusBadRequest)
 			return
 		}
-		pat, raw, err := models.CreatePersonalAccessToken(userID, request.Name, request.Scopes, request.ExpiresAt)
+		event := audit.NewRequestEvent(r, user.Username, user.Id, "", "", "success", authMethod)
+		pat, raw, err := models.CreatePersonalAccessTokenWithAudit(userID, request.Name, request.Scopes, request.ExpiresAt, event)
 		if err != nil {
 			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
 			return
@@ -53,7 +57,10 @@ func (as *Server) PersonalAccessTokens(w http.ResponseWriter, r *http.Request) {
 
 func (as *Server) PersonalAccessToken(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
-	if err := models.RevokePersonalAccessToken(id, ctx.Get(r, "user_id").(int64)); err != nil {
+	user := ctx.Get(r, "user").(models.User)
+	authMethod, _ := ctx.Get(r, "auth_method").(string)
+	event := audit.NewRequestEvent(r, user.Username, user.Id, "", "", "success", authMethod)
+	if err := models.RevokePersonalAccessTokenWithAudit(id, user.Id, event); err != nil {
 		JSONResponse(w, models.Response{Success: false, Message: "Personal access token not found"}, http.StatusNotFound)
 		return
 	}

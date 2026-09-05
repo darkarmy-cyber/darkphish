@@ -141,11 +141,106 @@ function revealCredential(rid) {
         confirmButtonColor: "#c0392b"
     }).then(function (result) {
         if (!result.value) return
-        api.campaignId.credentialReveal(campaign.id, rid).done(function (data) {
-            Swal.fire({title: "Retained credential", text: data.credential, type: "warning"})
-        }).fail(function (response) {
-            errorFlash((response.responseJSON && response.responseJSON.message) || "Unable to reveal credential")
+        performCredentialReveal(rid)
+    })
+}
+
+function performCredentialReveal(rid) {
+    api.campaignId.credentialReveal(campaign.id, rid).done(function (data) {
+        var transientCredential = data.credential
+        Swal.fire({
+            title: "Retained credential",
+            text: transientCredential,
+            type: "warning",
+            allowOutsideClick: false
+        }).then(function () {
+            $(".swal2-content").text("")
+            transientCredential = ""
         })
+    }).fail(function (response) {
+        if (response.status === 428) {
+            promptPrivilegedReauthentication(rid)
+            return
+        }
+        errorFlash((response.responseJSON && response.responseJSON.message) || "Unable to reveal credential")
+    })
+}
+
+function promptPrivilegedReauthentication(rid) {
+    Swal.fire({
+        title: "Fresh authentication required",
+        text: "Enter your current account password. Authorization lasts only a few minutes.",
+        input: "password",
+        inputAttributes: {autocomplete: "current-password"},
+        showCancelButton: true,
+        confirmButtonText: "Reauthenticate",
+        allowOutsideClick: false,
+        preConfirm: function (password) {
+            var proof = {method: "password", password: password}
+            return query("/reauthenticate", "POST", proof, true)
+                .then(function () {
+                    proof.password = ""
+                    password = ""
+                    if (Swal.getInput()) Swal.getInput().value = ""
+                    return true
+                })
+                .catch(function (response) {
+                    proof.password = ""
+                    password = ""
+                    if (Swal.getInput()) Swal.getInput().value = ""
+                    Swal.showValidationMessage((response.responseJSON && response.responseJSON.message) || "Reauthentication failed")
+                })
+        }
+    }).then(function (result) {
+        if (result.value) performCredentialReveal(rid)
+    })
+}
+
+function toggleReviewerManagement() {
+    $("#reviewerManagement").toggle()
+    if ($("#reviewerManagement").is(":visible")) loadReviewers()
+}
+
+function loadReviewers() {
+    if (!window.canManageReviewers) return
+    api.campaignId.reviewers(campaign.id).done(function (data) {
+        var select = $("#reviewer_user_id").empty()
+        $.each(data.candidates || [], function (_, reviewer) {
+            select.append($("<option>").val(reviewer.id).text(reviewer.username + " — Security reviewer"))
+        })
+        var body = $("#reviewersTable tbody").empty()
+        $.each(data.assignments || [], function (_, assignment) {
+            var expires = assignment.expires_at ? moment(assignment.expires_at).format("MMMM Do YYYY, h:mm a") : "No expiration"
+            var row = $("<tr>")
+            row.append($("<td>").text(assignment.reviewer_username))
+            row.append($("<td>").text(assignment.assigned_by_username))
+            row.append($("<td>").text(expires))
+            var remove = $("<button>").addClass("btn btn-xs btn-danger").text("Remove").click(function () { removeReviewer(assignment.user_id) })
+            row.append($("<td>").append(remove))
+            body.append(row)
+        })
+    }).fail(function (response) {
+        errorFlash((response.responseJSON && response.responseJSON.message) || "Unable to load reviewer assignments")
+    })
+}
+
+function assignReviewer() {
+    var userId = Number($("#reviewer_user_id").val())
+    if (!userId) {
+        errorFlash("Choose an eligible Security Reviewer")
+        return
+    }
+    var expiration = $("#reviewer_expires_at").val()
+    var assignment = {user_id: userId}
+    if (expiration) assignment.expires_at = new Date(expiration).toISOString()
+    api.campaignId.assignReviewer(campaign.id, assignment).done(loadReviewers).fail(function (response) {
+        errorFlash((response.responseJSON && response.responseJSON.message) || "Unable to assign reviewer")
+    })
+}
+
+function removeReviewer(userId) {
+    api.campaignId.removeReviewer(campaign.id, userId).done(loadReviewers).fail(function (response) {
+        errorFlash((response.responseJSON && response.responseJSON.message) || "Unable to remove reviewer")
     })
 }
 

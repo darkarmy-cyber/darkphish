@@ -1,16 +1,19 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/darkarmy-cyber/darkphish/auth"
 	"github.com/darkarmy-cyber/darkphish/config"
 	ctx "github.com/darkarmy-cyber/darkphish/context"
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	"github.com/darkarmy-cyber/darkphish/models"
+	"github.com/gorilla/sessions"
 )
 
 var successHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -20,6 +23,78 @@ var successHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Reques
 type testContext struct {
 	apiKey string
 	userID int64
+}
+
+func TestCredentialRevealPATScopeAndRoleAreBothRequired(t *testing.T) {
+	setupTest(t)
+	role, err := models.GetRoleBySlug(models.RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Role: role, RoleID: role.ID}
+	handler := EnforcePATScopes(RequirePermission(models.PermissionViewCredentials)(successHandler))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/campaigns/1/results/rid/credential/reveal", nil)
+	req = ctx.Set(req, "auth_method", "pat")
+	req = ctx.Set(req, "pat_scopes", map[string]struct{}{})
+	req = ctx.Set(req, "user", user)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, req)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("missing PAT scope returned %d", response.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/campaigns/1/results/rid/credential/reveal", nil)
+	req = ctx.Set(req, "auth_method", "pat")
+	req = ctx.Set(req, "pat_scopes", map[string]struct{}{"credentials:view": {}})
+	req = ctx.Set(req, "user", user)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, req)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("PAT scope without role permission returned %d", response.Code)
+	}
+}
+
+func TestBrowserCredentialReviewRequiresFreshSessionBinding(t *testing.T) {
+	setupTest(t)
+	user, err := models.GetUser(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	password := "fresh-session-password"
+	user.Hash, err = auth.GeneratePasswordHash(password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := models.PutUser(&user); err != nil {
+		t.Fatal(err)
+	}
+	binding, err := models.NewSessionBinding()
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := sessions.NewSession(nil, "test")
+	session.Values["session_id"] = binding
+	handler := RequireCampaignCredentialReview(successHandler)
+	request := func() *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/api/campaigns/123/results/rid/credential/reveal", nil)
+		req = ctx.Set(req, "user", user)
+		req = ctx.Set(req, "auth_method", "session")
+		return ctx.Set(req, "session", session)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request())
+	if response.Code != http.StatusPreconditionRequired {
+		t.Fatalf("stale browser session returned %d", response.Code)
+	}
+	if _, err := models.ReauthenticatePrivileged(context.Background(), user, binding, models.ReauthenticationProof{Method: "password", Secret: password}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request())
+	if response.Code != http.StatusOK {
+		t.Fatalf("fresh browser session returned %d: %s", response.Code, response.Body.String())
+	}
 }
 
 func setupTest(t *testing.T) *testContext {

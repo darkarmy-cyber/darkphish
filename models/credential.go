@@ -137,12 +137,12 @@ func loadCredentialPolicy(campaignID int64) (CredentialPolicy, error) {
 	return policy, nil
 }
 
-func saveCredentialPolicy(campaignID int64, policy CredentialPolicy) error {
+func saveCredentialPolicyWithDB(database *gorm.DB, campaignID int64, policy CredentialPolicy) error {
 	if err := normalizeCredentialPolicy(&policy); err != nil {
 		return err
 	}
 	policy.CampaignID = campaignID
-	return db.Save(&policy).Error
+	return database.Save(&policy).Error
 }
 
 func secretEncryptionAvailable() bool {
@@ -246,16 +246,18 @@ func RecordCredentialSubmission(c Campaign, result Result, credential string) er
 	finding := evaluateCredential(policy, credential)
 	finding.CampaignID = c.Id
 	finding.ResultID = result.Id
-	if err := db.Where("result_id=?", result.Id).Delete(&CredentialPolicyResult{}).Error; err != nil {
-		return err
-	}
-	if err := db.Save(&finding).Error; err != nil {
-		return err
-	}
 	// Values beyond the campaign's configured maximum remain represented by
-	// the policy finding but are never retained as reviewable ciphertext.
+	// the policy finding but are never retained as reviewable ciphertext. A
+	// later non-retainable submission also removes any older value for the same
+	// result so the reveal endpoint cannot return stale plaintext.
 	if c.CredentialCaptureMode != CredentialModeEncryptedReview || c.CredentialRetentionHours == 0 || !utf8.ValidString(credential) || finding.Length > policy.MaxLength {
-		return nil
+		return withSecurityTransaction(func(tx *gorm.DB) error {
+			repository := gormCredentialRepository{db: tx}
+			if err := repository.ReplaceFinding(finding); err != nil {
+				return err
+			}
+			return repository.PurgeEncrypted(result.Id, time.Now().UTC())
+		})
 	}
 	if !secretEncryptionAvailable() {
 		return ErrCredentialEncryption
@@ -269,10 +271,13 @@ func RecordCredentialSubmission(c Campaign, result Result, credential string) er
 		CampaignID: c.Id, ResultID: result.Id, EncryptedValue: protected,
 		CreatedAt: now, ExpiresAt: now.Add(time.Duration(c.CredentialRetentionHours) * time.Hour),
 	}
-	if err := db.Where("result_id=?", result.Id).Delete(&EncryptedCredential{}).Error; err != nil {
-		return err
-	}
-	return db.Save(&record).Error
+	return withSecurityTransaction(func(tx *gorm.DB) error {
+		repository := gormCredentialRepository{db: tx}
+		if err := repository.ReplaceFinding(finding); err != nil {
+			return err
+		}
+		return repository.ReplaceEncrypted(record)
+	})
 }
 
 func attachCredentialFindings(results []Result) error {
@@ -309,16 +314,27 @@ func attachCredentialFindings(results []Result) error {
 // applied both user authorization and the credentials:view permission.
 func RevealCredential(campaignID int64, rid string, userID int64) (CredentialReveal, error) {
 	var reveal CredentialReveal
+	user, err := GetUser(userID)
+	if err != nil {
+		return reveal, err
+	}
+	allowed, err := CanReviewCredential(user, campaignID, time.Now().UTC())
+	if err != nil {
+		return reveal, err
+	}
+	if !allowed {
+		return reveal, ErrCampaignReviewDenied
+	}
 	var result Result
 	query := db.Table("results").
 		Joins("JOIN campaigns ON campaigns.id=results.campaign_id").
-		Where("results.campaign_id=? AND results.r_id=? AND campaigns.user_id=?", campaignID, rid, userID).
+		Where("results.campaign_id=? AND results.r_id=?", campaignID, rid).
 		Select("results.*").First(&result)
 	if query.Error != nil {
 		return reveal, query.Error
 	}
 	var campaign Campaign
-	if err := db.Where("id=? AND user_id=?", campaignID, userID).First(&campaign).Error; err != nil {
+	if err := db.Where("id=?", campaignID).First(&campaign).Error; err != nil {
 		return reveal, err
 	}
 	if campaign.CredentialCaptureMode != CredentialModeEncryptedReview {

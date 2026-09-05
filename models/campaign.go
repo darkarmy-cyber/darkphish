@@ -380,6 +380,35 @@ func GetCampaignSummaries(uid int64) (CampaignSummaries, error) {
 	return overview, nil
 }
 
+// GetAccessibleCampaignSummaries applies the same account, role, ownership,
+// and active-assignment policy as the campaign and result endpoints.
+func GetAccessibleCampaignSummaries(user User, now time.Time) (CampaignSummaries, error) {
+	overview := CampaignSummaries{}
+	values := []CampaignSummary{}
+	query := db.Table("campaigns").Select("campaigns.id, campaigns.name, campaigns.created_date, campaigns.launch_date, campaigns.send_by_date, campaigns.completed_date, campaigns.status")
+	switch user.Role.Slug {
+	case RoleAdmin:
+	case RoleSecurityReviewer:
+		query = query.Joins("JOIN campaign_reviewers cr ON cr.campaign_id=campaigns.id").
+			Where("cr.user_id=? AND (cr.expires_at IS NULL OR cr.expires_at>?)", user.Id, now.UTC())
+	default:
+		query = query.Where("campaigns.user_id=?", user.Id)
+	}
+	if err := query.Order("campaigns.created_date DESC, campaigns.id DESC").Scan(&values).Error; err != nil {
+		return overview, err
+	}
+	for i := range values {
+		stats, err := getCampaignStats(values[i].Id)
+		if err != nil {
+			return overview, err
+		}
+		values[i].Stats = stats
+	}
+	overview.Total = int64(len(values))
+	overview.Campaigns = values
+	return overview, nil
+}
+
 // GetCampaignSummary gets the summary object for a campaign specified by the campaign ID
 func GetCampaignSummary(id int64, uid int64) (CampaignSummary, error) {
 	cs := CampaignSummary{}
@@ -397,6 +426,20 @@ func GetCampaignSummary(id int64, uid int64) (CampaignSummary, error) {
 	}
 	cs.Stats = s
 	return cs, nil
+}
+
+func GetAccessibleCampaignSummary(id int64, user User) (CampaignSummary, error) {
+	var summary CampaignSummary
+	allowed, err := CanReadCampaign(user, id, time.Now().UTC())
+	if err != nil || !allowed {
+		return summary, gorm.ErrRecordNotFound
+	}
+	if err := db.Table("campaigns").Where("id=?", id).
+		Select("id, name, created_date, launch_date, send_by_date, completed_date, status").Scan(&summary).Error; err != nil {
+		return summary, err
+	}
+	summary.Stats, err = getCampaignStats(id)
+	return summary, err
 }
 
 // GetCampaignMailContext returns a campaign object with just the relevant
@@ -446,10 +489,33 @@ func GetCampaign(id int64, uid int64) (Campaign, error) {
 	return c, err
 }
 
+// GetAccessibleCampaign applies the administrator/owner/reviewer policy used
+// by authenticated administrative endpoints.
+func GetAccessibleCampaign(id int64, user User) (Campaign, error) {
+	c := Campaign{}
+	allowed, err := CanReadCampaign(user, id, time.Now().UTC())
+	if err != nil || !allowed {
+		return c, gorm.ErrRecordNotFound
+	}
+	if err = db.Where("id=?", id).Find(&c).Error; err != nil {
+		return c, err
+	}
+	err = c.getDetails()
+	return c, err
+}
+
 // GetCampaignResults returns just the campaign results for the given campaign
 func GetCampaignResults(id int64, uid int64) (CampaignResults, error) {
 	cr := CampaignResults{}
-	err := db.Table("campaigns").Where("id=? and user_id=?", id, uid).Find(&cr).Error
+	user, err := GetUser(uid)
+	if err != nil {
+		return cr, err
+	}
+	allowed, err := CanReadCampaign(user, id, time.Now().UTC())
+	if err != nil || !allowed {
+		return cr, gorm.ErrRecordNotFound
+	}
+	err = db.Table("campaigns").Where("id=?", id).Find(&cr).Error
 	if err != nil {
 		log.WithFields(logrus.Fields{
 			"campaign_id": id,
@@ -457,7 +523,7 @@ func GetCampaignResults(id int64, uid int64) (CampaignResults, error) {
 		}).Error(err)
 		return cr, err
 	}
-	err = db.Table("results").Where("campaign_id=? and user_id=?", cr.Id, uid).Find(&cr.Results).Error
+	err = db.Table("results").Where("campaign_id=?", cr.Id).Find(&cr.Results).Error
 	if err != nil {
 		log.Errorf("%s: results not found for campaign", err)
 		return cr, err
@@ -569,23 +635,31 @@ func PostCampaign(c *Campaign, uid int64) error {
 	}
 	c.SMTP = s
 	c.SMTPId = s.Id
-	// Insert into the DB
-	err = db.Save(c).Error
+	// Campaign, credential policy, creation event, results, and mail queue rows
+	// are one logical operation. No partially configured campaign is visible.
+	tx := db.Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	rollback := func(cause error) error {
+		_ = tx.Rollback().Error
+		return cause
+	}
+	err = tx.Save(c).Error
 	if err != nil {
 		log.Error(err)
-		return err
+		return rollback(err)
 	}
-	if err = saveCredentialPolicy(c.Id, c.CredentialPolicy); err != nil {
-		return err
+	if err = saveCredentialPolicyWithDB(tx, c.Id, c.CredentialPolicy); err != nil {
+		return rollback(err)
 	}
-	err = AddEvent(&Event{Message: "Campaign Created"}, c.Id)
-	if err != nil {
-		log.Error(err)
+	createdEvent := Event{CampaignId: c.Id, Time: time.Now().UTC(), Message: "Campaign Created"}
+	if err = tx.Save(&createdEvent).Error; err != nil {
+		return rollback(err)
 	}
 	// Insert all the results
 	resultMap := make(map[string]bool)
 	recipientIndex := 0
-	tx := db.Begin()
 	for _, g := range c.Groups {
 		// Insert a result for each target in the group
 		for _, t := range g.Targets {
@@ -613,8 +687,7 @@ func PostCampaign(c *Campaign, uid int64) error {
 			err = r.GenerateId(tx)
 			if err != nil {
 				log.Error(err)
-				tx.Rollback()
-				return err
+				return rollback(err)
 			}
 			processing := false
 			if r.SendDate.Before(c.CreatedDate) || r.SendDate.Equal(c.CreatedDate) {
@@ -626,8 +699,7 @@ func PostCampaign(c *Campaign, uid int64) error {
 				log.WithFields(logrus.Fields{
 					"email": t.Email,
 				}).Errorf("error creating result: %v", err)
-				tx.Rollback()
-				return err
+				return rollback(err)
 			}
 			c.Results = append(c.Results, *r)
 			log.WithFields(logrus.Fields{
@@ -646,8 +718,7 @@ func PostCampaign(c *Campaign, uid int64) error {
 				log.WithFields(logrus.Fields{
 					"email": t.Email,
 				}).Errorf("error creating maillog entry: %v", err)
-				tx.Rollback()
-				return err
+				return rollback(err)
 			}
 			recipientIndex++
 		}

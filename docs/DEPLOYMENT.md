@@ -1,10 +1,25 @@
 # Production deployment
 
 Native binaries are the supported Darkphish 0.3 release artifacts. Each release
-contains SHA-256 checksums, an SPDX SBOM, and provenance. Historical Docker files
+contains SHA-256 checksums and an SPDX SBOM; attestations are included when the
+private-repository plan supports them. Historical Docker files
 remain optional and receive no required CI or publishing guarantee.
 
 ## Required production keys
+
+Initial administrator setup requires `DARKPHISH_INITIAL_ADMIN_PASSWORD`,
+`DARKPHISH_INITIAL_ADMIN_PASSWORD_FILE`, or `bootstrap_directory` in production.
+The password value takes precedence. The password-file variable remains a
+**generated output filename**, not an input secret-file reader. The configured
+directory is relative to the config file; create and secure it before startup.
+Files use Unix mode 0600 or an owner-only Windows DACL, refuse existing files and
+symlinks, never appear in logs, and are removed after the forced password change.
+
+Development may derive the directory from a genuine SQLite filename. Network
+DSNs and SQLite URI forms instead use `darkphish_initial_admin_password` in the
+working directory unless a destination is configured. SQLite `:memory:` creates
+no file without an explicit destination. No directory is created from a DSN;
+filesystem errors omit paths and underlying error text to prevent secret leaks.
 
 Supply independent 32-byte session keys, a credential/integration key provider,
 and a purpose-specific Ed25519 audit-signing seed:

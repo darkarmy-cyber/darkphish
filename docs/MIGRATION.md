@@ -16,6 +16,19 @@ order before new records are accepted.
 
 ## Required operator actions
 
+The 0.3 recovery build stores never-used user and IMAP login times, optional
+campaign send deadlines, and unfinished campaign completion times as SQL `NULL`
+(JSON `null`). Existing columns are nullable; no destructive schema conversion
+is needed. Existing real timestamps remain intact, and legacy zero timestamps
+are normalized when read or saved. Strict MySQL date validation stays enabled.
+Audit events are hashed from their persisted timestamp precision so all three
+database engines verify the same records they actually store.
+
+For a new production database, configure an explicit bootstrap password or a
+pre-existing, access-restricted `bootstrap_directory`/password output path as
+described in `DEPLOYMENT.md`. A database URL or DSN is never a filesystem path.
+Existing installations with an administrator account do not bootstrap again.
+
 1. Run `darkphish --config config.json migrate check`. Resolve reported database,
    certificate, environment-variable, API-key, and plaintext-secret hazards. The
    command is read-only and never prints environment values.

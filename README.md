@@ -38,7 +38,9 @@ The initial administrator password is written with owner-only permissions to
 `darkphish_initial_admin_password` beside the SQLite database. The password is
 never printed to logs and the file is removed after the required first password
 change. You can instead set `DARKPHISH_INITIAL_ADMIN_PASSWORD` or configure
-`DARKPHISH_INITIAL_ADMIN_PASSWORD_FILE`.
+`DARKPHISH_INITIAL_ADMIN_PASSWORD_FILE` (generated output filename), or set
+`bootstrap_directory`. Production requires an explicit choice. Network DSNs
+never determine file paths; see [deployment guidance](docs/DEPLOYMENT.md).
 
 Development defaults are deliberately separate from production. Read
 [development setup](docs/DEVELOPMENT.md) and [production deployment](docs/DEPLOYMENT.md)

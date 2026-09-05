@@ -68,3 +68,38 @@ func (s *ModelsSuite) TestRequiredModificationDates(c *check.C) {
 	c.Assert(err, check.IsNil)
 	c.Assert(loaded.ModifiedDate.Equal(old), check.Equals, true)
 }
+
+func (s *ModelsSuite) TestCampaignSummaryLegacyDates(c *check.C) {
+	campaign := s.createCampaign(c)
+	user, err := GetUser(campaign.UserId)
+	c.Assert(err, check.IsNil)
+	for _, instant := range []time.Time{{}, time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)} {
+		// Reproduce persisted pre-nullability data without calling model hooks.
+		c.Assert(db.Model(&Campaign{}).Where("id=?", campaign.Id).UpdateColumns(map[string]interface{}{
+			"send_by_date": instant, "completed_date": instant,
+		}).Error, check.IsNil)
+		owned, err := GetCampaignSummaries(user.Id)
+		c.Assert(err, check.IsNil)
+		accessible, err := GetAccessibleCampaignSummaries(user, time.Now().UTC())
+		c.Assert(err, check.IsNil)
+		single, err := GetCampaignSummary(campaign.Id, user.Id)
+		c.Assert(err, check.IsNil)
+		authorized, err := GetAccessibleCampaignSummary(campaign.Id, user)
+		c.Assert(err, check.IsNil)
+		c.Assert(len(owned.Campaigns), check.Equals, 1)
+		c.Assert(len(accessible.Campaigns), check.Equals, 1)
+		for _, summary := range []CampaignSummary{owned.Campaigns[0], accessible.Campaigns[0], single, authorized} {
+			if instant.IsZero() {
+				c.Assert(summary.SendByDate, check.IsNil)
+				c.Assert(summary.CompletedDate, check.IsNil)
+				encoded, err := json.Marshal(summary)
+				c.Assert(err, check.IsNil)
+				c.Assert(strings.Contains(string(encoded), "\"send_by_date\":null"), check.Equals, true)
+				c.Assert(strings.Contains(string(encoded), "\"completed_date\":null"), check.Equals, true)
+			} else {
+				c.Assert(summary.SendByDate.Equal(instant), check.Equals, true)
+				c.Assert(summary.CompletedDate.Equal(instant), check.Equals, true)
+			}
+		}
+	}
+}

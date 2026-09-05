@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { readFileSync } from "node:fs"
 import { assetDisposition, assertGeneratedCommits, assertReleaseState, checksPassed, generatedPath, verifyChecksums, versionTag } from "./release-lib.mjs"
 
 test("require every latest trusted check to succeed", () => {
@@ -17,6 +18,9 @@ test("generated recovery refuses unknown commits and application files", () => {
   assert.throws(() => assertGeneratedCommits(commits, ["models/user.go"], "0.3.0"))
   assert.equal(generatedPath("changes/../models/user.go"), false)
   assert.throws(() => versionTag("0.3.0;echo unsafe"))
+  assert.equal(versionTag("0.3.0"), "v0.3.0")
+  assert.equal(versionTag("0.3.1"), "v0.3.1")
+  assert.throws(() => versionTag("00.3.0"))
 })
 test("release recovery never moves a tag or adopts unknown publication", () => {
   assert.equal(assertReleaseState(null, null, "abc"), "new")
@@ -41,4 +45,15 @@ test("checksums cover each artifact exactly once", () => {
   assert.throws(() => verifyChecksums(`${first}\n${first}\n`, hashes))
   assert.throws(() => verifyChecksums(first, hashes))
   assert.throws(() => verifyChecksums(`${first}\n${"b".repeat(64)}  darkphish-two.tar.gz`, hashes))
+})
+
+test("preparation cannot replace a pending publication run", () => {
+  const prepare = readFileSync(new URL("../.github/workflows/release-prepare.yml", import.meta.url), "utf8")
+  const publish = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8")
+  const group = (text) => text.match(/concurrency:\s+group: ([^\r\n]+)/)?.[1]
+  assert.ok(group(prepare))
+  assert.ok(group(publish))
+  assert.notEqual(group(prepare), group(publish))
+  assert.match(prepare, /cancel-in-progress: false/)
+  assert.match(publish, /cancel-in-progress: false/)
 })

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs"
+import { copyFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { api, assertGeneratedCommits, dispatchChecks, enableAutoMerge, git, greenCommit, pages, protectedMain, repository, versionTag } from "./release-lib.mjs"
@@ -7,7 +7,8 @@ import { api, assertGeneratedCommits, dispatchChecks, enableAutoMerge, git, gree
 async function prepare() {
   const repo = repository()
   const sha = git("rev-parse", "HEAD")
-  const version = readFileSync("VERSION", "utf8").trim()
+  // Validate fragments and select their target without changing VERSION yet.
+  const version = execFileSync(process.execPath, ["scripts/changelog.mjs", "target"], { encoding: "utf8" }).trim()
   const tag = versionTag(version)
   const branch = `release/${tag}`
   await protectedMain(repo, sha)

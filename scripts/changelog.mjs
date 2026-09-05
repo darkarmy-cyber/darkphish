@@ -102,7 +102,10 @@ function aggregate() {
 
 const command = process.argv[2] || "validate"
 try {
-  if (command === "validate") {
+  if (command === "target") {
+    const values = validate()
+    process.stdout.write(`${values[0]?.version || version()}\n`)
+  } else if (command === "validate") {
     const baseIndex = process.argv.indexOf("--base")
     validate(baseIndex !== -1, baseIndex !== -1 ? process.argv[baseIndex + 1] : "")
   } else if (command === "prepare" || command === "aggregate") {
@@ -110,7 +113,7 @@ try {
   } else {
     throw new Error(`unknown command ${command}`)
   }
-  process.stdout.write(`changelog ${command} succeeded for ${version()}\n`)
+  if (command !== "target") process.stdout.write(`changelog ${command} succeeded for ${version()}\n`)
 } catch (error) {
   process.stderr.write(`${error.message}\n`)
   process.exitCode = 1

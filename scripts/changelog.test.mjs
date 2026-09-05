@@ -26,3 +26,22 @@ test("release recovery aggregates additional 0.3 fragments without losing histor
     execFileSync(process.execPath, [join(root, "scripts/changelog.mjs"), "validate"])
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
+
+test("release metadata uses validated fragment targets before aggregation", () => {
+  for (const [current, target] of [["0.3.0", "0.4.0"], ["0.3.1", "0.3.1"], ["0.3.0", "0.3.0"]]) {
+    const root = mkdtempSync(join(tmpdir(), "darkphish-target-test-"))
+    try {
+      mkdirSync(join(root, "scripts"))
+      mkdirSync(join(root, "changes"))
+      copyFileSync(new URL("changelog.mjs", import.meta.url), join(root, "scripts/changelog.mjs"))
+      writeFileSync(join(root, "VERSION"), `${current}\n`)
+      writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n\n## 0.2.0 - 2026-09-04\n")
+      writeFileSync(join(root, "changes/fix.md"), `---\ncategory: Fixed\nversion: ${target}\n---\n- release fix\n`)
+      const selected = execFileSync(process.execPath, [join(root, "scripts/changelog.mjs"), "target"], { encoding: "utf8" }).trim()
+      assert.equal(selected, target)
+      assert.equal(readFileSync(join(root, "VERSION"), "utf8"), `${current}\n`)
+      execFileSync(process.execPath, [join(root, "scripts/changelog.mjs"), "prepare"])
+      assert.equal(readFileSync(join(root, "VERSION"), "utf8"), `${target}\n`)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  }
+})

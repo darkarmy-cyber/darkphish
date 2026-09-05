@@ -374,6 +374,7 @@ func GetCampaignSummaries(uid int64) (CampaignSummaries, error) {
 			return overview, err
 		}
 		cs[i].Stats = s
+		cs[i].normalizeOptionalDates()
 	}
 	overview.Total = int64(len(cs))
 	overview.Campaigns = cs
@@ -403,6 +404,7 @@ func GetAccessibleCampaignSummaries(user User, now time.Time) (CampaignSummaries
 			return overview, err
 		}
 		values[i].Stats = stats
+		values[i].normalizeOptionalDates()
 	}
 	overview.Total = int64(len(values))
 	overview.Campaigns = values
@@ -425,6 +427,7 @@ func GetCampaignSummary(id int64, uid int64) (CampaignSummary, error) {
 		return cs, err
 	}
 	cs.Stats = s
+	cs.normalizeOptionalDates()
 	return cs, nil
 }
 
@@ -439,6 +442,7 @@ func GetAccessibleCampaignSummary(id int64, user User) (CampaignSummary, error) 
 		return summary, err
 	}
 	summary.Stats, err = getCampaignStats(id)
+	summary.normalizeOptionalDates()
 	return summary, err
 }
 

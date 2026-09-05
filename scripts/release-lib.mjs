@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 export const requiredChecks = JSON.parse(readFileSync(new URL("../.github/required-checks.json", import.meta.url), "utf8"))
 export const generatedPath = (path) => path === "VERSION" || path === "CHANGELOG.md" || /^changes\/[a-z0-9][a-z0-9-]*\.md$/.test(path)
 export const versionTag = (value) => {
-  if (!/^\d+\.\d+\.0$/.test(value)) throw new Error("release VERSION must be minor SemVer")
+  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value)) throw new Error("release VERSION must be stable SemVer")
   return `v${value}`
 }
 export function checksPassed(checks, names = requiredChecks) {

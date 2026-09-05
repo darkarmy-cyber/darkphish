@@ -40,3 +40,13 @@ func (c *Campaign) AfterFind() error {
 	}
 	return nil
 }
+
+// Table(...).Scan does not invoke Gorm model hooks for summary projections.
+func (c *CampaignSummary) normalizeOptionalDates() {
+	if c.SendByDate != nil {
+		c.SendByDate = nullableTime(*c.SendByDate)
+	}
+	if c.CompletedDate != nil {
+		c.CompletedDate = nullableTime(*c.CompletedDate)
+	}
+}

@@ -115,6 +115,7 @@ type Config struct {
 	PhishConf                PhishServer            `json:"phish_server"`
 	DBName                   string                 `json:"db_name"`
 	DBPath                   string                 `json:"db_path"`
+	BootstrapDirectory       string                 `json:"bootstrap_directory"`
 	DBSSLCaPath              string                 `json:"db_sslca_path"`
 	DBMaxOpenConns           int                    `json:"db_max_open_conns"`
 	DBMaxIdleConns           int                    `json:"db_max_idle_conns"`
@@ -179,6 +180,9 @@ func LoadConfig(configPath string) (*Config, error) {
 		config.ProductionMode = production
 	}
 	baseDir := filepath.Dir(configPath)
+	if config.BootstrapDirectory != "" && !filepath.IsAbs(config.BootstrapDirectory) {
+		config.BootstrapDirectory = filepath.Join(baseDir, config.BootstrapDirectory)
+	}
 	config.Session.AuthKey, err = resolveSecret(config.Session.AuthKey, config.Session.AuthKeyFile, baseDir, "DARKPHISH_SESSION_AUTH_KEY", "GOPHISH_SESSION_AUTH_KEY")
 	if err != nil {
 		return nil, err

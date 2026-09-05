@@ -1,44 +1,40 @@
 name: Prepare release changelog
 
 on:
-  push:
-    branches: [main, master]
-    paths: ['changes/**']
+  workflow_run:
+    workflows: [CI, CodeQL]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
 
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
 
 concurrency:
-  group: release-prepare
+  group: release-preparation
   cancel-in-progress: false
 
 jobs:
   prepare:
-    if: github.actor != 'github-actions[bot]'
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+      checks: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24.19.0
-      - run: node scripts/changelog.mjs prepare
-      - name: Create protected release pull request
-        shell: bash
+      - name: Preflight and recover the generated release pull request
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          version="$(tr -d '[:space:]' < VERSION)"
-          branch="release/v$version"
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git switch -c "$branch"
-          git add VERSION CHANGELOG.md changes
-          git commit -m "release: Darkphish $version"
-          git push origin "$branch"
-          url="$(gh pr create --base "${{ github.ref_name }}" --head "$branch" --title "release: Darkphish $version" --body "Automated changelog aggregation and version preparation for v$version.")"
-          gh label create codex-automerge --color 0E8A16 --description "Enter protected native auto-merge after required checks and approvals" --force
-          gh pr edit "$url" --add-label codex-automerge
-          gh pr merge "$url" --auto --squash
+        run: node scripts/release-prepare.mjs

@@ -5,7 +5,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +24,14 @@ import (
 var db *gorm.DB
 var conf *config.Config
 var secretStore secretpkg.Store = secretpkg.PlaintextStore{}
+
+// Close releases database resources after all application workers have stopped.
+func Close() error {
+	if db == nil {
+		return nil
+	}
+	return db.Close()
+}
 
 // Health verifies that the configured database is reachable.
 func Health() error {
@@ -152,22 +159,16 @@ type Response struct {
 }
 
 func createTemporaryPassword(u *User) error {
-	var temporaryPassword string
-	if envPassword := environmentValue(InitialAdminPassword, LegacyInitialAdminPassword); envPassword != "" {
-		temporaryPassword = envPassword
-	} else {
-		temporaryPassword = auth.GenerateSecureKey(auth.MinPasswordLength)
-		if conf.DBPath != ":memory:" {
-			passwordPath := environmentValue("DARKPHISH_INITIAL_ADMIN_PASSWORD_FILE", "GOPHISH_INITIAL_ADMIN_PASSWORD_FILE")
-			if passwordPath == "" {
-				passwordPath = filepath.Join(filepath.Dir(conf.DBPath), "darkphish_initial_admin_password")
-			}
-			if err := os.WriteFile(passwordPath, []byte(temporaryPassword+"\n"), 0600); err != nil {
-				return fmt.Errorf("write initial administrator password file: %w", err)
-			}
-			log.Infof("Initial administrator password written to %s; delete this file after first login", passwordPath)
-		}
+	temporaryPassword, passwordPath, err := prepareBootstrapPassword(conf)
+	if err != nil {
+		return err
 	}
+	committed := false
+	defer func() {
+		if !committed && passwordPath != "" {
+			_ = os.Remove(passwordPath)
+		}
+	}()
 	hash, err := auth.GeneratePasswordHash(temporaryPassword)
 	if err != nil {
 		return err
@@ -180,21 +181,25 @@ func createTemporaryPassword(u *User) error {
 	if err != nil {
 		return err
 	}
+	committed = true
+	if passwordPath != "" {
+		log.Info("Initial administrator password written to the bootstrap password file; it is removed after the required first password change")
+	}
 	return nil
 }
 
 // RemoveInitialAdminPasswordFile removes the generated development bootstrap
 // credential after the administrator completes the required password change.
 func RemoveInitialAdminPasswordFile() {
-	if conf == nil || conf.DBPath == ":memory:" || environmentValue(InitialAdminPassword, LegacyInitialAdminPassword) != "" {
+	if conf == nil || environmentValue(InitialAdminPassword, LegacyInitialAdminPassword) != "" {
 		return
 	}
-	passwordPath := environmentValue("DARKPHISH_INITIAL_ADMIN_PASSWORD_FILE", "GOPHISH_INITIAL_ADMIN_PASSWORD_FILE")
-	if passwordPath == "" {
-		passwordPath = filepath.Join(filepath.Dir(conf.DBPath), "darkphish_initial_admin_password")
+	passwordPath, err := bootstrapPasswordPath(conf)
+	if err != nil || passwordPath == "" {
+		return
 	}
 	if err := os.Remove(passwordPath); err != nil && !os.IsNotExist(err) {
-		log.Warnf("unable to remove initial administrator password file %s: %v", passwordPath, err)
+		log.Warn("Unable to remove the bootstrap password file; remove it manually after the first password change")
 	}
 }
 

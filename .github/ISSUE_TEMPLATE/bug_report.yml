@@ -1,0 +1,30 @@
+name: Bug report
+description: Report a reproducible Darkphish problem using sanitized information.
+body:
+  - type: markdown
+    attributes:
+      value: 'Report vulnerabilities privately through the repository Security tab, not an issue. Never include credentials, DSNs, tokens, or captured passwords.'
+  - type: input
+    id: version
+    attributes:
+      label: Darkphish version
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Deployment and database
+      description: Operating system, native binary/source build, and SQLite/MySQL/PostgreSQL version.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction and expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized diagnostics
+      description: Remove secrets and sensitive personal data before submitting.

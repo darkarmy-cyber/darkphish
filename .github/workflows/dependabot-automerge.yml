@@ -8,9 +8,12 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  checks: read
+  actions: read
 
 jobs:
   inspect:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -23,6 +26,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          node scripts/require-green-main.mjs
           gh pr list --state open --author 'app/dependabot' --label dependencies --json number --jq '.[].number' | while read -r number; do
             [ -n "$number" ] || continue
             author="$(gh pr view "$number" --json author --jq '.author.login')"
@@ -30,6 +34,7 @@ jobs:
             title="$(gh pr view "$number" --json title --jq '.title')"
             files="$(gh pr view "$number" --json files --jq '.files[].path')"
             if node scripts/dependabot-automerge.mjs "$title" "$files"; then
-              gh pr merge "$number" --auto --squash
+              pr_id="$(gh pr view "$number" --json id --jq '.id')"
+              gh api graphql -f query="mutation(\$id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: \$id, mergeMethod: SQUASH}) { pullRequest { number } } }" -f id="$pr_id"
             fi
           done

@@ -466,7 +466,8 @@ func (as *AdminServer) Login(w http.ResponseWriter, r *http.Request) {
 			as.handleInvalidLogin(w, r, "Account Locked")
 			return
 		}
-		u.LastLogin = time.Now().UTC()
+		lastLogin := time.Now().UTC()
+		u.LastLogin = &lastLogin
 		if upgradedHash != "" {
 			u.Hash = upgradedHash
 		}

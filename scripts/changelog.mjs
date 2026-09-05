@@ -77,11 +77,24 @@ function aggregate() {
     const titleEnd = changelog.indexOf("\n\n", changelog.indexOf("# Changelog"))
     changelog = changelog.slice(0, titleEnd + 2) + insertion.join("\n") + "\n" + changelog.slice(titleEnd + 2)
   } else {
-    for (const item of values) {
-      for (const bullet of item.bullets) {
-        if (!changelog.includes(bullet)) throw new Error(`CHANGELOG already has ${heading} but is missing fragment bullet from ${item.name}`)
+    const start = changelog.indexOf(heading)
+    const next = changelog.indexOf("\n## ", start + heading.length)
+    const end = next < 0 ? changelog.length : next
+    let section = changelog.slice(start, end).trimEnd()
+    for (const category of categories) {
+      const bullets = values.filter((item) => item.category === category).flatMap((item) => item.bullets)
+        .filter((bullet) => !section.split("\n").includes(bullet))
+      if (!bullets.length) continue
+      const categoryHeading = `### ${category}\n`
+      const categoryStart = section.indexOf(categoryHeading)
+      if (categoryStart < 0) section += `\n\n${categoryHeading}\n${bullets.join("\n")}`
+      else {
+        const nextCategory = section.indexOf("\n### ", categoryStart + categoryHeading.length)
+        const categoryEnd = nextCategory < 0 ? section.length : nextCategory
+        section = section.slice(0, categoryEnd).trimEnd() + "\n" + bullets.join("\n") + "\n" + section.slice(categoryEnd)
       }
     }
+    changelog = changelog.slice(0, start) + section + "\n" + (next < 0 ? "" : "\n" + changelog.slice(next + 1))
   }
   writeFileSync(changelogPath, changelog)
   for (const item of values) unlinkSync(join(changesPath, item.name))
@@ -89,7 +102,10 @@ function aggregate() {
 
 const command = process.argv[2] || "validate"
 try {
-  if (command === "validate") {
+  if (command === "target") {
+    const values = validate()
+    process.stdout.write(`${values[0]?.version || version()}\n`)
+  } else if (command === "validate") {
     const baseIndex = process.argv.indexOf("--base")
     validate(baseIndex !== -1, baseIndex !== -1 ? process.argv[baseIndex + 1] : "")
   } else if (command === "prepare" || command === "aggregate") {
@@ -97,7 +113,7 @@ try {
   } else {
     throw new Error(`unknown command ${command}`)
   }
-  process.stdout.write(`changelog ${command} succeeded for ${version()}\n`)
+  if (command !== "target") process.stdout.write(`changelog ${command} succeeded for ${version()}\n`)
 } catch (error) {
   process.stderr.write(`${error.message}\n`)
   process.exitCode = 1

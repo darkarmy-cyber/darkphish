@@ -32,6 +32,13 @@ main, requires repository auto-merge to remain enabled, and matches the expected
 head SHA. It never uses an administrator override. GitHub's queue-only GraphQL
 mutation rejects already-clean PRs, which otherwise breaks safe release retries.
 
+Both preparation and publication have independent 15-minute scheduled preflights.
+Hosted validation confirmed that checks explicitly dispatched by GITHUB_TOKEN can
+finish without emitting the expected downstream workflow_run executions. The
+publication schedule therefore reconciles a checked, merged release PR directly;
+it still requires protected current main and every required check, and skips
+builds when no unpublished release merge is eligible.
+
 ## Actions settings outside Git
 
 Keep default workflow permissions read-only. Enable Settings → Actions → General

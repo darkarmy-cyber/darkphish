@@ -6,6 +6,8 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '10,25,40,55 * * * *'
 
 permissions:
   contents: read
@@ -21,7 +23,7 @@ jobs:
   metadata:
     if: >-
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-24.04
     outputs:
       ready: ${{ steps.version.outputs.ready }}

@@ -25,6 +25,7 @@ Semantic Versioning while the public API and schema are still pre-1.0.
 - Compute audit hashes from the persisted database representation and sign checkpoint timestamps at portable microsecond precision so MySQL/PostgreSQL timestamp rounding cannot invalidate an untampered chain.
 - Handle already-green release and maintenance pull requests with GitHub's protected merge-when-ready operation, pinning the exact head commit and retaining every check, review-conversation, and no-bypass requirement.
 - Store absent user/IMAP last-login and campaign completion/send-by timestamps as SQL NULL across SQLite, strict MySQL, and PostgreSQL; show no last-login date for accounts that have never authenticated.
+- Reconcile native publication on an independent schedule when GitHub suppresses downstream completion events from bot-dispatched checks, without relaxing protected-source, release-PR, or required-check gates.
 - Default required modification timestamps in the persistence layer for groups, templates, pages, and mail settings, including callers outside HTTP handlers, without changing strict MySQL validation or existing real timestamps.
 - Normalize legacy zero optional dates in every campaign-summary API while preserving real historical timestamps.
 - Select release metadata from validated changelog targets, preserve the reserved manual patch-release path, and prevent preparation runs from replacing pending publication runs.

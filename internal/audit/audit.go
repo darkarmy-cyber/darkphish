@@ -26,20 +26,25 @@ var (
 )
 
 type Event struct {
-	ID         int64     `json:"id,omitempty"`
-	Timestamp  time.Time `json:"timestamp"`
-	Actor      string    `json:"actor"`
-	ActorID    int64     `json:"actor_id,omitempty"`
-	ActorType  string    `json:"actor_type"`
-	Action     string    `json:"action"`
-	TargetType string    `json:"target_type"`
-	TargetID   string    `json:"target_id"`
-	Result     string    `json:"result"`
-	RequestID  string    `json:"request_id"`
-	SourceIP   string    `json:"source_ip,omitempty"`
-	UserAgent  string    `json:"user_agent,omitempty"`
-	AuthMethod string    `json:"auth_method,omitempty"`
-	Metadata   string    `json:"metadata"`
+	ID           int64     `json:"id,omitempty"`
+	OutboxID     int64     `json:"delivery_id,omitempty"`
+	Timestamp    time.Time `json:"timestamp"`
+	Actor        string    `json:"actor"`
+	ActorID      int64     `json:"actor_id,omitempty"`
+	ActorType    string    `json:"actor_type"`
+	Action       string    `json:"action"`
+	TargetType   string    `json:"target_type"`
+	TargetID     string    `json:"target_id"`
+	Result       string    `json:"result"`
+	RequestID    string    `json:"request_id"`
+	SourceIP     string    `json:"source_ip,omitempty"`
+	UserAgent    string    `json:"user_agent,omitempty"`
+	AuthMethod   string    `json:"auth_method,omitempty"`
+	Metadata     string    `json:"metadata"`
+	ChainID      string    `json:"chain_id,omitempty"`
+	Sequence     int64     `json:"sequence,omitempty"`
+	PreviousHash string    `json:"previous_hash,omitempty"`
+	EventHash    string    `json:"event_hash,omitempty"`
 }
 
 type Filter struct {
@@ -109,25 +114,42 @@ func bounded(value string, maximum int) string {
 }
 
 func persist(event Event) {
+	if err := AppendEvent(event); err != nil {
+		log.Errorf("persist audit event: %v", err)
+	}
+}
+
+// AppendEvent writes a pre-built event and reports persistence failures. It is
+// used by the durable outbox, which must retain failed events for retry.
+func AppendEvent(event Event) error {
 	encoded, err := json.Marshal(event)
 	if err == nil {
 		writeMu.Lock()
 		_, _ = log.Logger.Out.Write(append(encoded, '\n'))
 		writeMu.Unlock()
+	} else {
+		return err
 	}
 	storeMu.RLock()
 	current := store
 	storeMu.RUnlock()
 	if current != nil {
 		if _, err := current.Append(event); err != nil {
-			log.Errorf("persist audit event: %v", err)
+			return err
 		}
 	}
+	return nil
 }
 
 // Record persists identifiers and bounded request metadata only. It has no API
 // for request bodies, credentials, tokens, or secrets.
 func Record(r *http.Request, actor string, actorID int64, action, target, result, authMethod string) {
+	persist(NewRequestEvent(r, actor, actorID, action, target, result, authMethod))
+}
+
+// NewRequestEvent creates bounded, secret-free request metadata for services
+// that must atomically enqueue an audit record with a business mutation.
+func NewRequestEvent(r *http.Request, actor string, actorID int64, action, target, result, authMethod string) Event {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
@@ -137,12 +159,12 @@ func Record(r *http.Request, actor string, actorID int64, action, target, result
 	if actorID == 0 {
 		actorType = "anonymous"
 	}
-	persist(Event{
+	return Event{
 		Timestamp: time.Now().UTC(), Actor: bounded(actor, 255), ActorID: actorID, ActorType: actorType,
 		Action: bounded(action, 128), TargetType: bounded(targetType, 64), TargetID: bounded(targetID, 255), Result: bounded(result, 32),
 		RequestID: bounded(RequestID(r), 64), SourceIP: bounded(host, 64), UserAgent: bounded(r.UserAgent(), 512),
 		AuthMethod: bounded(authMethod, 32), Metadata: "{}",
-	})
+	}
 }
 
 func RecordSystem(action, targetType, targetID, result string) {

@@ -63,6 +63,7 @@
 	"personal_access_tokens": {
 		"max_lifetime_days": 90
 	},
+	"bootstrap_directory": "",
 	"contact_address": "",
 	"logging": {
 		"filename": "",

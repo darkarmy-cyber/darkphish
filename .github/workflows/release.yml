@@ -185,7 +185,7 @@ jobs:
           upload-release-assets: false
       - name: Generate checksums
         working-directory: dist
-        run: sha256sum *.zip *.tar.gz *.spdx.json > SHA256SUMS
+        run: sha256sum -- *.zip *.tar.gz *.spdx.json > SHA256SUMS
       - uses: actions/attest@v4
         if: vars.RELEASE_ATTESTATIONS_SUPPORTED == 'true'
         with:

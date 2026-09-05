@@ -44,7 +44,7 @@ jobs:
           cache: true
       - name: Verify formatting
         shell: bash
-        run: test -z "$(gofmt -l $(git ls-files '*.go'))"
+        run: test -z "$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
       - name: Build
         run: go build -trimpath ./...
       - name: Unit tests

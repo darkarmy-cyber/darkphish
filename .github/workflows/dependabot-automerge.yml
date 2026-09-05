@@ -35,6 +35,6 @@ jobs:
             files="$(gh pr view "$number" --json files --jq '.files[].path')"
             if node scripts/dependabot-automerge.mjs "$title" "$files"; then
               pr_id="$(gh pr view "$number" --json id --jq '.id')"
-              gh api graphql -f query='mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH}) { pullRequest { number } } }' -f id="$pr_id"
+              gh api graphql -f query="mutation(\$id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: \$id, mergeMethod: SQUASH}) { pullRequest { number } } }" -f id="$pr_id"
             fi
           done

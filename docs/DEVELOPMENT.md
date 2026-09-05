@@ -20,7 +20,8 @@ go build -trimpath ./...
 ```
 
 CI additionally runs staticcheck, govulncheck, CodeQL, pnpm audit, Trivy secret
-scanning, migration tests, and changelog-fragment validation. Generated assets under `static/*/dist` are
+scanning, SQLite/MySQL/PostgreSQL migration tests, MySQL/PostgreSQL core security-
+model tests, and changelog-fragment validation. Generated assets under `static/*/dist` are
 committed and CI verifies that a fresh frontend build does not change them.
 
 Container builds are optional compatibility tooling and are not required CI or
@@ -40,9 +41,11 @@ warning for the latter. Never use those defaults for a network-exposed system.
 ## Tests and changes
 
 Security and correctness fixes require a regression test demonstrating allowed,
-blocked, and edge behavior. Preserve existing SQLite files and add explicit,
-reversible migrations for persistent changes. Keep simulation-page policies
-separate from administrative policies.
+blocked, and edge behavior. Preserve existing SQLite/MySQL data and add explicit,
+reversible, database-specific migrations for persistent changes. PostgreSQL's
+fresh-install history starts with a consolidated inherited baseline because it was
+introduced in 0.3. Keep simulation-page policies separate from administrative
+policies.
 
 Runtime changes require a fragment under `changes/`. Validate it with
 `node scripts/changelog.mjs validate`; release preparation aggregates fragments

@@ -3,6 +3,36 @@
 All notable changes to Darkphish are documented here. The project follows
 Semantic Versioning while the public API and schema are still pre-1.0.
 
+## 0.3.0 - 2026-09-05
+
+### Added
+
+- Added provider-neutral v3 envelope encryption with HashiCorp Vault Transit wrapping, local v1/v2 read compatibility, fail-closed provider handling, and resumable cross-provider re-encryption tooling.
+- Added first-class PostgreSQL configuration, migrations, pooled runtime support, TLS verification policy, and hosted migration/security-model CI coverage alongside SQLite and MySQL.
+
+### Changed
+
+- Sensitive multi-write operations now use focused repositories, service boundaries, database transactions, and a durable audit outbox so partial credential, reviewer, token, user-role, or audit state is rolled back safely.
+
+### Fixed
+
+- Non-retainable repeat credential submissions now atomically purge any older ciphertext for the same result, preventing stale plaintext from remaining revealable.
+- Runtime configuration now resolves each database prefix to its real `migrations` directory, so native binary startup and maintenance commands apply the packaged schema history.
+
+### Deprecated
+
+- Legacy GOPHISH_* environment fallbacks and the single encryption-key path now emit bounded warnings; new migrate-check and secret-status/migrate commands identify and remediate compatibility hazards without exposing values.
+
+### Security
+
+- Credential reveal from a browser now requires a fresh, server-side, session-bound password reauthentication window in addition to account state, campaign access, RBAC, and credential permission checks.
+- Added the narrow Security Reviewer role with expiring per-campaign assignments, centrally enforced access, audited assignment lifecycle, and no campaign ownership or administrative authority.
+- Audit records now use deterministic SHA-256 hash chaining, rotating Ed25519-signed checkpoints, retention anchors, chain verification, and signed/verifiable JSON export manifests.
+
+### Migration
+
+- Added reversible, data-preserving SQLite and MySQL 0.3 upgrade migrations plus a complete PostgreSQL fresh-install history, with up/down/up schema checks for all three backends.
+
 ## 0.2.0 - 2026-09-04
 
 ### Added

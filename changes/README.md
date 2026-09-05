@@ -12,7 +12,7 @@ version: 0.3.0
 ```
 
 Allowed categories are `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`,
-`Security`, and `Breaking`. Release preparation validates and aggregates the
+`Security`, `Breaking`, and `Migration`. Release preparation validates and aggregates the
 fragments into `CHANGELOG.md`, advances `VERSION` by one normal minor release
 when needed, and removes consumed files. A fragment may target the current
 unreleased version or exactly its next minor version; patch and skipped-minor

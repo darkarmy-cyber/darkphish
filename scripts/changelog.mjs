@@ -9,7 +9,7 @@ const pathAtRoot = (value) => join(root, value)
 const versionPath = pathAtRoot("VERSION")
 const changelogPath = pathAtRoot("CHANGELOG.md")
 const changesPath = pathAtRoot("changes/")
-const categories = new Set(["Added", "Changed", "Deprecated", "Removed", "Fixed", "Security", "Breaking"])
+const categories = new Set(["Added", "Changed", "Deprecated", "Removed", "Fixed", "Security", "Breaking", "Migration"])
 const semver = /^\d+\.\d+\.\d+$/
 
 function version() {

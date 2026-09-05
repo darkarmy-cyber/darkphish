@@ -20,5 +20,12 @@ Available scopes are `audit:read`, `campaigns:read`, `campaigns:write`,
 `users:write`.
 
 List and revoke your own tokens with `GET /api/pats/` and
-`DELETE /api/pats/{id}`. Token creation and revocation are audited. Legacy
-permanent API keys and the `/api/reset` rotation behavior are disabled in 0.2.
+`DELETE /api/pats/{id}`. Creation returns the raw value only after the digest and
+durable audit-outbox event commit together; revocation uses the same transaction
+model. A failed write never returns a usable raw token.
+
+A PAT with `credentials:view` does not receive a browser privileged session and
+does not bypass authorization. Its current user must also be active, hold the role
+permission, and be a System Administrator or have an unexpired Security Reviewer
+assignment for the campaign. Legacy permanent API keys and the `/api/reset`
+rotation behavior remain disabled.

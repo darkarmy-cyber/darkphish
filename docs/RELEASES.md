@@ -1,9 +1,9 @@
 # Version and release policy
 
 `VERSION` is the authoritative Darkphish SemVer value. Release tags add `v`
-(for example, `0.2.0` becomes `v0.2.0`), while the product UI and CLI shorten
-normal releases to `Darkphish 0.2`. Unreleased binaries identify themselves as
-`0.2-dev`; release builds also contain the commit SHA and UTC build timestamp.
+(for example, `0.3.0` becomes `v0.3.0`), while the product UI and CLI shorten
+normal releases to `Darkphish 0.3`. Unreleased binaries identify themselves as
+`0.3-dev`; release builds also contain the commit SHA and UTC build timestamp.
 
 Darkphish has an independent version history. Normal engineering batches
 advance the minor component (`0.2.0` to `0.3.0`); patch releases are reserved

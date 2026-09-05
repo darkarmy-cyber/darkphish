@@ -58,13 +58,18 @@ key generation, persistence, TLS, database, and health-check guidance.
   sent as `Authorization: Bearer <token>`.
 - API tokens in query strings are rejected.
 - Administrative CORS is off unless exact trusted origins are configured.
-- Production mode requires persistent session and secret-encryption keys.
+- Production mode requires persistent session, envelope-encryption, and audit-signing keys.
 - Stored SMTP, IMAP, and webhook secrets are write-only in normal API responses.
 - Campaigns default to disabled credential handling. Policy-only mode stores
   irreversible findings; encrypted review requires explicit authorization,
-  short retention, and an individually audited reveal.
+  short retention, a campaign-scoped reviewer or administrator, fresh browser
+  reauthentication, and an individually audited reveal.
+- Local versioned keys and Vault Transit protect v3 per-record data keys; v1/v2
+  local envelopes remain readable during migration.
 - Administrative changes and sensitive reads emit persistent, indexed,
-  secret-free audit events.
+  hash-chained audit events with signed checkpoints and export manifests.
+- SQLite, MySQL/MariaDB, and PostgreSQL are supported with independent migrations
+  and database CI coverage.
 
 Raw personal access tokens are displayed once and never stored. Legacy
 permanent API keys no longer authenticate.
@@ -78,6 +83,8 @@ permanent API keys no longer authenticate.
 - [Credential review](docs/CREDENTIAL_REVIEW.md)
 - [Personal access tokens](docs/API_TOKENS.md)
 - [Migration from the upstream baseline and 0.2](docs/MIGRATION.md)
+- [Audit integrity and export verification](docs/AUDIT_INTEGRITY.md)
+- [Envelope key management](docs/KEY_MANAGEMENT.md)
 - [Security policy](SECURITY.md)
 - [Changelog](CHANGELOG.md)
 

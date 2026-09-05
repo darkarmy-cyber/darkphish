@@ -19,6 +19,16 @@
 	"db_path": "darkphish.db",
 	"db_max_open_conns": 1,
 	"db_max_idle_conns": 1,
+	"db_connection_max_lifetime_minutes": 30,
+	"postgresql": {
+		"host": "127.0.0.1",
+		"port": 5432,
+		"database": "darkphish",
+		"username": "darkphish",
+		"password_file": "",
+		"sslmode": "verify-full",
+		"connect_timeout_seconds": 10
+	},
 	"migrations_prefix": "db/db_",
 	"production_mode": false,
 	"session": {
@@ -27,12 +37,28 @@
 		"lifetime_hours": 24
 	},
 	"secrets": {
+		"provider": "local",
 		"active_key_id": "",
 		"keys": {},
-		"encryption_key_file": ""
+		"encryption_key_file": "",
+		"vault": {
+			"address": "",
+			"token_file": "",
+			"namespace": "",
+			"mount": "transit",
+			"key_name": "darkphish-secrets",
+			"ca_cert": ""
+		}
 	},
 	"audit": {
-		"retention_days": 365
+		"retention_days": 365,
+		"checkpoint_interval": 1000,
+		"active_signing_key_id": "",
+		"signing_keys": {},
+		"signing_key_file": ""
+	},
+	"privileged_access": {
+		"window_minutes": 5
 	},
 	"personal_access_tokens": {
 		"max_lifetime_days": 90

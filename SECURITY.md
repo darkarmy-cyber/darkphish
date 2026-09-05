@@ -24,14 +24,24 @@ security release; older pre-1.0 versions do not receive indefinite backports.
 ## Deployment expectations
 
 Run the administrative server behind TLS, enable `production_mode`, provide
-all required persistent keys from a secret manager or mounted files, restrict
-network access, back up application and database data, and keep the host patched. The
+independent persistent session, envelope, and Ed25519 audit-signing keys from a
+secret manager or mounted files, restrict network access, back up application and
+database data, and keep the host patched. The
 simulation listener is a separate trust boundary and should not expose the
 administrative interface.
 
-Keep audit exports and individually revealed credentials within the authorized
-review group. Never place revealed values in tickets, chat, logs, webhooks, or
-bulk exports. Encrypted review is an exceptional campaign mode, not a default.
+Keep signed audit exports and individually revealed credentials within the
+authorized review group. Never place revealed values in tickets, chat, logs,
+webhooks, analytics, or bulk exports. Encrypted review is an exceptional campaign
+mode, not a default. Require named, expiring campaign assignments for Security
+Reviewers and investigate `credential.view`, reauthentication failure, and reviewer
+lifecycle events.
+
+Use PostgreSQL `verify-full` TLS with a trusted server identity in production.
+Vault Transit deployments require least-privilege access to one named key and must
+fail closed when Vault is unavailable. Database backups do not replace key backups:
+without the required provider/local keys they cannot restore encrypted values, and
+without audit verification material they cannot establish checkpoint authenticity.
 
 Darkphish is for explicitly authorized simulations only. Vulnerability reports
 must not use third-party systems or real employee credentials as test material.

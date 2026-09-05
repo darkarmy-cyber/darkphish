@@ -1,0 +1,7 @@
+development:
+  driver: postgres
+  open: $DARKPHISH_POSTGRES_DSN
+
+test:
+  driver: postgres
+  open: $DARKPHISH_TEST_POSTGRES_DSN

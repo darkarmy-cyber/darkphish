@@ -81,6 +81,42 @@ jobs:
         env:
           DARKPHISH_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/darkphish_migration_test?charset=utf8mb4&parseTime=true&multiStatements=true"
         run: go test ./migrationtest -run TestMySQLMigrationsUpDownUp -count=1
+      - name: Exercise MySQL security model
+        env:
+          DARKPHISH_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/darkphish_migration_test?charset=utf8mb4&parseTime=true&multiStatements=true"
+        run: go test ./databasetest -run TestMySQLSecurityModel -count=1
+
+  postgres-migrations:
+    name: PostgreSQL migrations up/down/up
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: darkphish_migration_test
+          POSTGRES_USER: darkphish
+          POSTGRES_PASSWORD: darkphish-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U darkphish -d darkphish_migration_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.1
+          cache: true
+      - name: Exercise PostgreSQL migrations
+        env:
+          DARKPHISH_TEST_POSTGRES_DSN: "postgres://darkphish:darkphish-test-only@127.0.0.1:5432/darkphish_migration_test?sslmode=disable"
+        run: go test ./migrationtest -run TestPostgreSQLMigrationsUpDownUp -count=1
+      - name: Exercise PostgreSQL security model
+        env:
+          DARKPHISH_TEST_POSTGRES_DSN: "postgres://darkphish:darkphish-test-only@127.0.0.1:5432/darkphish_migration_test?sslmode=disable"
+        run: go test ./databasetest -run TestPostgreSQLSecurityModel -count=1
 
   frontend:
     name: Frontend reproducibility

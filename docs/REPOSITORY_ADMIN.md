@@ -26,6 +26,12 @@ delete head branches. Label eligible internal PRs `codex-automerge`. GitHub nati
 squash auto-merge remains subject to all protections. Workflows never submit
 review approvals, impersonate reviewers, or use administrator merge bypasses.
 
+The supported GitHub CLI merge-when-ready operation handles both pending checks
+and already-green PRs. It is restricted to internal ready PRs targeting protected
+main, requires repository auto-merge to remain enabled, and matches the expected
+head SHA. It never uses an administrator override. GitHub's queue-only GraphQL
+mutation rejects already-clean PRs, which otherwise breaks safe release retries.
+
 ## Actions settings outside Git
 
 Keep default workflow permissions read-only. Enable Settings → Actions → General

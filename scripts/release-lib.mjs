@@ -32,6 +32,11 @@ export function assetDisposition(existing, digest, size) {
   if (existing.digest !== `sha256:${digest}` || existing.size !== size) throw new Error("existing release asset differs; refusing to replace a released binary")
   return "reuse"
 }
+export function protectedMergeArguments(repo, pr) {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || !Number.isSafeInteger(pr.number) || pr.number < 1 || !/^[a-f0-9]{40}$/.test(pr.head?.sha || "")) throw new Error("invalid protected merge target")
+  if (pr.draft || pr.base?.ref !== "main" || pr.head.repo?.full_name !== repo) throw new Error("only internal ready main pull requests are eligible")
+  return ["pr", "merge", String(pr.number), "--repo", repo, "--auto", "--squash", "--match-head-commit", pr.head.sha]
+}
 export function verifyChecksums(manifest, hashes) {
   const seen = new Set()
   const lines = manifest.trim().split(/\r?\n/)
@@ -92,13 +97,13 @@ export async function dispatchChecks(repo, branch) {
   }
 }
 export async function enableAutoMerge(repo, pr) {
+  const args = protectedMergeArguments(repo, pr)
   const metadata = await api(`repos/${repo}`)
   const base = await api(`repos/${repo}/branches/${pr.base.ref}`)
   if (!metadata.allow_auto_merge || !base.protected) throw new Error("native auto-merge requires enabled repository auto-merge and a protected base branch")
   if (pr.draft || pr.head.repo?.full_name !== repo) throw new Error("only internal ready pull requests are eligible")
   if (pr.auto_merge) return
-  const result = await api("graphql", { method: "POST", body: {
-    query: "mutation($id:ID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:SQUASH}){pullRequest{number}}}", variables: { id: pr.node_id },
-  } })
-  if (result.errors) throw new Error("GitHub refused native auto-merge; repository rules remain authoritative")
+  // The supported CLI handles both pending checks and an already-clean PR.
+  // No admin bypass: GitHub enforces every rule against this exact head.
+  execFileSync("gh", args, { stdio: "inherit" })
 }

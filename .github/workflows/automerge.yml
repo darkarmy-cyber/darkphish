@@ -12,6 +12,7 @@ jobs:
   enable:
     if: >-
       github.event.pull_request.draft == false &&
+      github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       contains(github.event.pull_request.labels.*.name, 'codex-automerge') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
@@ -25,5 +26,5 @@ jobs:
         run: |
           test "$(gh api "repos/$GH_REPO/branches/main" --jq '.protected')" = true
           test "$(gh api "repos/$GH_REPO" --jq '.allow_auto_merge')" = true
-          pr_id="$(gh pr view "$PR_URL" --json id --jq '.id')"
-          gh api graphql -f query="mutation(\$id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: \$id, mergeMethod: SQUASH}) { pullRequest { number } } }" -f id="$pr_id"
+          pr_sha="$(gh pr view "$PR_URL" --json headRefOid --jq '.headRefOid')"
+          gh pr merge "$PR_URL" --auto --squash --match-head-commit "$pr_sha"

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
-import { assetDisposition, assertGeneratedCommits, assertReleaseState, checksPassed, generatedPath, verifyChecksums, versionTag } from "./release-lib.mjs"
+import { assetDisposition, assertGeneratedCommits, assertReleaseState, checksPassed, generatedPath, protectedMergeArguments, verifyChecksums, versionTag } from "./release-lib.mjs"
 
 test("require every latest trusted check to succeed", () => {
   const check = { id: 1, name: "Go", app: { slug: "github-actions" }, status: "completed", conclusion: "success" }
@@ -56,4 +56,18 @@ test("preparation cannot replace a pending publication run", () => {
   assert.notEqual(group(prepare), group(publish))
   assert.match(prepare, /cancel-in-progress: false/)
   assert.match(publish, /cancel-in-progress: false/)
+})
+
+test("merge-when-ready pins a safe internal head and never requests bypass", () => {
+  const repo = "owner/repository"
+  const pr = { number: 42, draft: false, base: { ref: "main" }, head: { sha: "a".repeat(40), repo: { full_name: repo } } }
+  for (const mergeable_state of ["clean", "blocked", "unstable"]) {
+    const args = protectedMergeArguments(repo, { ...pr, mergeable_state })
+    assert.deepEqual(args, ["pr", "merge", "42", "--repo", repo, "--auto", "--squash", "--match-head-commit", pr.head.sha])
+    assert.equal(args.includes("--admin"), false)
+  }
+  assert.throws(() => protectedMergeArguments(repo, { ...pr, draft: true }))
+  assert.throws(() => protectedMergeArguments(repo, { ...pr, base: { ref: "unprotected" } }))
+  assert.throws(() => protectedMergeArguments(repo, { ...pr, head: { ...pr.head, sha: "--admin" } }))
+  assert.throws(() => protectedMergeArguments(repo, { ...pr, head: { ...pr.head, repo: { full_name: "outside/fork" } } }))
 })

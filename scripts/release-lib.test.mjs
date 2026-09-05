@@ -56,6 +56,8 @@ test("preparation cannot replace a pending publication run", () => {
   assert.notEqual(group(prepare), group(publish))
   assert.match(prepare, /cancel-in-progress: false/)
   assert.match(publish, /cancel-in-progress: false/)
+  assert.match(publish, /schedule:\s+- cron:/)
+  assert.match(publish, /github\.event_name != 'workflow_run'/)
 })
 
 test("merge-when-ready pins a safe internal head and never requests bypass", () => {

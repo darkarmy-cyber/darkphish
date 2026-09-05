@@ -113,6 +113,11 @@ func exerciseSecurityModel(t *testing.T, database, dsn string) {
 	if err := models.PostSMTP(&smtp); err != nil {
 		t.Fatal(err)
 	}
+	for _, modified := range []time.Time{group.ModifiedDate, template.ModifiedDate, page.ModifiedDate, smtp.ModifiedDate} {
+		if modified.IsZero() {
+			t.Fatal("model-created records require real modification timestamps")
+		}
+	}
 	campaign := models.Campaign{
 		Name: "database campaign", UserId: admin.Id, Template: template, Page: page, SMTP: smtp, Groups: []models.Group{group},
 		CredentialCaptureMode: models.CredentialModeEncryptedReview, CredentialRetentionHours: 24,

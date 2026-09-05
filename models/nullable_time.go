@@ -20,13 +20,16 @@ func (u *User) BeforeSave() error {
 func (u *User) AfterFind() error { return u.BeforeSave() }
 
 func (im *IMAP) BeforeSave() error {
+	ensureModifiedTime(&im.ModifiedDate)
+	return im.AfterFind()
+}
+
+func (im *IMAP) AfterFind() error {
 	if im.LastLogin != nil {
 		im.LastLogin = nullableTime(*im.LastLogin)
 	}
 	return nil
 }
-
-func (im *IMAP) AfterFind() error { return im.BeforeSave() }
 
 func (c *Campaign) AfterFind() error {
 	if c.SendByDate != nil {

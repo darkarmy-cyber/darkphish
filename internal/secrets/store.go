@@ -20,6 +20,7 @@ import (
 const (
 	legacyEncryptedPrefix = "darkphish:secret:v1:"
 	encryptedPrefix       = "darkphish:secret:v2:"
+	providerPrefix        = "darkphish:secret:v3:"
 	algorithmAES256GCM    = "AES-256-GCM"
 )
 
@@ -39,6 +40,39 @@ type VersionedStore interface {
 	Store
 	ActiveKeyID() string
 	NeedsRewrap(string) bool
+}
+
+type EnvelopeMetadata struct {
+	Version   int
+	Provider  string
+	KeyID     string
+	Encrypted bool
+}
+
+// InspectEnvelope returns routing metadata only; it never decrypts or returns
+// the protected value.
+func InspectEnvelope(value string) (EnvelopeMetadata, error) {
+	if value == "" {
+		return EnvelopeMetadata{}, nil
+	}
+	if strings.HasPrefix(value, providerPrefix) {
+		envelope, err := decodeProviderEnvelope(value)
+		if err != nil {
+			return EnvelopeMetadata{}, err
+		}
+		return EnvelopeMetadata{Version: 3, Provider: envelope.Provider, KeyID: envelope.KeyReference, Encrypted: true}, nil
+	}
+	if strings.HasPrefix(value, encryptedPrefix) {
+		envelope, err := decodeEnvelope(value)
+		if err != nil {
+			return EnvelopeMetadata{}, err
+		}
+		return EnvelopeMetadata{Version: 2, Provider: "local", KeyID: envelope.KeyID, Encrypted: true}, nil
+	}
+	if strings.HasPrefix(value, legacyEncryptedPrefix) {
+		return EnvelopeMetadata{Version: 1, Provider: "local", KeyID: "legacy", Encrypted: true}, nil
+	}
+	return EnvelopeMetadata{Provider: "plaintext", Encrypted: false}, nil
 }
 
 // PlaintextStore is development compatibility only. It is never accepted for
@@ -65,7 +99,7 @@ type envelope struct {
 // IsCiphertext reports whether a value uses a recognized Darkphish encrypted
 // envelope. It does not validate or decrypt the envelope.
 func IsCiphertext(value string) bool {
-	return strings.HasPrefix(value, encryptedPrefix) || strings.HasPrefix(value, legacyEncryptedPrefix)
+	return strings.HasPrefix(value, providerPrefix) || strings.HasPrefix(value, encryptedPrefix) || strings.HasPrefix(value, legacyEncryptedPrefix)
 }
 
 // DecodeKey accepts raw key material or values prefixed with base64: or hex:.

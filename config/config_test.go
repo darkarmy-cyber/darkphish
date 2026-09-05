@@ -3,7 +3,9 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	log "github.com/darkarmy-cyber/darkphish/logger"
@@ -36,6 +38,45 @@ func createTemporaryConfig(t *testing.T) *os.File {
 	return f
 }
 
+func TestPostgreSQLStructuredConfiguration(t *testing.T) {
+	t.Setenv("DARKPHISH_POSTGRES_PASSWORD", "sensitive password")
+	f := createTemporaryConfig(t)
+	defer removeTemporaryConfig(t, f)
+	contents := []byte(`{
+		"admin_server":{"max_request_body_bytes":1024},
+		"db_name":"postgres",
+		"db_path":"",
+		"migrations_prefix":"db/db_",
+		"postgresql":{"host":"db.example.test","database":"darkphish","username":"service user","sslmode":"verify-full","connect_timeout_seconds":10}
+	}`)
+	if _, err := f.Write(contents); err != nil {
+		t.Fatal(err)
+	}
+	conf, err := LoadConfig(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conf.MigrationsPath != filepath.Join("db", "db_postgres", "migrations") {
+		t.Fatalf("unexpected migration path %q", conf.MigrationsPath)
+	}
+	if !strings.HasPrefix(conf.DBPath, "postgres://service%20user:sensitive%20password@db.example.test:5432/darkphish?") || !strings.Contains(conf.DBPath, "sslmode=verify-full") {
+		t.Fatalf("unexpected PostgreSQL DSN %q", conf.DBPath)
+	}
+}
+
+func TestPostgreSQLProductionRequiresVerifiedTLS(t *testing.T) {
+	conf := &Config{
+		AdminConf:      AdminServer{MaxRequestBodyBytes: DefaultMaxRequestBodyBytes},
+		Session:        SessionConfig{LifetimeHours: DefaultSessionLifetimeHours},
+		ProductionMode: true,
+		DBName:         "postgres",
+		PostgreSQL:     PostgreSQLConfig{SSLMode: "require"},
+	}
+	if err := conf.ValidateSecurity(); err == nil || !strings.Contains(err.Error(), "verify-full") {
+		t.Fatalf("expected verified PostgreSQL TLS rejection, got %v", err)
+	}
+}
+
 func removeTemporaryConfig(t *testing.T, f *os.File) {
 	err := f.Close()
 	if err != nil {
@@ -61,13 +102,17 @@ func TestLoadConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error unmarshaling config: %v", err)
 	}
-	expectedConfig.MigrationsPath = expectedConfig.MigrationsPath + expectedConfig.DBName
+	expectedConfig.MigrationsPath = filepath.Join(expectedConfig.MigrationsPath+expectedConfig.DBName, "migrations")
 	expectedConfig.TestFlag = false
 	expectedConfig.AdminConf.MaxRequestBodyBytes = DefaultMaxRequestBodyBytes
 	expectedConfig.Session.LifetimeHours = DefaultSessionLifetimeHours
 	expectedConfig.Secrets.Keys = map[string]string{}
+	expectedConfig.Secrets.Provider = "local"
 	expectedConfig.Audit.RetentionDays = DefaultAuditRetentionDays
+	expectedConfig.Audit.CheckpointInterval = DefaultAuditCheckpointInterval
+	expectedConfig.Audit.SigningKeys = map[string]string{}
 	expectedConfig.PAT.MaxLifetimeDays = DefaultPATMaxLifetimeDays
+	expectedConfig.PrivilegedAccess.WindowMinutes = DefaultPrivilegedWindowMinutes
 	expectedConfig.Logging = &log.Config{}
 	if !reflect.DeepEqual(expectedConfig, conf) {
 		t.Fatalf("invalid config received. expected %#v got %#v", expectedConfig, conf)
@@ -100,6 +145,8 @@ func TestProductionSecurityValidation(t *testing.T) {
 	conf.Session.AuthKey = "hex:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	conf.Session.EncryptionKey = "0123456789abcdef0123456789abcdef"
 	conf.Secrets.EncryptionKey = "base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+	conf.Audit.ActiveSigningKeyID = "test"
+	conf.Audit.SigningKeys = map[string]string{"test": "0123456789abcdef0123456789abcdef"}
 	if err := conf.ValidateSecurity(); err != nil {
 		t.Fatalf("expected valid production secrets: %v", err)
 	}

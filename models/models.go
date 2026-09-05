@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/darkarmy-cyber/darkphish/auth"
@@ -17,7 +18,8 @@ import (
 
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/jinzhu/gorm"
-	_ "github.com/mattn/go-sqlite3" // Blank import needed to import sqlite3
+	_ "github.com/jinzhu/gorm/dialects/postgres" // Register the PostgreSQL dialect.
+	_ "github.com/mattn/go-sqlite3"              // Blank import needed to import sqlite3
 )
 
 var db *gorm.DB
@@ -43,15 +45,62 @@ const DefaultAdminUsername = "admin"
 const InitialAdminPassword = "DARKPHISH_INITIAL_ADMIN_PASSWORD"
 const LegacyInitialAdminPassword = "GOPHISH_INITIAL_ADMIN_PASSWORD"
 
+var legacyEnvironmentWarnings sync.Map
+
 func environmentValue(primary, legacy string) string {
 	if value := os.Getenv(primary); value != "" {
 		return value
 	}
-	return os.Getenv(legacy)
+	value := os.Getenv(legacy)
+	if value != "" {
+		if _, loaded := legacyEnvironmentWarnings.LoadOrStore(legacy, struct{}{}); !loaded {
+			log.Warnf("Deprecated Gophish environment variable %s detected; use %s. Support will be removed in a future Darkphish release.", legacy, primary)
+		}
+	}
+	return value
 }
 
 func configureSecretStore(c *config.Config) error {
-	if c.Secrets.ActiveKeyID == "" || len(c.Secrets.Keys) == 0 {
+	providerName := c.Secrets.Provider
+	if providerName == "" {
+		providerName = "local"
+	}
+	var local secretpkg.VersionedStore
+	if c.Secrets.ActiveKeyID != "" && len(c.Secrets.Keys) > 0 {
+		keys := make(map[string][]byte, len(c.Secrets.Keys))
+		for id, value := range c.Secrets.Keys {
+			key, err := secretpkg.DecodeKey(value)
+			if err != nil {
+				return fmt.Errorf("decode secret key %s: %w", id, err)
+			}
+			keys[id] = key
+		}
+		var legacyKey []byte
+		if c.Secrets.EncryptionKey != "" {
+			var err error
+			legacyKey, err = secretpkg.DecodeKey(c.Secrets.EncryptionKey)
+			if err != nil {
+				return fmt.Errorf("decode legacy secret key: %w", err)
+			}
+		}
+		var err error
+		local, err = secretpkg.NewKeyring(c.Secrets.ActiveKeyID, keys, legacyKey)
+		if err != nil {
+			return err
+		}
+	}
+	providers := []secretpkg.KeyProvider{}
+	if c.Secrets.Vault.Address != "" || providerName == "vault" {
+		vault, err := secretpkg.NewVaultTransitProvider(secretpkg.VaultTransitOptions{
+			Address: c.Secrets.Vault.Address, Token: c.Secrets.Vault.Token, Namespace: c.Secrets.Vault.Namespace,
+			Mount: c.Secrets.Vault.Mount, KeyName: c.Secrets.Vault.KeyName, CACert: c.Secrets.Vault.CACert,
+		})
+		if err != nil {
+			return fmt.Errorf("configure Vault Transit provider: %w", err)
+		}
+		providers = append(providers, vault)
+	}
+	if providerName == "local" && local == nil {
 		if c.ProductionMode {
 			return fmt.Errorf("a versioned secret keyring is required in production mode")
 		}
@@ -59,25 +108,12 @@ func configureSecretStore(c *config.Config) error {
 		log.Warn("integration secrets are stored as plaintext in development mode; configure DARKPHISH_SECRET_ENCRYPTION_KEY")
 		return nil
 	}
-	keys := make(map[string][]byte, len(c.Secrets.Keys))
-	for id, value := range c.Secrets.Keys {
-		key, err := secretpkg.DecodeKey(value)
-		if err != nil {
-			return fmt.Errorf("decode secret key %s: %w", id, err)
-		}
-		keys[id] = key
+	routing, err := secretpkg.NewRoutingStore(providerName, local, providers...)
+	if err != nil {
+		return err
 	}
-	var legacyKey []byte
-	if c.Secrets.EncryptionKey != "" {
-		var err error
-		legacyKey, err = secretpkg.DecodeKey(c.Secrets.EncryptionKey)
-		if err != nil {
-			return fmt.Errorf("decode legacy secret key: %w", err)
-		}
-	}
-	var err error
-	secretStore, err = secretpkg.NewKeyring(c.Secrets.ActiveKeyID, keys, legacyKey)
-	return err
+	secretStore = routing
+	return nil
 }
 
 const (
@@ -235,6 +271,9 @@ func Setup(c *config.Config) error {
 	}
 	db.DB().SetMaxOpenConns(maxOpen)
 	db.DB().SetMaxIdleConns(maxIdle)
+	if conf.DBConnMaxLifetimeMinutes > 0 {
+		db.DB().SetConnMaxLifetime(time.Duration(conf.DBConnMaxLifetimeMinutes) * time.Minute)
+	}
 	if err != nil {
 		log.Error(err)
 		return err
@@ -245,7 +284,12 @@ func Setup(c *config.Config) error {
 		log.Error(err)
 		return err
 	}
-	configureAuditStore()
+	if err := configureAuditStore(); err != nil {
+		return fmt.Errorf("configure audit integrity: %w", err)
+	}
+	if err := FlushAuditOutbox(); err != nil {
+		log.Errorf("flush audit outbox: %v", err)
+	}
 	// Create the admin user if it doesn't exist
 	var userCount int64
 	var adminUser User

@@ -27,10 +27,12 @@ THE SOFTWARE.
 */
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -41,6 +43,7 @@ import (
 	"github.com/darkarmy-cyber/darkphish/dialer"
 	"github.com/darkarmy-cyber/darkphish/imap"
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
+	"github.com/darkarmy-cyber/darkphish/internal/migrationcheck"
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/middleware"
 	"github.com/darkarmy-cyber/darkphish/models"
@@ -58,11 +61,23 @@ var (
 	disableMailer = kingpin.Flag("disable-mailer", "Disable the mailer (for use with multi-system deployments)").Bool()
 	mode          = kingpin.Flag("mode", fmt.Sprintf("Run the binary in one of the modes (%s, %s or %s)", modeAll, modeAdmin, modePhish)).
 			Default("all").Enum(modeAll, modeAdmin, modePhish)
-	versionCommand = kingpin.Command("version", "Print Darkphish version and build information.")
-	rotateSecrets  = kingpin.Flag("rotate-secrets", "Re-encrypt stored secrets with the active key and exit.").Bool()
-	commitSHA      = "unknown"
-	builtAt        = "unknown"
-	releaseVersion = ""
+	versionCommand           = kingpin.Command("version", "Print Darkphish version and build information.")
+	auditCommand             = kingpin.Command("audit", "Verify and export the tamper-evident audit trail.")
+	auditVerifyCommand       = auditCommand.Command("verify", "Verify the database audit chain and signed checkpoints.")
+	auditExportCommand       = auditCommand.Command("export", "Write an audit JSON export and signed companion manifest.")
+	auditExportPath          = auditExportCommand.Flag("output", "Audit JSON output path.").Default("darkphish-audit.json").String()
+	auditVerifyExportCommand = auditCommand.Command("verify-export", "Verify an audit export and signed manifest.")
+	auditVerifyExportFile    = auditVerifyExportCommand.Arg("export", "Audit JSON export path.").Required().String()
+	auditVerifyManifestFile  = auditVerifyExportCommand.Arg("manifest", "Signed manifest path.").Required().String()
+	secretsCommand           = kingpin.Command("secrets", "Inspect and migrate encrypted application secrets.")
+	secretsStatusCommand     = secretsCommand.Command("status", "Report secret envelope providers and migration status without plaintext.")
+	secretsMigrateCommand    = secretsCommand.Command("migrate", "Re-encrypt secrets with the configured active provider/key.")
+	migrateCommand           = kingpin.Command("migrate", "Inspect compatibility and migration readiness.")
+	migrateCheckCommand      = migrateCommand.Command("check", "Report legacy configuration and migration hazards without changing files.")
+	rotateSecrets            = kingpin.Flag("rotate-secrets", "Re-encrypt stored secrets with the active key and exit.").Bool()
+	commitSHA                = "unknown"
+	builtAt                  = "unknown"
+	releaseVersion           = ""
 )
 
 // versionFile is the single authoritative release version. Release builds set
@@ -87,6 +102,28 @@ func displayVersion() string {
 
 func versionSummary() string {
 	return fmt.Sprintf("Darkphish %s (version %s, commit %s, built %s)", displayVersion(), semanticVersion(), commitSHA, builtAt)
+}
+
+func writeExclusive(path string, value []byte) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	complete := false
+	defer func() {
+		if !complete {
+			_ = os.Remove(path)
+		}
+	}()
+	if _, err = file.Write(value); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err = file.Close(); err != nil {
+		return err
+	}
+	complete = true
+	return nil
 }
 
 func main() {
@@ -134,12 +171,87 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if command == migrateCheckCommand.FullCommand() {
+		legacyAPIKeys, plaintextSecrets, inspectErr := models.InspectLegacyDatabase(conf)
+		if inspectErr != nil {
+			log.Fatal(inspectErr)
+		}
+		findings := migrationcheck.Inspect(*configPath, conf, legacyAPIKeys, plaintextSecrets)
+		if len(findings) == 0 {
+			fmt.Println("No known Darkphish compatibility hazards detected.")
+			return
+		}
+		for _, finding := range findings {
+			fmt.Printf("[%s] %s: %s\n", finding.Severity, finding.Code, finding.Recommendation)
+		}
+		return
+	}
 
 	// Provide the option to disable the built-in mailer
 	// Setup the global variables and settings
 	err = models.Setup(conf)
 	if err != nil {
 		log.Fatal(err)
+	}
+	switch command {
+	case auditVerifyCommand.FullCommand():
+		report, verifyErr := models.VerifyAuditChain()
+		if verifyErr != nil {
+			log.Fatal(verifyErr)
+		}
+		fmt.Printf("Verified %d audit events (%d through %d); final hash %s; latest checkpoint %d.\n", report.RecordCount, report.FirstEventID, report.LastEventID, report.FinalHash, report.CheckpointID)
+		return
+	case auditExportCommand.FullCommand():
+		content, manifest, exportErr := models.BuildAuditExport(semanticVersion(), commitSHA)
+		if exportErr != nil {
+			log.Fatal(exportErr)
+		}
+		manifestContent, marshalErr := json.MarshalIndent(manifest, "", "  ")
+		if marshalErr != nil {
+			log.Fatal(marshalErr)
+		}
+		manifestContent = append(manifestContent, '\n')
+		manifestPath := strings.TrimSuffix(*auditExportPath, filepath.Ext(*auditExportPath)) + ".manifest.json"
+		if writeErr := writeExclusive(*auditExportPath, content); writeErr != nil {
+			log.Fatal(writeErr)
+		}
+		if writeErr := writeExclusive(manifestPath, manifestContent); writeErr != nil {
+			_ = os.Remove(*auditExportPath)
+			log.Fatal(writeErr)
+		}
+		fmt.Printf("Wrote %d signed audit records to %s and %s.\n", manifest.RecordCount, *auditExportPath, manifestPath)
+		return
+	case auditVerifyExportCommand.FullCommand():
+		content, readErr := os.ReadFile(*auditVerifyExportFile)
+		if readErr != nil {
+			log.Fatal(readErr)
+		}
+		manifestContent, readErr := os.ReadFile(*auditVerifyManifestFile)
+		if readErr != nil {
+			log.Fatal(readErr)
+		}
+		manifest, verifyErr := models.VerifyAuditExport(content, manifestContent)
+		if verifyErr != nil {
+			log.Fatal(verifyErr)
+		}
+		fmt.Printf("Verified audit export with %d records (%d through %d), signed by %s.\n", manifest.RecordCount, manifest.FirstEventID, manifest.LastEventID, manifest.KeyID)
+		return
+	case secretsStatusCommand.FullCommand():
+		status, statusErr := models.SecretsStatus()
+		if statusErr != nil {
+			log.Fatal(statusErr)
+		}
+		encoded, _ := json.MarshalIndent(status, "", "  ")
+		fmt.Println(string(encoded))
+		return
+	case secretsMigrateCommand.FullCommand():
+		rotated, rotateErr := models.RotateSecrets()
+		if rotateErr != nil {
+			log.Fatal(rotateErr)
+		}
+		audit.RecordSystem("secret.migrate", "secrets", "active-provider", "success")
+		fmt.Printf("Migrated %d protected values to the active provider/key. The operation is idempotent and may be resumed.\n", rotated)
+		return
 	}
 	if _, _, err = models.CleanupSecurityRetention(time.Now().UTC()); err != nil {
 		log.Errorf("initial security retention cleanup failed: %v", err)

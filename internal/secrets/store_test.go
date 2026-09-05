@@ -98,6 +98,14 @@ func TestKeyringRotationReadsOldAndWritesActiveEnvelope(t *testing.T) {
 	if rotatedStore.NeedsRewrap(newCiphertext) {
 		t.Fatal("active-key ciphertext unexpectedly needs re-encryption")
 	}
+	newOnlyStore, err := NewKeyring("V2", map[string][]byte{"V2": keyTwo}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plaintext, err = newOnlyStore.Open(newCiphertext)
+	if err != nil || plaintext != "rotate me" {
+		t.Fatalf("migrated ciphertext did not survive removal of v1: %q, %v", plaintext, err)
+	}
 }
 
 func TestKeyringRejectsUnknownEnvelopeKey(t *testing.T) {
@@ -115,7 +123,7 @@ func TestIsCiphertextRecognizesOnlyVersionedEnvelopes(t *testing.T) {
 	if IsCiphertext("plaintext") {
 		t.Fatal("plaintext was classified as ciphertext")
 	}
-	if !IsCiphertext(encryptedPrefix+"payload") || !IsCiphertext(legacyEncryptedPrefix+"payload") {
+	if !IsCiphertext(providerPrefix+"payload") || !IsCiphertext(encryptedPrefix+"payload") || !IsCiphertext(legacyEncryptedPrefix+"payload") {
 		t.Fatal("versioned envelope prefix was not recognized")
 	}
 }

@@ -12,4 +12,6 @@ v0.5 compatibility fixtures; all protected checks and CodeQL; normal and securit
 review; protected engineering and generated release PRs; native release assets,
 checksums, SPDX SBOM and released-binary multi-instance smoke.
 
-Status: implementation in progress. No HA or release acceptance is claimed.
+Evidence is recorded on engineering PR #17 and the generated release PR. The
+VERSION file advances to 0.6.0 through release preparation; the target tag is
+v0.6.0. Publication requires the native archive smoke gate to pass.

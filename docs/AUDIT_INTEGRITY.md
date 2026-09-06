@@ -50,7 +50,8 @@ previous hash, changed sequence/order, bad checkpoint data or signature,
 unsupported format version, modified export, missing checkpoint, or unknown key.
 Run verification before and after backup/restore, signing-key rotation, retention,
 and security investigations.
-# Multi-instance audit coordination (0.6)
+
+## Multi-instance audit coordination (0.6)
 
 For multiple audit-writing processes, use MySQL or PostgreSQL and set
 `audit.multi_instance` to `true` on every process. Provision the same persistent
@@ -80,3 +81,8 @@ delivery is possible. They cannot reconstruct already-retired pre-upgrade events
 For signing-key rotation, stop writers, distribute the expanded keyring to all
 instances, switch the active key, and restart. Keep historical keys for signature
 verification. Once registered, a key ID must never identify different key material.
+
+Rollback requires stopped writers and restoration of the pre-upgrade database
+and keys together. Goose Down removes the new coordination metadata and delivery
+receipts; it is a schema rollback test, not a lossless operational downgrade after
+0.6 activity or retention.

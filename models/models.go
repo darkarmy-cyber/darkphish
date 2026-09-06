@@ -1,8 +1,6 @@
 package models
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"os"
 	"strings"
@@ -11,14 +9,12 @@ import (
 
 	"github.com/darkarmy-cyber/darkphish/auth"
 	"github.com/darkarmy-cyber/darkphish/config"
+	"github.com/darkarmy-cyber/darkphish/internal/persistence"
 	secretpkg "github.com/darkarmy-cyber/darkphish/internal/secrets"
-	mysql "github.com/go-sql-driver/mysql"
 	"github.com/pressly/goose/v3"
 
 	log "github.com/darkarmy-cyber/darkphish/logger"
-	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/postgres" // Register the PostgreSQL dialect.
-	_ "github.com/mattn/go-sqlite3"              // Blank import needed to import sqlite3
+	"gorm.io/gorm"
 )
 
 var db *gorm.DB
@@ -30,7 +26,11 @@ func Close() error {
 	if db == nil {
 		return nil
 	}
-	return db.Close()
+	connection, err := db.DB()
+	if err != nil {
+		return err
+	}
+	return connection.Close()
 }
 
 // Health verifies that the configured database is reachable.
@@ -38,7 +38,11 @@ func Health() error {
 	if db == nil {
 		return fmt.Errorf("database is not initialized")
 	}
-	return db.DB().Ping()
+	connection, err := db.DB()
+	if err != nil {
+		return err
+	}
+	return connection.Ping()
 }
 
 const MaxDatabaseConnectionAttempts int = 10
@@ -222,33 +226,10 @@ func Setup(c *config.Config) error {
 		return fmt.Errorf("configure database migrations: %w", err)
 	}
 
-	// Register certificates for tls encrypted db connections
-	if conf.DBSSLCaPath != "" {
-		switch conf.DBName {
-		case "mysql":
-			rootCertPool := x509.NewCertPool()
-			pem, err := os.ReadFile(conf.DBSSLCaPath)
-			if err != nil {
-				log.Error(err)
-				return err
-			}
-			if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
-				log.Error("Failed to append PEM.")
-				return err
-			}
-			mysql.RegisterTLSConfig("ssl_ca", &tls.Config{
-				RootCAs: rootCertPool,
-			})
-			// Default database is sqlite3, which supports no tls, as connection
-			// is file based
-		default:
-		}
-	}
-
 	// Open our database connection
 	i := 0
 	for {
-		db, err = gorm.Open(conf.DBName, conf.DBPath)
+		db, err = persistence.Open(conf)
 		if err == nil {
 			break
 		}
@@ -260,31 +241,12 @@ func Setup(c *config.Config) error {
 		log.Warn("waiting for database to be up...")
 		time.Sleep(5 * time.Second)
 	}
-	db.LogMode(false)
-	db.SetLogger(log.Logger)
-	maxOpen := conf.DBMaxOpenConns
-	if maxOpen == 0 {
-		if conf.DBName == "sqlite3" {
-			maxOpen = 1
-		} else {
-			maxOpen = 10
-		}
-	}
-	maxIdle := conf.DBMaxIdleConns
-	if maxIdle == 0 {
-		maxIdle = maxOpen
-	}
-	db.DB().SetMaxOpenConns(maxOpen)
-	db.DB().SetMaxIdleConns(maxIdle)
-	if conf.DBConnMaxLifetimeMinutes > 0 {
-		db.DB().SetConnMaxLifetime(time.Duration(conf.DBConnMaxLifetimeMinutes) * time.Minute)
-	}
+	connection, err := db.DB()
 	if err != nil {
-		log.Error(err)
 		return err
 	}
 	// Migrate up to the latest version
-	err = goose.Up(db.DB(), conf.MigrationsPath)
+	err = goose.Up(connection, conf.MigrationsPath)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -298,7 +260,9 @@ func Setup(c *config.Config) error {
 	// Create the admin user if it doesn't exist
 	var userCount int64
 	var adminUser User
-	db.Model(&User{}).Count(&userCount)
+	if err := db.Model(&User{}).Count(&userCount).Error; err != nil {
+		return err
+	}
 	adminRole, err := GetRoleBySlug(RoleAdmin)
 	if err != nil {
 		log.Error(err)

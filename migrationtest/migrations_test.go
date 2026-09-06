@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pressly/goose/v3"
 )
@@ -81,7 +81,7 @@ func TestPostgreSQLMigrationsUpDownUp(t *testing.T) {
 	if dsn == "" {
 		t.Skip("DARKPHISH_TEST_POSTGRES_DSN is not configured")
 	}
-	exerciseLatestMigration(t, "postgres", "postgres", dsn, migrationDirectory(t, "postgres"))
+	exerciseLatestMigration(t, "pgx", "postgres", dsn, migrationDirectory(t, "postgres"))
 }
 
 func TestSQLiteMigrationsUpDownUp(t *testing.T) {

@@ -8,11 +8,11 @@ import (
 
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	log "github.com/darkarmy-cyber/darkphish/logger"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 type auditEventRow struct {
-	ID            int64 `gorm:"primary_key"`
+	ID            int64 `gorm:"primaryKey"`
 	AuditOutboxID *int64
 	Timestamp     time.Time
 	Actor         string
@@ -36,7 +36,7 @@ type auditEventRow struct {
 func (auditEventRow) TableName() string { return "audit_events" }
 
 type auditCheckpointRow struct {
-	ID            int64 `gorm:"primary_key"`
+	ID            int64 `gorm:"primaryKey"`
 	FormatVersion int
 	ChainID       string
 	FirstEventID  int64
@@ -115,6 +115,7 @@ func (databaseAuditStore) Append(event audit.Event) (int64, error) {
 	if tx.Error != nil {
 		return 0, tx.Error
 	}
+	defer tx.Rollback()
 	if event.OutboxID != 0 {
 		var existing auditEventRow
 		if err := tx.Where("audit_outbox_id=?", event.OutboxID).First(&existing).Error; err == nil {
@@ -125,7 +126,7 @@ func (databaseAuditStore) Append(event audit.Event) (int64, error) {
 				}
 			}
 			return existing.ID, nil
-		} else if err != gorm.ErrRecordNotFound {
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			_ = tx.Rollback().Error
 			return 0, err
 		}
@@ -137,7 +138,7 @@ func (databaseAuditStore) Append(event audit.Event) (int64, error) {
 	if lookup.Error == nil {
 		previousHash = last.EventHash
 		sequence = last.ChainSequence + 1
-	} else if lookup.Error != gorm.ErrRecordNotFound {
+	} else if !errors.Is(lookup.Error, gorm.ErrRecordNotFound) {
 		_ = tx.Rollback().Error
 		return 0, lookup.Error
 	}
@@ -207,7 +208,7 @@ func applyAuditFilter(query *gorm.DB, filter audit.Filter) *gorm.DB {
 }
 
 func (databaseAuditStore) Query(filter audit.Filter) ([]audit.Event, int64, error) {
-	query := applyAuditFilter(db.Model(&auditEventRow{}), filter)
+	query := applyAuditFilter(db.Model(&auditEventRow{}), filter).Session(&gorm.Session{})
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -322,7 +323,7 @@ func createAuditCheckpointLocked(lastSequence int64) (audit.Checkpoint, error) {
 	var existing auditCheckpointRow
 	if err := db.Where("chain_id=? AND last_sequence=?", audit.DefaultChainID, lastSequence).First(&existing).Error; err == nil {
 		return rowCheckpoint(existing), nil
-	} else if err != gorm.ErrRecordNotFound {
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return value, err
 	}
 	var first, last auditEventRow

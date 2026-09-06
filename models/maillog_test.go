@@ -393,7 +393,7 @@ func (s *ModelsSuite) TestEmbedAttachment(ch *check.C) {
 			Content: "VGVzdCB0ZXh0IGZpbGU=",
 		},
 	}
-	PutTemplate(&campaign.Template)
+	ch.Assert(PutTemplate(&campaign.Template), check.IsNil)
 	ch.Assert(PostCampaign(&campaign, campaign.UserId), check.Equals, nil)
 	got := s.emailFromFirstMailLog(campaign, ch)
 

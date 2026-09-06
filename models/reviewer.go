@@ -7,7 +7,7 @@ import (
 
 	"github.com/darkarmy-cyber/darkphish/auth"
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 var (
@@ -75,7 +75,7 @@ func (s ReviewerService) Assign(campaignID, reviewerID int64, actor User, expire
 		existing, findErr := txService.Reviewers.Find(campaignID, reviewerID)
 		if findErr == nil {
 			assignment = existing
-		} else if findErr != gorm.ErrRecordNotFound {
+		} else if !errors.Is(findErr, gorm.ErrRecordNotFound) {
 			return findErr
 		}
 		assignment.CampaignID = campaignID

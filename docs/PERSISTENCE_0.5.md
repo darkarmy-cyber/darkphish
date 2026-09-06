@@ -52,7 +52,7 @@ Primary migration references:
 | Users/authentication: user.go, rbac.go, nullable_time.go | First+Preload Role; Save all values; protected account mutation + grant revocation + outbox transaction; role-permission association lookup | Preserve false/empty/NULL updates; explicit errors.Is; no automatic writes to supplied Role; tested permission predicates |
 | PATs: pat.go, security_repositories.go | Create/revoke plus audit outbox in withSecurityTransaction; bound owner/status clauses; RowsAffected distinguishes absent/revoked | Propagate original errors, commit failures; no raw token on failed commit; preserve conditional revoke |
 | Privileged grants/reviewers: privileged.go, reviewer.go | Session hash lookup, nullable expiration, campaign-owner and permission checks; reviewer + outbox transaction | No zero-value omission, scoped joins, deterministic ordering and revocation/expiry parity |
-| Credentials/policy: credential.go, security_repositories.go | Explicit replace/delete/save in one transaction, ciphertext string, nil retention timestamps, map updates for purge/empty values | Preserve exact ciphertext, retention and policy findings; rollback all changes on outbox failure; no new reveal authority |
+| Credentials/policy: credential.go, security_repositories.go | Explicit replace/delete/save of finding+ciphertext in one transaction; audited reveal/purge/rotation retain their existing boundaries | Preserve exact ciphertext and retention; roll back finding replacement if ciphertext write fails; audited mutations roll back with outbox failure; no new reveal authority |
 | Audit/outbox/signatures: audit.go, audit_outbox.go, audit_export.go | Explicit Begin/read-last/Create/reload/hash/update/Commit; microsecond persisted values; ordered sequence/checkpoint reads; idempotent delivery ID | Keep hash of stored representation and signed checkpoints; isolate reused filters; no global/default logger payloads |
 | Integration secrets: secrets_rotation.go, smtp.go, imap.go, webhook.go | Explicit seal/write/restore-memory; allowlisted table/column identifiers; per-record rotation transaction with audit | No association write may persist plaintext; no dual write/provider change; source identifiers stay static |
 | Campaigns/results/events/mail queue: campaign.go, result.go, maillog.go | Three Related calls; scalar Find; explicit campaign creation transaction; reused stats query; all-row processing reset | Replace Related with explicit owner/foreign-key queries; scalar Take/First; isolated base queries; explicit bounded global-reset intent |
@@ -212,3 +212,58 @@ the migration. A suffix names the individual method at that original line.
   follow the selected maintained modules. `x/net` merely moved to the direct
   section after tidy (already imported by the 0.4 import parser). Existing
   SQLite/MySQL/Goose, crypto, frontend and workflow versions did not change.
+
+### Runtime migration stage
+
+- The independent connection/compatibility stage at `1b9e1fe5436e1aea7525b8723ec8bbb565f2ec99`
+  passed CI `34032939964`, PR CodeQL `34032940014` and full-branch CodeQL
+  `34032937863`; the full-branch open-alert API returned an empty list. This
+  established the two-process v0.4 fixture on all three databases before the
+  application switch, not final v2 migration sign-off.
+- Application and migration tests now use only GORM v2. Tidy removes both
+  `github.com/jinzhu/gorm` and `github.com/lib/pq` from the module graph;
+  PostgreSQL SQL-driver registration is pgx v5.10.0. There is no dual routing.
+- Scalar lookups use Take/First; collection reads retain successful empty
+  results. HTTP adapters use the model-level ErrRecordNotFound alias with
+  errors.Is. Scalar campaign/group summaries now fail before reading aggregate
+  data when the owner-scoped record is missing.
+- Campaign DTO relationships and manually written template attachments/SMTP
+  headers are excluded from automatic association persistence. User.Role is
+  read-only and remains preloadable. Permission lookup is an explicit bound
+  join. Group-target rows without a model primary key use Create, not Save.
+- Reused campaign-statistics and audit-filter queries branch from fresh
+  sessions. Every aggregate error is propagated. Event sequence reads have
+  explicit time/ID ordering. No production AllowGlobalUpdate or AutoMigrate is
+  introduced; queue unlocking has an explicit processing=true predicate.
+- All nine hooks retain their invariants with the v2 transaction parameter.
+  Group/template/page/SMTP BeforeSave supplies a missing modification date;
+  IMAP also normalizes nullable login time. User save/find normalizes zero login
+  to NULL; campaign find normalizes optional dates. Save invokes hooks inside
+  its write transaction. Explicit map/column updates keep their supplied
+  false/zero/empty/NULL values; they do not rely on a zero-valued callback model
+  to populate map fields. Summary projections still normalize optional dates
+  explicitly. None of these hooks grants authority or performs a second write.
+- Security transactions use v2 Transaction, preserving original callback and
+  commit errors with deferred rollback on panic. Existing manual campaign,
+  group, mail-lock and audit transactions now also have deterministic cleanup;
+  group delete errors and mail-lock commit errors are returned immediately.
+- IMAP's keyless table also uses an explicit insert. Settings are encrypted
+  before an atomic owner-scoped delete+insert, so replacement failure cannot
+  discard the previous configuration. The shared hook contract covers its
+  replacement, booleans, empty optional domain, NULL login and protected secret.
+- Shared tests expand to nested-savepoint rollback, panic propagation,
+  cancellation-before-commit rollback, failed existing-PAT revocation, reviewer
+  assignment, account/role+grant rollback, ciphertext-write rollback, and failed
+  then successful wrapping-key rotation. Campaign creation compares hashes of
+  all dependency rows, including encrypted SMTP bytes, before/after the write.
+- A fresh copy of the actual v0.4 SQLite fixture passes the v2 candidate check:
+  schema and all 29 tables unchanged on startup, legacy authentication and
+  encrypted review intact, signed audit verification, normal write and restart.
+  The original seed remains unchanged. Hosted v2 matrices and reviews remain
+  required before readiness; no release is claimed by this stage.
+- Full local Go tests, vet, staticcheck, trimpath build and vulnerability scan
+  passed after the runtime switch (zero reachable/imported-package findings;
+  only the pre-existing unused openpgp module advisory). Frontend lockfile/build/
+  audit and clean-output verification, 22 automation tests, changelog validation,
+  actionlint and formatting/whitespace checks passed. Windows race execution is
+  unavailable in this environment; hosted Linux race remains authoritative.

@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 func nullableTime(value time.Time) *time.Time {
 	if value.IsZero() {
@@ -10,28 +14,28 @@ func nullableTime(value time.Time) *time.Time {
 	return &utc
 }
 
-func (u *User) BeforeSave() error {
+func (u *User) BeforeSave(_ *gorm.DB) error {
 	if u.LastLogin != nil {
 		u.LastLogin = nullableTime(*u.LastLogin)
 	}
 	return nil
 }
 
-func (u *User) AfterFind() error { return u.BeforeSave() }
+func (u *User) AfterFind(tx *gorm.DB) error { return u.BeforeSave(tx) }
 
-func (im *IMAP) BeforeSave() error {
+func (im *IMAP) BeforeSave(tx *gorm.DB) error {
 	ensureModifiedTime(&im.ModifiedDate)
-	return im.AfterFind()
+	return im.AfterFind(tx)
 }
 
-func (im *IMAP) AfterFind() error {
+func (im *IMAP) AfterFind(_ *gorm.DB) error {
 	if im.LastLogin != nil {
 		im.LastLogin = nullableTime(*im.LastLogin)
 	}
 	return nil
 }
 
-func (c *Campaign) AfterFind() error {
+func (c *Campaign) AfterFind(_ *gorm.DB) error {
 	if c.SendByDate != nil {
 		c.SendByDate = nullableTime(*c.SendByDate)
 	}

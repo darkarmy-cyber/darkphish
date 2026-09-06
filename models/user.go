@@ -7,7 +7,7 @@ import (
 
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	log "github.com/darkarmy-cyber/darkphish/logger"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 // ErrModifyingOnlyAdmin occurs when there is an attempt to modify the only
@@ -18,10 +18,10 @@ var ErrModifyingOnlyAdmin = errors.New("Cannot remove the only administrator")
 // User represents the user model for darkphish.
 type User struct {
 	Id                     int64      `json:"id"`
-	Username               string     `json:"username" sql:"not null;unique"`
+	Username               string     `json:"username" gorm:"not null;unique"`
 	Hash                   string     `json:"-"`
-	ApiKey                 string     `json:"-" sql:"not null;unique"` // Legacy schema placeholder; never used for authentication.
-	Role                   Role       `json:"role" gorm:"association_autoupdate:false;association_autocreate:false"`
+	ApiKey                 string     `json:"-" gorm:"not null;unique"` // Legacy schema placeholder; never used for authentication.
+	Role                   Role       `json:"role" gorm:"->;foreignKey:RoleID"`
 	RoleID                 int64      `json:"-"`
 	PasswordChangeRequired bool       `json:"password_change_required"`
 	AccountLocked          bool       `json:"account_locked"`
@@ -87,7 +87,7 @@ func EnsureEnoughAdmins() error {
 	if err != nil {
 		return err
 	}
-	var adminCount int
+	var adminCount int64
 	err = db.Model(&User{}).Where("role_id=?", role.ID).Count(&adminCount).Error
 	if err != nil {
 		return err

@@ -12,7 +12,6 @@ import (
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/gorilla/mux"
-	"github.com/jinzhu/gorm"
 )
 
 // Campaigns returns a list of campaigns if requested via GET.
@@ -138,7 +137,7 @@ func (as *Server) CampaignSummary(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "GET":
 		cs, err := models.GetAccessibleCampaignSummary(id, ctx.Get(r, "user").(models.User))
 		if err != nil {
-			if err == gorm.ErrRecordNotFound {
+			if errors.Is(err, models.ErrRecordNotFound) {
 				JSONResponse(w, models.Response{Success: false, Message: "Campaign not found"}, http.StatusNotFound)
 			} else {
 				JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusInternalServerError)

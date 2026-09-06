@@ -25,9 +25,9 @@ func (s *ModelsSuite) TestCredentialPolicyOnlyNeverStoresValue(c *check.C) {
 	c.Assert(db.Where("result_id=?", result.Id).First(&finding).Error, check.IsNil)
 	c.Assert(finding.PolicyPassed, check.Equals, false)
 	c.Assert(strings.Contains(finding.FailuresRaw, "disallowed_pattern"), check.Equals, true)
-	var count int
+	var count int64
 	c.Assert(db.Model(&EncryptedCredential{}).Where("result_id=?", result.Id).Count(&count).Error, check.IsNil)
-	c.Assert(count, check.Equals, 0)
+	c.Assert(count, check.Equals, int64(0))
 	encoded, err := json.Marshal(finding)
 	c.Assert(err, check.IsNil)
 	c.Assert(strings.Contains(string(encoded), credential), check.Equals, false)
@@ -84,11 +84,11 @@ func (s *ModelsSuite) TestZeroRetentionKeepsOnlyPolicyFindings(c *check.C) {
 	c.Assert(PostCampaign(&campaign, 1), check.IsNil)
 	result := campaign.Results[0]
 	c.Assert(RecordCredentialSubmission(campaign, result, "Synthetic-only-credential-9"), check.IsNil)
-	var encryptedCount, findingCount int
+	var encryptedCount, findingCount int64
 	c.Assert(db.Model(&EncryptedCredential{}).Where("result_id=?", result.Id).Count(&encryptedCount).Error, check.IsNil)
 	c.Assert(db.Model(&CredentialPolicyResult{}).Where("result_id=?", result.Id).Count(&findingCount).Error, check.IsNil)
-	c.Assert(encryptedCount, check.Equals, 0)
-	c.Assert(findingCount, check.Equals, 1)
+	c.Assert(encryptedCount, check.Equals, int64(0))
+	c.Assert(findingCount, check.Equals, int64(1))
 }
 
 func (s *ModelsSuite) TestRevealRejectsPlaintextCredentialRows(c *check.C) {
@@ -133,7 +133,7 @@ func (s *ModelsSuite) TestEncryptedReviewDoesNotRetainOversizedValues(c *check.C
 	var finding CredentialPolicyResult
 	c.Assert(db.Where("result_id=?", result.Id).First(&finding).Error, check.IsNil)
 	c.Assert(finding.PolicyPassed, check.Equals, false)
-	var encryptedCount int
+	var encryptedCount int64
 	c.Assert(db.Model(&EncryptedCredential{}).Where("result_id=?", result.Id).Count(&encryptedCount).Error, check.IsNil)
-	c.Assert(encryptedCount, check.Equals, 0)
+	c.Assert(encryptedCount, check.Equals, int64(0))
 }

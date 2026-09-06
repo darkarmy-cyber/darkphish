@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/darkarmy-cyber/darkphish/config"
+	"github.com/darkarmy-cyber/darkphish/internal/persistence"
 	"github.com/darkarmy-cyber/darkphish/models"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 // Test-only table: deliberately explicit DDL, never GORM AutoMigrate. The same
@@ -27,12 +29,15 @@ func (persistenceContractRow) TableName() string { return "persistence_contract_
 
 func exercisePersistenceContract(t *testing.T, backend, dsn string, ownerID int64) {
 	t.Helper()
-	orm, err := gorm.Open(backend, dsn)
+	orm, err := persistence.Open(&config.Config{DBName: backend, DBPath: dsn})
 	if err != nil {
 		t.Fatal("open persistence contract connection")
 	}
-	defer orm.Close()
-	orm.LogMode(false)
+	connection, err := orm.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
 	id, boolean, timestamp, blob := "INTEGER PRIMARY KEY AUTOINCREMENT", "BOOLEAN", "DATETIME", "BLOB"
 	switch backend {
 	case "mysql":
@@ -116,7 +121,7 @@ func exercisePersistenceContract(t *testing.T, backend, dsn string, ownerID int6
 	if err := orm.Where("scope_id=?", 8).Order("name ASC").Limit(1).Offset(1).Find(&page).Error; err != nil || len(page) != 1 || page[0].Name != "contract-b" {
 		t.Fatal("explicit ordering/pagination changed")
 	}
-	base := orm.Model(&persistenceContractRow{}).Where("scope_id=?", 8)
+	base := orm.Model(&persistenceContractRow{}).Where("scope_id=?", 8).Session(&gorm.Session{})
 	var countA, countB int64
 	if err := base.Where("name=?", "contract-a").Count(&countA).Error; err != nil {
 		t.Fatal(err)
@@ -165,6 +170,7 @@ func exercisePersistenceContract(t *testing.T, backend, dsn string, ownerID int6
 	if err := orm.Where("id=?", first.ID).First(&persistenceContractRow{}).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatal("deleted row remained readable")
 	}
+	exerciseTransactionContract(t, orm)
 	exerciseModelHookContract(t, ownerID)
 }
 
@@ -207,5 +213,17 @@ func exerciseModelHookContract(t *testing.T, ownerID int64) {
 	}
 	if _, err := models.GetPage(page.Id, ownerID+10000); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatal("page ownership/missing-row distinction changed")
+	}
+	imap := models.IMAP{UserId: ownerID, Host: "127.0.0.1", Port: 993, Username: "synthetic", Password: "Synthetic-IMAP-password-9!", TLS: true, Enabled: true, LastLogin: &zero, RestrictDomain: "example.test"}
+	if err := models.PostIMAP(&imap, ownerID); err != nil || imap.ModifiedDate.IsZero() {
+		t.Fatalf("IMAP insert/hook failed: %v", err)
+	}
+	imap.Enabled, imap.TLS, imap.RestrictDomain = false, false, ""
+	if err := models.PostIMAP(&imap, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := models.GetIMAP(ownerID)
+	if err != nil || len(settings) != 1 || settings[0].Enabled || settings[0].TLS || settings[0].RestrictDomain != "" || settings[0].LastLogin != nil || settings[0].Password != imap.Password {
+		t.Fatal("IMAP replacement skipped zero values or NULL")
 	}
 }

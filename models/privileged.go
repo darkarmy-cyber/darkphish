@@ -11,7 +11,7 @@ import (
 
 	"github.com/darkarmy-cyber/darkphish/auth"
 	"github.com/darkarmy-cyber/darkphish/config"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 var (
@@ -105,7 +105,7 @@ func ReauthenticatePrivileged(ctx context.Context, user User, sessionBinding str
 		if lookup.Error == nil {
 			privileged.ID = existing.ID
 			privileged.CreatedAt = existing.CreatedAt
-		} else if lookup.Error != gorm.ErrRecordNotFound {
+		} else if !errors.Is(lookup.Error, gorm.ErrRecordNotFound) {
 			return lookup.Error
 		}
 		return tx.Save(&privileged).Error

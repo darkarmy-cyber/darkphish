@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -10,7 +11,6 @@ import (
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/gorilla/mux"
-	"github.com/jinzhu/gorm"
 )
 
 // Pages handles requests for the /api/pages/ endpoint
@@ -33,7 +33,7 @@ func (as *Server) Pages(w http.ResponseWriter, r *http.Request) {
 		}
 		// Check to make sure the name is unique
 		_, err = models.GetPageByName(p.Name, ctx.Get(r, "user_id").(int64))
-		if err != gorm.ErrRecordNotFound {
+		if !errors.Is(err, models.ErrRecordNotFound) {
 			JSONResponse(w, models.Response{Success: false, Message: "Page name already in use"}, http.StatusConflict)
 			log.Error(err)
 			return

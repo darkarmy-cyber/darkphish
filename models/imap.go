@@ -7,6 +7,7 @@ import (
 	"time"
 
 	log "github.com/darkarmy-cyber/darkphish/logger"
+	"gorm.io/gorm"
 )
 
 const DefaultIMAPFolder = "INBOX"
@@ -126,8 +127,7 @@ func (im *IMAP) Validate() error {
 // GetIMAP returns the IMAP server owned by the given user.
 func GetIMAP(uid int64) ([]IMAP, error) {
 	im := []IMAP{}
-	count := 0
-	err := db.Where("user_id=?", uid).Find(&im).Count(&count).Error
+	err := db.Where("user_id=?", uid).Find(&im).Error
 
 	if err != nil {
 		log.Error(err)
@@ -152,21 +152,21 @@ func PostIMAP(im *IMAP, uid int64) error {
 		return err
 	}
 
-	// Delete old entry. TODO: Save settings and if fails to Save below replace with original
-	err = DeleteIMAP(uid)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	// Insert new settings into the DB
+	// Protect first, then atomically replace the user's row. This legacy table
+	// has no primary key, so inserting settings must not use GORM's Save upsert.
 	plain := im.Password
 	protected, protectErr := secretStore.Seal(plain)
 	if protectErr != nil {
 		return protectErr
 	}
 	im.Password = protected
-	err = db.Save(im).Error
+	im.UserId = uid
+	err = withSecurityTransaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id=?", uid).Delete(&IMAP{}).Error; err != nil {
+			return err
+		}
+		return tx.Create(im).Error
+	})
 	im.Password = plain
 	im.PasswordSet = plain != ""
 	if err != nil {

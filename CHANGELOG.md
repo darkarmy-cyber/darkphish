@@ -13,6 +13,7 @@
 
 - Restore default server startup after adding administrative CLI commands; bare invocation and explicit `serve` now start the configured servers while version, migration, secret and audit commands remain distinct.
 - Reject permanent database trust/configuration errors immediately instead of delaying startup through transient connection retries; connection errors remain free of credentials and connection strings.
+- Validate configured PostgreSQL CA files before opening the database, so unreadable or malformed trust files fail immediately with a redacted configuration error instead of transient connection retries.
 
 ### Security
 

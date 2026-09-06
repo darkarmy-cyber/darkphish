@@ -38,13 +38,9 @@ func Open(c *config.Config) (*gorm.DB, error) {
 		dialect = sqlite.Open(c.DBPath)
 	case "mysql":
 		if c.DBSSLCaPath != "" {
-			pem, err := os.ReadFile(c.DBSSLCaPath)
+			roots, err := certificateRoots(c.DBSSLCaPath)
 			if err != nil {
-				return nil, ErrTrust
-			}
-			roots := x509.NewCertPool()
-			if !roots.AppendCertsFromPEM(pem) {
-				return nil, ErrTrust
+				return nil, err
 			}
 			if err := mysqldriver.RegisterTLSConfig("ssl_ca", &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}); err != nil {
 				return nil, ErrTrust
@@ -52,6 +48,14 @@ func Open(c *config.Config) (*gorm.DB, error) {
 		}
 		dialect = mysql.Open(c.DBPath)
 	case "postgres":
+		// Structured PostgreSQL settings encode this file as sslrootcert.
+		// Reject invalid configured trust before pgx opens a connection so a
+		// permanent CA error cannot enter the transient connection retry loop.
+		if c.DBSSLCaPath != "" {
+			if _, err := certificateRoots(c.DBSSLCaPath); err != nil {
+				return nil, err
+			}
+		}
 		// pgx retains its supported parameterized extended-query protocol. TLS,
 		// verify-full and CA settings arrive from the validated configuration.
 		dialect = postgres.Open(c.DBPath)
@@ -89,6 +93,18 @@ func Open(c *config.Config) (*gorm.DB, error) {
 		connection.SetConnMaxLifetime(time.Duration(c.DBConnMaxLifetimeMinutes) * time.Minute)
 	}
 	return database, nil
+}
+
+func certificateRoots(path string) (*x509.CertPool, error) {
+	pem, err := os.ReadFile(path)
+	if err != nil {
+		return nil, ErrTrust
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(pem) {
+		return nil, ErrTrust
+	}
+	return roots, nil
 }
 
 // DriverName keeps public backend names stable while PostgreSQL uses pgx.

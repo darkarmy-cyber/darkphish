@@ -13,11 +13,22 @@ Semantic Versioning while the public API and schema are still pre-1.0.
 ### Changed
 
 - Sensitive multi-write operations now use focused repositories, service boundaries, database transactions, and a durable audit outbox so partial credential, reviewer, token, user-role, or audit state is rolled back safely.
+- Restore secret scanning with SHA-pinned Trivy Action v0.36.0, grant CodeQL the private-repository Actions read permission, and exercise bootstrap, nullable timestamps, PAT revocation, signed audit round trips, and injected transaction failures on all three databases.
+- Make release preparation restartable with protected-main preflight, verification of generated branch history, safe fast-forward refresh, PR reuse, and explicit CI dispatch using GitHub's ephemeral token.
+- Gate native publication on the protected release merge and all required checks; retain incomplete drafts for recovery, compare existing asset digests before reuse, and never overwrite release tags or binaries.
+- Record standalone-repository ownership, required checks, single-maintainer protection, conservative dependency updates, and private-plan provenance limitations.
 
 ### Fixed
 
 - Non-retainable repeat credential submissions now atomically purge any older ciphertext for the same result, preventing stale plaintext from remaining revealable.
 - Runtime configuration now resolves each database prefix to its real `migrations` directory, so native binary startup and maintenance commands apply the packaged schema history.
+- Compute audit hashes from the persisted database representation and sign checkpoint timestamps at portable microsecond precision so MySQL/PostgreSQL timestamp rounding cannot invalidate an untampered chain.
+- Handle already-green release and maintenance pull requests with GitHub's protected merge-when-ready operation, pinning the exact head commit and retaining every check, review-conversation, and no-bypass requirement.
+- Store absent user/IMAP last-login and campaign completion/send-by timestamps as SQL NULL across SQLite, strict MySQL, and PostgreSQL; show no last-login date for accounts that have never authenticated.
+- Reconcile native publication on an independent schedule when GitHub suppresses downstream completion events from bot-dispatched checks, without relaxing protected-source, release-PR, or required-check gates.
+- Default required modification timestamps in the persistence layer for groups, templates, pages, and mail settings, including callers outside HTTP handlers, without changing strict MySQL validation or existing real timestamps.
+- Normalize legacy zero optional dates in every campaign-summary API while preserving real historical timestamps.
+- Select release metadata from validated changelog targets, preserve the reserved manual patch-release path, and prevent preparation runs from replacing pending publication runs.
 
 ### Deprecated
 
@@ -28,6 +39,7 @@ Semantic Versioning while the public API and schema are still pre-1.0.
 - Credential reveal from a browser now requires a fresh, server-side, session-bound password reauthentication window in addition to account state, campaign access, RBAC, and credential permission checks.
 - Added the narrow Security Reviewer role with expiring per-campaign assignments, centrally enforced access, audited assignment lifecycle, and no campaign ownership or administrative authority.
 - Audit records now use deterministic SHA-256 hash chaining, rotating Ed25519-signed checkpoints, retention anchors, chain verification, and signed/verifiable JSON export manifests.
+- Resolve initial-administrator password files independently of network database DSNs, require explicit production bootstrap configuration, create owner-only files without overwriting existing files, and redact all filesystem diagnostics.
 
 ### Migration
 

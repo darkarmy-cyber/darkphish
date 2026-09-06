@@ -291,3 +291,11 @@ the migration. A suffix names the individual method at that original line.
   PAT authentication, campaign read/completion, persisted audit verification,
   process restart/readback and signed export verification. The server bound
   only loopback with the mailer disabled and synthetic accounts/values.
+- Head `855fc0f6af0623874f24a8a955e226529514e228` passed all ten required
+  hosted checks (CI `34035823736`, PR CodeQL `34035823730`), including strict
+  MySQL and PostgreSQL security/compatibility. Full-branch CodeQL `34035824043`
+  uploaded both exact-head categories with no errors/warnings and zero open
+  alerts. The normal review identified one P2 startup regression: permanent CA
+  errors entered the transient retry loop. Immediate rejection is restored,
+  with missing/invalid-PEM startup tests. Final-head rechecks and both review
+  completions are still mandatory before protected merge.

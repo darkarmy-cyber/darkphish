@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -233,7 +234,9 @@ func Setup(c *config.Config) error {
 		if err == nil {
 			break
 		}
-		if err != nil && i >= MaxDatabaseConnectionAttempts {
+		// Invalid trust/backend configuration cannot recover by waiting for the
+		// database. Preserve the pre-migration immediate configuration failure.
+		if errors.Is(err, persistence.ErrTrust) || errors.Is(err, persistence.ErrBackend) || i >= MaxDatabaseConnectionAttempts {
 			log.Error(err)
 			return err
 		}

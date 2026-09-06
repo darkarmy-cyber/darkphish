@@ -32,7 +32,9 @@ $.fn.dataTable.moment = function ( format, locale ) {
 			return 'moment-'+format;
 		}
 
-		return moment( d.replace ? d.replace(/<.*?>/g, '') : d, format, locale, true ).isValid() ?
+		// Administrative date cells contain plaintext. Never rewrite HTML into a
+		// purportedly sanitized date; strict parsing rejects markup as invalid.
+		return moment( d, format, locale, true ).isValid() ?
 			'moment-'+format :
 			null;
 	} );
@@ -41,7 +43,7 @@ $.fn.dataTable.moment = function ( format, locale ) {
 	types.order[ 'moment-'+format+'-pre' ] = function ( d ) {
 		return d === '' || d === null ?
 			-Infinity :
-			parseInt( moment( d.replace ? d.replace(/<.*?>/g, '') : d, format, locale, true ).format( 'x' ), 10 );
+			parseInt( moment( d, format, locale, true ).format( 'x' ), 10 );
 	};
 };
 

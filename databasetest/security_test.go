@@ -230,6 +230,7 @@ func exerciseSecurityModel(t *testing.T, database, dsn string) {
 	if err := connection.QueryRow("SELECT COUNT(*) FROM personal_access_tokens WHERE name='rollback integration'").Scan(&tokens); err != nil || tokens != 0 {
 		t.Fatal("failed PAT creation did not roll back")
 	}
+	exercisePersistenceContract(t, database, dsn, admin.Id)
 }
 
 func rejectOutbox(t *testing.T, db *sql.DB, backend string) func() {

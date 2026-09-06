@@ -49,6 +49,10 @@ jobs:
         run: go build -trimpath ./...
       - name: Unit tests
         run: go test ./... -count=1
+      - name: Verify v0.4 SQLite database compatibility
+        uses: ./.github/actions/persistence-compat
+        with:
+          backend: sqlite3
       - name: Vet
         run: go vet ./...
       - name: Staticcheck
@@ -106,6 +110,7 @@ jobs:
         run: |
           sudo systemctl start mysql.service
           mysql -uroot -proot -e 'CREATE DATABASE darkphish_migration_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
+          mysql -uroot -proot -e 'CREATE DATABASE darkphish_compatibility_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
       - name: Exercise MySQL migrations
         env:
           DARKPHISH_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/darkphish_migration_test?charset=utf8mb4&parseTime=true&multiStatements=true"
@@ -114,6 +119,11 @@ jobs:
         env:
           DARKPHISH_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/darkphish_migration_test?charset=utf8mb4&parseTime=true&multiStatements=true"
         run: go test ./databasetest -run TestMySQLSecurityModel -count=1
+      - name: Verify v0.4 MySQL database compatibility
+        uses: ./.github/actions/persistence-compat
+        with:
+          backend: mysql
+          dsn: "root:root@tcp(127.0.0.1:3306)/darkphish_compatibility_test?charset=utf8mb4&parseTime=true&multiStatements=true"
 
   postgres-migrations:
     name: PostgreSQL migrations up/down/up
@@ -146,6 +156,15 @@ jobs:
         env:
           DARKPHISH_TEST_POSTGRES_DSN: "postgres://darkphish:darkphish-test-only@127.0.0.1:5432/darkphish_migration_test?sslmode=disable"
         run: go test ./databasetest -run TestPostgreSQLSecurityModel -count=1
+      - name: Create isolated PostgreSQL compatibility database
+        env:
+          PGPASSWORD: darkphish-test-only
+        run: createdb -h 127.0.0.1 -U darkphish darkphish_compatibility_test
+      - name: Verify v0.4 PostgreSQL database compatibility
+        uses: ./.github/actions/persistence-compat
+        with:
+          backend: postgres
+          dsn: "postgres://darkphish:darkphish-test-only@127.0.0.1:5432/darkphish_compatibility_test?sslmode=disable"
 
   frontend:
     name: Frontend reproducibility

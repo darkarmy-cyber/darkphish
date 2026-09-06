@@ -191,3 +191,24 @@ the migration. A suffix names the individual method at that original line.
   Hosted strict MySQL/PostgreSQL contract runs are pending at draft creation.
 - Migration, v0.4 fixtures, final hosted matrices/reviews and release remain
   pending; this document does not claim readiness until those results exist.
+
+### Characterization and connection stage
+
+- Draft engineering PR #13, initial head `a35ec6d0c810be72f3a7b6aa304d71ee2c7525d5`:
+  CI `34032156613` and CodeQL `34032156599` passed all ten required checks,
+  including the unchanged GORM v1 contract on strict MySQL and PostgreSQL.
+- `internal/persistence` introduces the maintained adapter/connection factory
+  independently; the application still uses v1 until its deliberate switch.
+  Its tests prove empty schema on open, pool defaults/overrides, close/health,
+  global-write rejection, redacted connection errors and pgx verify-full policy.
+- `compatibilitytest` is ORM-independent. CI compiles its seed phase against
+  exact immutable v0.4 source and its check phase against the candidate. It
+  compares schema and all 29 fixture tables before/after startup, preserves
+  ciphertext, exercises login/PAT/campaign/reviewer/reauth/reveal/audit/signed
+  exports, performs a normal write, then closes/reopens and verifies again.
+  A real v0.4 SQLite seed and unchanged v1 candidate check passed locally.
+- Dependency review: pgx v5.10.0 and its pgpass/pgservice/puddle dependencies,
+  GORM's `jinzhu/now`, and test-only kr/pretty, kr/text, go-internal additions
+  follow the selected maintained modules. `x/net` merely moved to the direct
+  section after tidy (already imported by the 0.4 import parser). Existing
+  SQLite/MySQL/Goose, crypto, frontend and workflow versions did not change.

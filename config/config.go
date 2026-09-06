@@ -68,11 +68,14 @@ type SecretsConfig struct {
 }
 
 type AuditConfig struct {
-	RetentionDays      int               `json:"retention_days"`
-	CheckpointInterval int               `json:"checkpoint_interval"`
-	ActiveSigningKeyID string            `json:"active_signing_key_id"`
-	SigningKeys        map[string]string `json:"signing_keys"`
-	SigningKeyFile     string            `json:"signing_key_file"`
+	InitializationTimeoutSeconds int               `json:"initialization_timeout_seconds"`
+	AllowLegacyEphemeralRecovery bool              `json:"allow_legacy_ephemeral_recovery"`
+	MultiInstance                bool              `json:"multi_instance"`
+	RetentionDays                int               `json:"retention_days"`
+	CheckpointInterval           int               `json:"checkpoint_interval"`
+	ActiveSigningKeyID           string            `json:"active_signing_key_id"`
+	SigningKeys                  map[string]string `json:"signing_keys"`
+	SigningKeyFile               string            `json:"signing_key_file"`
 }
 
 // VaultConfig configures the production Vault Transit envelope-key provider.

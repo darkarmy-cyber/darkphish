@@ -10,9 +10,9 @@ import (
 	"gorm.io/gorm"
 )
 
-func auditEventsAscending() ([]audit.Event, error) {
+func auditEventsAscending(tx *gorm.DB) ([]audit.Event, error) {
 	rows := []auditEventRow{}
-	if err := db.Where("chain_id=?", audit.DefaultChainID).Order("chain_sequence ASC").Find(&rows).Error; err != nil {
+	if err := tx.Where("chain_id=?", audit.DefaultChainID).Order("chain_sequence ASC").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	values := make([]audit.Event, len(rows))
@@ -22,12 +22,12 @@ func auditEventsAscending() ([]audit.Event, error) {
 	return values, nil
 }
 
-func BuildAuditExport(applicationVersion, commit string) ([]byte, audit.ExportManifest, error) {
+func buildAuditExportTx(tx *gorm.DB, head *auditChainHead, applicationVersion, commit string) ([]byte, audit.ExportManifest, error) {
 	var manifest audit.ExportManifest
-	if _, err := VerifyAuditChain(); err != nil {
+	if _, err := verifyAuditChainTx(tx, head); err != nil {
 		return nil, manifest, err
 	}
-	events, err := auditEventsAscending()
+	events, err := auditEventsAscending(tx)
 	if err != nil {
 		return nil, manifest, err
 	}
@@ -43,7 +43,7 @@ func BuildAuditExport(applicationVersion, commit string) ([]byte, audit.ExportMa
 	if len(events) > 0 {
 		manifest.FirstEventID = events[0].ID
 		manifest.LastEventID = events[len(events)-1].ID
-		checkpoint, checkpointErr := CreateAuditCheckpoint()
+		checkpoint, checkpointErr := createAuditCheckpointTx(tx, head.Sequence)
 		if checkpointErr != nil {
 			return nil, manifest, checkpointErr
 		}
@@ -110,4 +110,18 @@ func VerifyAuditExport(content, manifestContent []byte) (audit.ExportManifest, e
 		}
 	}
 	return manifest, nil
+}
+
+func BuildAuditExport(applicationVersion, commit string) ([]byte, audit.ExportManifest, error) {
+	var content []byte
+	var manifest audit.ExportManifest
+	err := withAuditChain(func(tx *gorm.DB, head *auditChainHead) error {
+		var err error
+		content, manifest, err = buildAuditExportTx(tx, head, applicationVersion, commit)
+		return err
+	})
+	if err != nil {
+		return nil, audit.ExportManifest{}, err
+	}
+	return content, manifest, nil
 }

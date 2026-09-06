@@ -42,7 +42,7 @@ func TestDefaultDeniedImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error decoding body: %v", err)
 	}
-	if !strings.Contains(got.Message, "upstream connection denied") {
+	if !strings.Contains(got.Message, "site import failed") {
 		t.Fatalf("incorrect response error provided: %s", got.Message)
 	}
 }
@@ -78,7 +78,7 @@ func TestCustomDeniedImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error decoding body: %v", err)
 	}
-	if !strings.Contains(got.Message, "upstream connection denied") {
+	if !strings.Contains(got.Message, "site import failed") {
 		t.Fatalf("incorrect response error provided: %s", got.Message)
 	}
 }

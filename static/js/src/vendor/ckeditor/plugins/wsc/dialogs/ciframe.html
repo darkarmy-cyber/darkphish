@@ -11,15 +11,16 @@ For licensing, see LICENSE.html or http://ckeditor.com/license
 
 function gup( name )
 {
-	name = name.replace( /[\[]/, '\\\[' ).replace( /[\]]/, '\\\]' ) ;
-	var regexS = '[\\?&]' + name + '=([^&#]*)' ;
-	var regex = new RegExp( regexS ) ;
-	var results = regex.exec( window.location.href ) ;
-
-	if ( results )
-		return results[ 1 ] ;
-	else
-		return '' ;
+	// Match names literally, not as regular expressions. Preserve raw encoded
+	// values: XDTMaster owns decoding of the legacy bridge protocol.
+	var fields = window.location.search.slice( 1 ).split( '&' ) ;
+	for ( var i = 0; i < fields.length; i++ )
+	{
+		var separator = fields[ i ].indexOf( '=' ) ;
+		if ( separator >= 0 && fields[ i ].slice( 0, separator ) === name )
+			return fields[ i ].slice( separator + 1 ) ;
+	}
+	return '' ;
 }
 
 var interval;

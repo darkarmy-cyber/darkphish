@@ -98,6 +98,7 @@ func exerciseSecurityModel(t *testing.T, database, dsn string) {
 	}
 
 	group := models.Group{Name: "database group", UserId: admin.Id, Targets: []models.Target{{BaseRecipient: models.BaseRecipient{Email: "database@example.test"}}}}
+	exerciseGroupInputIsolation(t, admin.Id)
 	if err := models.PostGroup(&group); err != nil {
 		t.Fatal(err)
 	}

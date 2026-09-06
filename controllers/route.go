@@ -345,15 +345,48 @@ func (as *AdminServer) UserManagement(w http.ResponseWriter, r *http.Request) {
 }
 
 func (as *AdminServer) nextOrIndex(w http.ResponseWriter, r *http.Request) {
-	next := "/"
-	url, err := url.Parse(r.FormValue("next"))
-	if err == nil {
-		path := url.EscapedPath()
-		if path != "" {
-			next = "/" + strings.TrimLeft(path, "/")
+	http.Redirect(w, r, administrativeReturnPath(r.FormValue("next")), http.StatusFound)
+}
+
+// Login return targets are administrative navigation, not campaign redirects.
+// Select known read-only pages rather than rewriting arbitrary URLs. Query and
+// fragment removal preserves the previous return-path behavior.
+func administrativeReturnPath(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.User != nil || !strings.HasPrefix(raw, "/") {
+		return "/"
+	}
+	switch parsed.EscapedPath() {
+	case "/":
+		return "/"
+	case "/campaigns":
+		return "/campaigns"
+	case "/templates":
+		return "/templates"
+	case "/groups":
+		return "/groups"
+	case "/landing_pages":
+		return "/landing_pages"
+	case "/sending_profiles":
+		return "/sending_profiles"
+	case "/settings":
+		return "/settings"
+	case "/users":
+		return "/users"
+	case "/webhooks":
+		return "/webhooks"
+	case "/audit":
+		return "/audit"
+	case "/reset_password":
+		return "/reset_password"
+	}
+	if strings.HasPrefix(parsed.EscapedPath(), "/campaigns/") {
+		id, err := strconv.ParseUint(strings.TrimPrefix(parsed.EscapedPath(), "/campaigns/"), 10, 64)
+		if err == nil {
+			return "/campaigns/" + strconv.FormatUint(id, 10)
 		}
 	}
-	http.Redirect(w, r, next, http.StatusFound)
+	return "/"
 }
 
 func (as *AdminServer) handleInvalidLogin(w http.ResponseWriter, r *http.Request, message string) {

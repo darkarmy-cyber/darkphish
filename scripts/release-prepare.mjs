@@ -3,6 +3,7 @@ import { copyFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { api, assertGeneratedCommits, dispatchChecks, enableAutoMerge, git, greenCommit, pages, protectedMain, repository, versionTag } from "./release-lib.mjs"
+import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 
 async function prepare() {
   const repo = repository()
@@ -21,6 +22,7 @@ async function prepare() {
     console.log("Waiting for all required main CI and security checks before release preparation.")
     return
   }
+  await verifyCodeQLBaseline(repo, sha)
   if (!readdirSync("changes").some((name) => name.endsWith(".md") && name !== "README.md")) {
     console.log("No unconsumed release fragments; protected publication workflow owns the next step.")
     return

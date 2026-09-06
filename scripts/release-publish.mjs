@@ -1,6 +1,7 @@
 import { appendFileSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { api, assetDisposition, assertReleaseState, generatedPath, git, greenCommit, pages, protectedMain, repository, verifyChecksums, versionTag } from "./release-lib.mjs"
+import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 
 async function source() {
   const repo = repository()
@@ -12,6 +13,7 @@ async function source() {
   const prs = await pages(`repos/${repo}/commits/${sha}/pulls`)
   const pr = prs.find((item) => item.merged_at && item.merge_commit_sha === sha && item.base.ref === "main" && item.head.ref === `release/${tag}` && item.title === `release: Darkphish ${version}`)
   if (!pr) return null
+  await verifyCodeQLBaseline(repo, sha)
   const files = await pages(`repos/${repo}/pulls/${pr.number}/files`)
   if (!files.length || files.some((file) => !generatedPath(file.filename))) throw new Error("release PR includes application changes")
   if (readdirSync("changes").some((name) => name.endsWith(".md") && name !== "README.md")) throw new Error("release source contains unconsumed fragments")
@@ -74,6 +76,7 @@ async function run() {
     assetDisposition(uploaded.find((asset) => asset.name === name), hashes.get(name), bytes.get(name).length)
   }
   await protectedMain(repo, sha)
+  await verifyCodeQLBaseline(repo, sha)
   await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, make_latest: "true" } })
   console.log(`Published https://github.com/${repo}/releases/tag/${tag}`)
 }

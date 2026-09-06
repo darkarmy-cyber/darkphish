@@ -319,7 +319,10 @@ func insertTargetIntoGroup(tx *gorm.DB, t Target, gid int64) error {
 		}).Error("Invalid email")
 		return err
 	}
-	err := tx.Where(t).FirstOrCreate(&t).Error
+	// Fixed SQL and bound values make recipient identity explicit, including
+	// empty fields that GORM's struct predicates otherwise omit.
+	err := tx.Where("email = ? AND first_name = ? AND last_name = ? AND position = ?",
+		t.Email, t.FirstName, t.LastName, t.Position).FirstOrCreate(&t).Error
 	if err != nil {
 		log.WithFields(logrus.Fields{
 			"email": t.Email,

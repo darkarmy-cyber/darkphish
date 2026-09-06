@@ -2,19 +2,16 @@ package api
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/darkarmy-cyber/darkphish/dialer"
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/darkarmy-cyber/darkphish/util"
 	"github.com/jordan-wright/email"
+	"golang.org/x/net/html"
 )
 
 type cloneRequest struct {
@@ -23,10 +20,8 @@ type cloneRequest struct {
 }
 
 func (cr *cloneRequest) validate() error {
-	if cr.URL == "" {
-		return errors.New("No URL Specified")
-	}
-	return nil
+	_, err := parseImportURL(cr.URL)
+	return err
 }
 
 type cloneResponse struct {
@@ -114,39 +109,32 @@ func (as *Server) ImportSite(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
 		return
 	}
-	restrictedDialer := dialer.Dialer()
-	tr := &http.Transport{
-		DialContext: restrictedDialer.DialContext,
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-	}
-	client := &http.Client{Transport: tr}
-	resp, err := client.Get(cr.URL)
+	content, sourceURL, err := fetchImportPage(r.Context(), cr.URL)
 	if err != nil {
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
 		return
 	}
-	defer resp.Body.Close()
 	// Insert the base href tag to better handle relative resources
-	d, err := goquery.NewDocumentFromReader(resp.Body)
+	d, err := goquery.NewDocumentFromReader(bytes.NewReader(content))
 	if err != nil {
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
 		return
 	}
 	// Assuming we don't want to include resources, we'll need a base href
 	if d.Find("head base").Length() == 0 {
-		d.Find("head").PrependHtml(fmt.Sprintf("<base href=\"%s\">", cr.URL))
+		d.Find("head").PrependNodes(&html.Node{Type: html.ElementNode, Data: "base", Attr: []html.Attribute{{Key: "href", Val: sourceURL.String()}}})
 	}
 	forms := d.Find("form")
 	forms.Each(func(i int, f *goquery.Selection) {
 		// We'll want to store where we got the form from
 		// (the current URL)
-		url := f.AttrOr("action", cr.URL)
-		if !strings.HasPrefix(url, "http") {
-			url = fmt.Sprintf("%s%s", cr.URL, url)
+		originalURL := sourceURL.String()
+		if action, parseErr := sourceURL.Parse(f.AttrOr("action", "")); parseErr == nil {
+			originalURL = action.String()
 		}
-		f.PrependHtml(fmt.Sprintf("<input type=\"hidden\" name=\"__original_url\" value=\"%s\"/>", url))
+		f.PrependNodes(&html.Node{Type: html.ElementNode, Data: "input", Attr: []html.Attribute{
+			{Key: "type", Val: "hidden"}, {Key: "name", Val: "__original_url"}, {Key: "value", Val: originalURL},
+		}})
 	})
 	h, err := d.Html()
 	if err != nil {

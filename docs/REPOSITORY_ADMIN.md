@@ -3,7 +3,8 @@
 Darkphish is the private, standalone `darkarmy-cyber/darkphish` repository with
 default branch `main`. Preserve upstream Git ancestry and legal attribution, but
 do not import Gophish tags/releases. The first official Darkphish GitHub release
-is `v0.3.0`; 0.1 and 0.2 remain in Git and CHANGELOG. Recovery keeps VERSION 0.3.0.
+is `v0.3.0`; 0.1 and 0.2 remain in Git and CHANGELOG. Normal engineering resumes
+with VERSION 0.4.0; published tags are never rewritten.
 
 ## Protection and merge policy
 
@@ -97,11 +98,41 @@ organization policy is an external administrator action. Do not add a personal
 PAT to repository secrets as a workaround.
 
 CI has read-only contents access. CodeQL adds Actions read and security-events
-write. Release preparation uses contents/PR/labels/Actions dispatch writes and
-checks read. Publication uses contents write, Actions/checks/PR read and optional
+write. Release preparation uses contents/PR/labels/Actions dispatch writes,
+checks read and security-events read. Publication uses contents write,
+Actions/checks/PR/security-events read and optional
 OIDC/attestation permissions. Release scripts execute protected main code only;
 metadata auto-merge never checks out PR code. No workflow executes untrusted PR
 code under `pull_request_target` privileges.
+
+## Read-only CodeQL release baseline
+
+Starting with 0.4, `scripts/codeql-baseline.mjs` is a GET-only diagnostic. The
+manual **Read-only CodeQL baseline** workflow grants only contents read and
+security-events read. Preparation and publication add security-events **read**,
+never alert-dismissal permission. The diagnostic API requires Code scanning
+alerts read permission for fine-grained tokens; see the [GitHub REST contract](https://docs.github.com/en/rest/code-scanning/code-scanning).
+
+From a trusted checkout of current protected main, run
+`node scripts/codeql-baseline.mjs` with the existing authenticated environment
+(`GITHUB_REPOSITORY` or `GH_REPO`, plus a read-scoped `GH_TOKEN`/`GITHUB_TOKEN`).
+Do not paste tokens into commands, logs or tracked files. Alternatively dispatch
+the manual diagnostic workflow, which supplies a short-lived read-only token.
+
+Both configured CodeQL languages must have successful latest analyses at the
+exact current default-branch SHA with a nonempty ruleset and no extraction
+error/warning. The diagnostic then paginates all open CodeQL alerts and prints
+only severity counts, alert numbers, rule IDs and paths. It deliberately also
+blocks low/quality warnings: the budget is zero open CodeQL alerts, not just zero
+critical findings. A PR incremental scan is not evidence of a clean main baseline.
+
+API/permission failures, stale/missing analyses, malformed records and a changing
+default branch fail closed. Dispatch CodeQL on main and retry after both languages
+finish; remediate real alerts and review any proven false positives individually.
+There is no automatic dismissal or scanner suppression. Preparation checks before
+creating/updating the release branch; publication checks before building and again
+immediately before publishing the verified draft. Neither gate changes branch or
+tag protection or the ten existing required checks.
 
 ## Security features and plan limitations
 

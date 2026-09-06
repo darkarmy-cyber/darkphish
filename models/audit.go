@@ -288,7 +288,7 @@ func configureAuditStore() error {
 
 func initializeAuditChainTx(tx *gorm.DB, head *auditChainHead) error {
 	if head.Initialized {
-		_, err := verifyAuditChainTx(tx, head)
+		_, err := verifyAuditChainStateTx(tx, head, persistentAuditSigning())
 		return err
 	}
 	rows := []auditEventRow{}
@@ -335,8 +335,10 @@ func initializeAuditChainTx(tx *gorm.DB, head *auditChainHead) error {
 	} else {
 		var last auditCheckpointRow
 		if err := tx.Where("chain_id=?", audit.DefaultChainID).Order("last_sequence DESC").First(&last).Error; err == nil {
-			if err := auditSigner.VerifyCheckpoint(rowCheckpoint(last)); err != nil {
-				return err
+			if persistentAuditSigning() {
+				if err := auditSigner.VerifyCheckpoint(rowCheckpoint(last)); err != nil {
+					return err
+				}
 			}
 			head.Sequence, head.EventID, head.EventHash, head.RetiredSequence = last.LastSequence, last.LastEventID, last.FinalHash, last.LastSequence
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -354,8 +356,12 @@ func initializeAuditChainTx(tx *gorm.DB, head *auditChainHead) error {
 	if err := tx.Save(head).Error; err != nil {
 		return err
 	}
-	_, err := verifyAuditChainTx(tx, head)
+	_, err := verifyAuditChainStateTx(tx, head, persistentAuditSigning())
 	return err
+}
+
+func persistentAuditSigning() bool {
+	return conf != nil && conf.Audit.ActiveSigningKeyID != ""
 }
 
 func initializeAuditChain() error {
@@ -419,6 +425,15 @@ type AuditVerification struct {
 }
 
 func verifyAuditChainTx(tx *gorm.DB, head *auditChainHead) (AuditVerification, error) {
+	return verifyAuditChainStateTx(tx, head, true)
+}
+
+// Legacy development databases may contain checkpoints whose ephemeral private
+// key was intentionally never persisted. Startup still checks every available
+// event hash, sequence and checkpoint linkage, but cannot authenticate those
+// signatures. Explicit verification/export/retention always require signatures.
+// Configured persistent keyrings (including all multi-instance writers) do too.
+func verifyAuditChainStateTx(tx *gorm.DB, head *auditChainHead, verifySignatures bool) (AuditVerification, error) {
 	var report AuditVerification
 	rows := []auditEventRow{}
 	if err := tx.Where("chain_id=?", audit.DefaultChainID).Order("chain_sequence ASC").Find(&rows).Error; err != nil {
@@ -436,8 +451,10 @@ func verifyAuditChainTx(tx *gorm.DB, head *auditChainHead) (AuditVerification, e
 			if checkpoint.LastSequence > head.Sequence {
 				return report, audit.ErrBrokenChain
 			}
-			if err := auditSigner.VerifyCheckpoint(rowCheckpoint(checkpoint)); err != nil {
-				return report, err
+			if verifySignatures {
+				if err := auditSigner.VerifyCheckpoint(rowCheckpoint(checkpoint)); err != nil {
+					return report, err
+				}
 			}
 		}
 		if head.Sequence == 0 && head.RetiredSequence == 0 && head.EventHash == "" {
@@ -451,7 +468,10 @@ func verifyAuditChainTx(tx *gorm.DB, head *auditChainHead) (AuditVerification, e
 			return report, audit.ErrBrokenChain
 		}
 		report.CheckpointID, report.FinalHash = anchor.ID, anchor.FinalHash
-		return report, auditSigner.VerifyCheckpoint(rowCheckpoint(anchor))
+		if verifySignatures {
+			return report, auditSigner.VerifyCheckpoint(rowCheckpoint(anchor))
+		}
+		return report, nil
 	}
 	if rows[0].ChainSequence != head.RetiredSequence+1 || rows[len(rows)-1].ChainSequence != head.Sequence || rows[len(rows)-1].EventHash != head.EventHash || rows[len(rows)-1].ID != head.EventID {
 		return report, audit.ErrBrokenChain
@@ -467,8 +487,10 @@ func verifyAuditChainTx(tx *gorm.DB, head *auditChainHead) (AuditVerification, e
 		if err := tx.Where("chain_id=? AND last_sequence=? AND final_hash=?", audit.DefaultChainID, expectedSequence-1, previous).First(&anchor).Error; err != nil {
 			return report, fmt.Errorf("%w: missing signed retention anchor before event %d", audit.ErrBrokenChain, rows[0].ID)
 		}
-		if err := auditSigner.VerifyCheckpoint(rowCheckpoint(anchor)); err != nil {
-			return report, err
+		if verifySignatures {
+			if err := auditSigner.VerifyCheckpoint(rowCheckpoint(anchor)); err != nil {
+				return report, err
+			}
 		}
 		report.CheckpointID = anchor.ID
 	}
@@ -495,8 +517,10 @@ func verifyAuditChainTx(tx *gorm.DB, head *auditChainHead) (AuditVerification, e
 		return report, err
 	}
 	for _, row := range checkpoints {
-		if err := auditSigner.VerifyCheckpoint(rowCheckpoint(row)); err != nil {
-			return report, fmt.Errorf("checkpoint %d: %w", row.ID, err)
+		if verifySignatures {
+			if err := auditSigner.VerifyCheckpoint(rowCheckpoint(row)); err != nil {
+				return report, fmt.Errorf("checkpoint %d: %w", row.ID, err)
+			}
 		}
 		if row.LastSequence >= rows[0].ChainSequence {
 			var event auditEventRow

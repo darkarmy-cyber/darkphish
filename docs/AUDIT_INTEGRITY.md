@@ -86,3 +86,10 @@ Rollback requires stopped writers and restoration of the pre-upgrade database
 and keys together. Goose Down removes the new coordination metadata and delivery
 receipts; it is a schema rollback test, not a lossless operational downgrade after
 0.6 activity or retention.
+
+Legacy single-instance development with ephemeral keys can still restart. Startup
+checks event hashes and checkpoint linkage but cannot authenticate signatures
+whose original ephemeral key was lost. Explicit verification, export and retention
+continue to fail closed for those signatures. Persistent-key and multi-instance
+startup always verifies signatures. Configure persistent keys before relying on
+checkpoint authentication across restarts.

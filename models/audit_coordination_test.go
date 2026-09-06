@@ -77,3 +77,28 @@ func (s *ModelsSuite) TestAuditCheckpointFailureRollsBackAppend(c *check.C) {
 	c.Assert(err, check.IsNil)
 	c.Assert(report.RecordCount, check.Equals, int64(1))
 }
+
+func (s *ModelsSuite) TestEphemeralCheckpointDoesNotPreventDevelopmentRestart(c *check.C) {
+	rows := appendIntegrityEvents(c, 3)
+	_, err := CreateAuditCheckpoint()
+	c.Assert(err, check.IsNil)
+	previousSigner, previousConfig := auditSigner, conf
+	defer func() { auditSigner, conf = previousSigner, previousConfig }()
+	// Exercise the actual startup signer generation with the same database.
+	c.Assert(configureAuditStore(), check.IsNil)
+	_, err = VerifyAuditChain()
+	c.Assert(errors.Is(err, audit.ErrInvalidSignature), check.Equals, true)
+	// First 0.6 initialization of a 0.5 development database has the same rule.
+	c.Assert(db.Model(&auditChainHead{}).Where("chain_id=?", audit.DefaultChainID).Update("initialized", false).Error, check.IsNil)
+	c.Assert(initializeAuditChain(), check.IsNil)
+	c.Assert(audit.AppendEvent(audit.Event{Timestamp: time.Now().UTC(), Actor: "test", Action: "after.restart", Metadata: "{}"}), check.IsNil)
+	// A configured persistent keyring may never use the development exception.
+	persistent := *conf
+	persistent.Audit.ActiveSigningKeyID = "persistent-test"
+	conf = &persistent
+	c.Assert(initializeAuditChain(), check.NotNil)
+	conf = previousConfig
+	// Even ephemeral development startup still fails on modified event hashes.
+	c.Assert(db.Model(&auditEventRow{}).Where("id=?", rows[0].ID).Update("action", "tampered").Error, check.IsNil)
+	c.Assert(errors.Is(initializeAuditChain(), audit.ErrBrokenChain), check.Equals, true)
+}

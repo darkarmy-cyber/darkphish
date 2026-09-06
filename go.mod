@@ -22,7 +22,7 @@ require (
 	github.com/jordan-wright/unindexed v0.0.0-20181209214434-78fa79113c0f
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/oschwald/maxminddb-golang v1.13.1
-	github.com/pressly/goose/v3 v3.27.3
+	github.com/pressly/goose/v3 v3.28.0
 	github.com/sirupsen/logrus v1.10.2
 	golang.org/x/crypto v0.56.0
 	golang.org/x/net v0.58.0

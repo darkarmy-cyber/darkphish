@@ -120,6 +120,7 @@ jobs:
           mysql -uroot -proot -e 'CREATE DATABASE darkphish_compatibility_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
           mysql -uroot -proot -e 'CREATE DATABASE darkphish_audit_compat_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
           mysql -uroot -proot -e 'CREATE DATABASE darkphish_audit_process_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
+          mysql -uroot -proot -e 'CREATE DATABASE darkphish_audit_binary_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
       - name: Exercise MySQL migrations
         env:
           DARKPHISH_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/darkphish_migration_test?charset=utf8mb4&parseTime=true&multiStatements=true"
@@ -145,6 +146,18 @@ jobs:
           DARKPHISH_AUDIT_TEST_BACKEND: mysql
           DARKPHISH_AUDIT_TEST_DSN: "root:root@tcp(127.0.0.1:3306)/darkphish_audit_process_test?charset=utf8mb4&parseTime=true&multiStatements=true"
         run: go test ./models -run '^TestAuditMultiProcess$' -count=1 -v
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.19.0
+      - name: Verify native audit processes
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          DARKPHISH_AUDIT_TEST_BACKEND: mysql
+          DARKPHISH_AUDIT_TEST_DSN: "root:root@tcp(127.0.0.1:3306)/darkphish_audit_binary_test?charset=utf8mb4&parseTime=true&multiStatements=true"
+        run: |
+          go build -trimpath -ldflags "-X main.commitSHA=$SOURCE_SHA" -o .cache/audit-native/darkphish ./
+          node scripts/audit-binary-smoke.mjs .cache/audit-native/darkphish "$SOURCE_SHA" .
+
 
 
   postgres-migrations:
@@ -185,6 +198,7 @@ jobs:
           createdb -h 127.0.0.1 -U darkphish darkphish_compatibility_test
           createdb -h 127.0.0.1 -U darkphish darkphish_audit_compat_test
           createdb -h 127.0.0.1 -U darkphish darkphish_audit_process_test
+          createdb -h 127.0.0.1 -U darkphish darkphish_audit_binary_test
       - name: Verify v0.4 PostgreSQL database compatibility
         uses: ./.github/actions/persistence-compat
         with:
@@ -202,6 +216,18 @@ jobs:
           DARKPHISH_AUDIT_TEST_BACKEND: postgres
           DARKPHISH_AUDIT_TEST_DSN: "postgres://darkphish:darkphish-test-only@127.0.0.1:5432/darkphish_audit_process_test?sslmode=disable"
         run: go test ./models -run '^TestAuditMultiProcess$' -count=1 -v
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.19.0
+      - name: Verify native audit processes
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          DARKPHISH_AUDIT_TEST_BACKEND: postgres
+          DARKPHISH_AUDIT_TEST_DSN: "postgres://darkphish:darkphish-test-only@127.0.0.1:5432/darkphish_audit_binary_test?sslmode=disable"
+        run: |
+          go build -trimpath -ldflags "-X main.commitSHA=$SOURCE_SHA" -o .cache/audit-native/darkphish ./
+          node scripts/audit-binary-smoke.mjs .cache/audit-native/darkphish "$SOURCE_SHA" .
+
 
 
   frontend:

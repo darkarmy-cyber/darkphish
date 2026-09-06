@@ -1,0 +1,36 @@
+name: Native audit multi-instance smoke
+description: Run the supplied native archive on dedicated MySQL and PostgreSQL databases.
+inputs:
+  binary:
+    required: true
+    description: Path to the extracted Linux binary
+  sha:
+    required: true
+    description: Expected embedded source commit
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v6
+      with:
+        node-version: 24.19.0
+    - name: Prepare disposable MySQL database
+      shell: bash
+      run: |
+        sudo systemctl start mysql.service
+        mysql -uroot -proot -e 'CREATE DATABASE darkphish_binary_audit_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
+    - name: Smoke MySQL native processes
+      shell: bash
+      env:
+        AUDIT_BINARY: ${{ inputs.binary }}
+        EXPECTED_SHA: ${{ inputs.sha }}
+        DARKPHISH_AUDIT_TEST_BACKEND: mysql
+        DARKPHISH_AUDIT_TEST_DSN: 'root:root@tcp(127.0.0.1:3306)/darkphish_binary_audit_test?charset=utf8mb4&parseTime=true&multiStatements=true'
+      run: node scripts/audit-binary-smoke.mjs "$AUDIT_BINARY" "$EXPECTED_SHA"
+    - name: Smoke PostgreSQL native processes
+      shell: bash
+      env:
+        AUDIT_BINARY: ${{ inputs.binary }}
+        EXPECTED_SHA: ${{ inputs.sha }}
+        DARKPHISH_AUDIT_TEST_BACKEND: postgres
+        DARKPHISH_AUDIT_TEST_DSN: 'postgres://darkphish:darkphish-test-only@127.0.0.1:5432/darkphish_binary_audit_test?sslmode=disable'
+      run: node scripts/audit-binary-smoke.mjs "$AUDIT_BINARY" "$EXPECTED_SHA"

@@ -1,0 +1,55 @@
+name: Released native audit smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag
+        required: true
+        default: v0.6.0
+      sha:
+        description: Expected immutable release source SHA
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: darkphish_binary_audit_test
+          POSTGRES_USER: darkphish
+          POSTGRES_PASSWORD: darkphish-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U darkphish -d darkphish_binary_audit_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+      - name: Download and verify published Linux archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_SHA: ${{ inputs.sha }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')" = "$RELEASE_SHA"
+          gh release download "$RELEASE_TAG" --pattern "darkphish-$RELEASE_TAG-linux-amd64.tar.gz" --pattern SHA256SUMS --dir .cache/released-audit
+          (cd .cache/released-audit && sha256sum --check --ignore-missing SHA256SUMS)
+          tar -xzf ".cache/released-audit/darkphish-$RELEASE_TAG-linux-amd64.tar.gz" -C .cache/released-audit
+      - uses: ./.github/actions/audit-binary-smoke
+        with:
+          binary: .cache/released-audit/darkphish-${{ inputs.tag }}-linux-amd64/darkphish
+          sha: ${{ inputs.sha }}

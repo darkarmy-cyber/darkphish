@@ -162,8 +162,42 @@ jobs:
             dist/*.tar.gz
           if-no-files-found: error
 
-  publish:
+  audit-smoke:
     needs: [metadata, binaries]
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: darkphish_binary_audit_test
+          POSTGRES_USER: darkphish
+          POSTGRES_PASSWORD: darkphish-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U darkphish -d darkphish_binary_audit_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.metadata.outputs.sha }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: darkphish-${{ needs.metadata.outputs.tag }}-linux-amd64
+          path: .cache/native-audit
+      - name: Extract the exact release archive
+        env:
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+        run: tar -xzf ".cache/native-audit/darkphish-$RELEASE_TAG-linux-amd64.tar.gz" -C .cache/native-audit
+      - uses: ./.github/actions/audit-binary-smoke
+        with:
+          binary: .cache/native-audit/darkphish-${{ needs.metadata.outputs.tag }}-linux-amd64/darkphish
+          sha: ${{ needs.metadata.outputs.sha }}
+
+  publish:
+    needs: [metadata, binaries, audit-smoke]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

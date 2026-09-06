@@ -93,3 +93,8 @@ whose original ephemeral key was lost. Explicit verification, export and retenti
 continue to fail closed for those signatures. Persistent-key and multi-instance
 startup always verifies signatures. Configure persistent keys before relying on
 checkpoint authentication across restarts.
+
+Configured signing is sticky for single-instance databases too: the head and
+public-key identities prevent an accidentally omitted keyring from downgrading to
+ephemeral development. Migration recognizes legacy non-ephemeral checkpoint key
+IDs. Restoring the original configured keyring is required after such a rejection.

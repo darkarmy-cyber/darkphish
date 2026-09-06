@@ -16,13 +16,14 @@ import (
 )
 
 type auditChainHead struct {
-	ChainID               string `gorm:"primaryKey"`
-	Sequence              int64  `gorm:"column:chain_sequence"`
-	EventID               int64
-	EventHash             string
-	RetiredSequence       int64
-	Initialized           bool
-	SharedSigningRequired bool
+	ChainID                   string `gorm:"primaryKey"`
+	Sequence                  int64  `gorm:"column:chain_sequence"`
+	EventID                   int64
+	EventHash                 string
+	RetiredSequence           int64
+	Initialized               bool
+	SharedSigningRequired     bool
+	PersistentSigningRequired bool
 }
 
 func (auditChainHead) TableName() string { return "audit_chain_heads" }
@@ -46,11 +47,29 @@ func (auditSigningIdentity) TableName() string { return "audit_signing_identitie
 
 func checkAuditSigningIdentity(tx *gorm.DB, head *auditChainHead) error {
 	multi := conf != nil && conf.Audit.MultiInstance
-	if !multi && !head.SharedSigningRequired {
+	if head.SharedSigningRequired && !multi {
+		return errors.New("shared audit chain requires audit.multi_instance on every instance")
+	}
+	if !persistentAuditSigning() {
+		if multi || head.SharedSigningRequired || head.PersistentSigningRequired {
+			return errors.New("audit chain requires its configured persistent signing keyring")
+		}
+		// Pre-0.6 checkpoints identify legacy persistent signing even before the
+		// head has been initialized. Only the reserved ephemeral key ID may use
+		// development recovery when there is no persisted signing requirement.
+		if !head.Initialized {
+			var count int64
+			if err := tx.Model(&auditCheckpointRow{}).Where("chain_id=? AND key_id<>?", audit.DefaultChainID, "ephemeral-development").Count(&count).Error; err != nil {
+				return err
+			}
+			if count != 0 {
+				return errors.New("legacy audit checkpoints require their persistent signing keyring")
+			}
+		}
 		return nil
 	}
-	if !multi || auditSigner == nil || conf.Audit.ActiveSigningKeyID == "" {
-		return errors.New("shared audit chain requires audit.multi_instance and persistent shared signing keys on every instance")
+	if auditSigner == nil {
+		return errors.New("audit signing keyring is unavailable")
 	}
 	identities := []auditSigningIdentity{}
 	if err := tx.Find(&identities).Error; err != nil {
@@ -59,7 +78,7 @@ func checkAuditSigningIdentity(tx *gorm.DB, head *auditChainHead) error {
 	fingerprints := auditSigner.PublicKeyFingerprints()
 	for _, identity := range identities {
 		if fingerprints[identity.KeyID] != identity.Fingerprint {
-			return errors.New("shared audit signing keyring does not match the database signing identities")
+			return errors.New("audit signing keyring does not match the database signing identities")
 		}
 		delete(fingerprints, identity.KeyID)
 	}
@@ -68,8 +87,8 @@ func checkAuditSigningIdentity(tx *gorm.DB, head *auditChainHead) error {
 			return err
 		}
 	}
-	if !head.SharedSigningRequired {
-		return tx.Model(head).Update("shared_signing_required", true).Error
+	if !head.PersistentSigningRequired || (multi && !head.SharedSigningRequired) {
+		return tx.Model(head).Updates(map[string]interface{}{"persistent_signing_required": true, "shared_signing_required": head.SharedSigningRequired || multi}).Error
 	}
 	return nil
 }

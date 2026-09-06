@@ -5,10 +5,12 @@ CREATE TABLE audit_chain_heads (
     event_id BIGINT NOT NULL DEFAULT 0,
     event_hash VARCHAR(64) NOT NULL DEFAULT '',
     retired_sequence BIGINT NOT NULL DEFAULT 0,
+    persistent_signing_required BOOLEAN NOT NULL DEFAULT FALSE,
     shared_signing_required BOOLEAN NOT NULL DEFAULT FALSE,
     initialized BOOLEAN NOT NULL DEFAULT FALSE
 );
-INSERT INTO audit_chain_heads (chain_id) VALUES ('instance');
+INSERT INTO audit_chain_heads (chain_id, persistent_signing_required)
+SELECT 'instance', EXISTS (SELECT 1 FROM audit_checkpoints WHERE chain_id='instance' AND key_id<>'ephemeral-development');
 CREATE TABLE audit_delivery_receipts (
     outbox_id BIGINT PRIMARY KEY,
     event_id BIGINT NOT NULL,

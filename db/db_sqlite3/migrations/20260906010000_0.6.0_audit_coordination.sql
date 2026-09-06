@@ -5,10 +5,12 @@ CREATE TABLE audit_chain_heads (
     event_id INTEGER NOT NULL DEFAULT 0,
     event_hash VARCHAR(64) NOT NULL DEFAULT '',
     retired_sequence INTEGER NOT NULL DEFAULT 0,
+    persistent_signing_required INTEGER NOT NULL DEFAULT 0,
     shared_signing_required INTEGER NOT NULL DEFAULT 0,
     initialized INTEGER NOT NULL DEFAULT 0
 );
-INSERT INTO audit_chain_heads (chain_id) VALUES ('instance');
+INSERT INTO audit_chain_heads (chain_id, persistent_signing_required)
+SELECT 'instance', EXISTS (SELECT 1 FROM audit_checkpoints WHERE chain_id='instance' AND key_id<>'ephemeral-development');
 CREATE TABLE audit_delivery_receipts (
     outbox_id INTEGER PRIMARY KEY,
     event_id INTEGER NOT NULL,

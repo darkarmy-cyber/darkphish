@@ -190,3 +190,30 @@ func (s *ModelsSuite) TestLegacyEphemeralNamedPersistentKeyIsNotImplicitlyTruste
 	c.Assert(db.First(&unchanged, checkpoint.ID).Error, check.IsNil)
 	c.Assert(unchanged.Signature, check.Equals, checkpoint.Signature)
 }
+
+func (s *ModelsSuite) TestAuditInitializationDeadlineIsIndependent(c *check.C) {
+	previousConfig := conf
+	defer func() { conf = previousConfig }()
+	configuration := *conf
+	conf = &configuration
+	assertDeadline := func(expected time.Duration) func(*gorm.DB, *auditChainHead) error {
+		return func(tx *gorm.DB, _ *auditChainHead) error {
+			deadline, ok := tx.Statement.Context.Deadline()
+			c.Assert(ok, check.Equals, true)
+			remaining := time.Until(deadline)
+			c.Assert(remaining > expected-5*time.Second && remaining <= expected, check.Equals, true)
+			return nil
+		}
+	}
+	configuration.Audit.InitializationTimeoutSeconds = 0
+	c.Assert(withAuditChainInitialization(assertDeadline(30*time.Minute)), check.IsNil)
+	configuration.Audit.InitializationTimeoutSeconds = 7200
+	c.Assert(withAuditChainInitialization(assertDeadline(2*time.Hour)), check.IsNil)
+	c.Assert(withAuditChain(assertDeadline(30*time.Second)), check.IsNil)
+	for _, invalid := range []int{-1, 86401} {
+		configuration.Audit.InitializationTimeoutSeconds = invalid
+		c.Assert(initializeAuditChain(), check.NotNil)
+	}
+	configuration.Audit.InitializationTimeoutSeconds = 60
+	c.Assert(initializeAuditChain(), check.IsNil)
+}

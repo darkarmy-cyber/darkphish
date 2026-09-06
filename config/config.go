@@ -68,6 +68,7 @@ type SecretsConfig struct {
 }
 
 type AuditConfig struct {
+	InitializationTimeoutSeconds int               `json:"initialization_timeout_seconds"`
 	AllowLegacyEphemeralRecovery bool              `json:"allow_legacy_ephemeral_recovery"`
 	MultiInstance                bool              `json:"multi_instance"`
 	RetentionDays                int               `json:"retention_days"`

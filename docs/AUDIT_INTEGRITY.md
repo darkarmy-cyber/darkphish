@@ -106,3 +106,11 @@ keyring. Only for known lost-key development data, explicitly set
 limited to unkeyed, non-production, single-instance development; it cannot bypass
 a recorded persistent signing requirement. Unset it after initialization. Old
 signatures remain unchanged and unauthenticated when their keys were lost.
+
+Startup history verification and legacy receipt initialization have a separate
+30-minute default deadline. For large databases, set
+`audit.initialization_timeout_seconds` to a measured maintenance-window budget
+(1–86400 seconds; 0 selects the default). This applies on every startup, including
+post-upgrade full-history verification. Timeout rolls the transaction back; raise
+the budget and restart with the same database and keys. Normal audit operations
+retain their 30-second total deadline and six-attempt typed retry limit.

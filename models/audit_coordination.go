@@ -120,7 +120,27 @@ func retryableAuditError(err error) bool {
 // backends use a current, row-locking read at READ COMMITTED; SQLite takes its
 // writer lock before any reads. The callback must have no external side effects.
 func withAuditChain(fn func(*gorm.DB, *auditChainHead) error) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	return withAuditChainTimeout(30*time.Second, fn)
+}
+
+// Startup verifies all history and may backfill legacy receipts. Its deadline is
+// independent of ordinary operations, but still bounded across typed retries.
+func withAuditChainInitialization(fn func(*gorm.DB, *auditChainHead) error) error {
+	timeout := 30 * time.Minute
+	if conf != nil {
+		seconds := conf.Audit.InitializationTimeoutSeconds
+		if seconds < 0 || seconds > 86400 {
+			return errors.New("audit.initialization_timeout_seconds must be between 0 (default) and 86400")
+		}
+		if seconds > 0 {
+			timeout = time.Duration(seconds) * time.Second
+		}
+	}
+	return withAuditChainTimeout(timeout, fn)
+}
+
+func withAuditChainTimeout(timeout time.Duration, fn func(*gorm.DB, *auditChainHead) error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	for attempt := 0; attempt < 6; attempt++ {
 		options := &sql.TxOptions{}

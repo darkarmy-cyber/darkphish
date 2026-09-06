@@ -379,7 +379,7 @@ func persistentAuditSigning() bool {
 }
 
 func initializeAuditChain() error {
-	return withAuditChain(initializeAuditChainTx)
+	return withAuditChainInitialization(initializeAuditChainTx)
 }
 
 func createAuditCheckpointTx(tx *gorm.DB, lastSequence int64) (audit.Checkpoint, error) {

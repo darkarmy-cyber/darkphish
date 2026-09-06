@@ -5,6 +5,11 @@ import vm from "node:vm"
 
 const source = (path) => readFileSync(new URL(`../static/js/src/${path}`, import.meta.url), "utf8")
 
+test("vendor bundle has an explicit non-executable output mode", () => {
+  const build = readFileSync(new URL("../gulpfile.js", import.meta.url), "utf8")
+  assert.match(build, /gulp\.dest\(dest_js_directory, \{ mode: 0o644 \}\)/)
+})
+
 test("date ordering parses only strict plaintext dates, without HTML rewriting", () => {
   const types = { detect: [], order: {} }
   const context = vm.createContext({ jQuery: { fn: { dataTable: { ext: { type: types } } } } })
@@ -26,7 +31,13 @@ test("date ordering parses only strict plaintext dates, without HTML rewriting",
 
 test("spellcheck query names are literal and values retain the bridge's encoded protocol", () => {
   const context = vm.createContext({ window: { location: { search: "?cmd=done&data=a%26b%3Dc+raw==&a[[]]=literal&x.y=dot&xay=other", href: "https://admin.example.test/?cmd=done&data=a%26b%3Dc+raw==&a[[]]=literal&x.y=dot&xay=other#data=wrong" } } })
-  const script = source("vendor/ckeditor/plugins/wsc/dialogs/ciframe.html").match(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/i)[1]
+  // This is a repository-owned fixture, not an HTML sanitizer. Read its exact
+  // script wrapper so the test fails clearly if the fixture structure changes.
+  const fixture = source("vendor/ckeditor/plugins/wsc/dialogs/ciframe.html")
+  const opening = '<script type="text/javascript">'
+  const start = fixture.indexOf(opening), end = fixture.indexOf('</script>', start)
+  assert.ok(start >= 0 && end > start)
+  const script = fixture.slice(start + opening.length, end)
   vm.runInContext(script, context)
   assert.equal(context.gup("cmd"), "done")
   assert.equal(context.gup("data"), "a%26b%3Dc+raw==")

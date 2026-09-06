@@ -44,7 +44,9 @@ vendorjs = function () {
             suffix: '.min'
         }))
         .pipe(terser())
-        .pipe(gulp.dest(dest_js_directory));
+        // Concat inherits metadata from the newest input, whose executable bit
+        // varies across vendored files and checkout order. Bundles are data.
+        .pipe(gulp.dest(dest_js_directory, { mode: 0o644 }));
 }
 
 scripts = function () {

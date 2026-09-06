@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0 - 2026-09-06
+
+### Fixed
+
+- Make generated vendor-bundle file permissions deterministic across Windows and Linux builds instead of inheriting mixed vendored source permissions.
+
+### Security
+
+- Constrain post-login navigation to known administrative pages and numeric campaign details; reject external, ambiguous, unknown and action-triggering return destinations without changing simulation redirects.
+- Require a read-only, zero-open-CodeQL-alert baseline from current protected default-branch analyses before release preparation and native publication; fail closed on unavailable, stale or inconsistent security evidence.
+- Replace incomplete pattern-based rewriting in administrative date and spellcheck helpers with strict date parsing and literal query-name matching, preserving encoded spellcheck values.
+- Restrict template-name autocomplete to the intended alphabetic character range.
+- Use an explicit parameterized recipient identity query, including empty fields, with SQLite, strict MySQL and PostgreSQL regression coverage for input and ownership isolation.
+- Require trusted TLS certificates and explicit HTTP(S) URL validation for administrative site imports; retain connect-time egress restrictions on every redirect and bound request time, headers, and decompressed page size.
+- Encode imported URL metadata as HTML attributes and return bounded, secret-free upstream errors without altering authorized simulation page content.
+
 All notable changes to Darkphish are documented here. The project follows
 Semantic Versioning while the public API and schema are still pre-1.0.
 

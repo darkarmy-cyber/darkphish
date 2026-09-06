@@ -2,9 +2,14 @@
 
 Baseline: `e38c64c9a90c3f6b96063fb569249e31be8ae611` (`v0.5.0`).
 
-Implement database-backed audit coordination, durable OutboxID idempotency,
-consistent checkpoints, verification, export and retention. Preserve historical
-hashes and formats. Require separate-process MySQL/PostgreSQL evidence and
-v0.5 migration compatibility before protected release.
+This engineering workstream replaces process-local audit coordination with a
+transactionally locked chain head. All chain mutations and consistent reads use
+the same lock. Durable delivery receipts preserve OutboxID idempotency across
+retention. SQLite remains a single-instance deployment option.
 
-Status: implementation in progress; no HA or release acceptance is claimed.
+Release gates: separate-process MySQL/PostgreSQL contention tests; immutable
+v0.5 compatibility fixtures; all protected checks and CodeQL; normal and security
+review; protected engineering and generated release PRs; native release assets,
+checksums, SPDX SBOM and released-binary multi-instance smoke.
+
+Status: implementation in progress. No HA or release acceptance is claimed.

@@ -56,6 +56,8 @@ func (s *ModelsSuite) TearDownTest(c *check.C) {
 	db.Where("1 = 1").Delete(auditOutboxRow{})
 	db.Where("1 = 1").Delete(auditCheckpointRow{})
 	db.Where("1 = 1").Delete(auditEventRow{})
+	db.Where("1 = 1").Delete(auditDeliveryReceipt{})
+	db.Model(&auditChainHead{}).Where("chain_id=?", "instance").Updates(map[string]interface{}{"chain_sequence": 0, "event_id": 0, "event_hash": "", "retired_sequence": 0})
 
 	// Reset users table to default state.
 	db.Not("id", 1).Delete(User{})
@@ -156,6 +158,8 @@ func resetBenchmark(b *testing.B) {
 	db.Where("1 = 1").Delete(EncryptedCredential{})
 	db.Where("1 = 1").Delete(PersonalAccessToken{})
 	db.Where("1 = 1").Delete(auditEventRow{})
+	db.Where("1 = 1").Delete(auditDeliveryReceipt{})
+	db.Model(&auditChainHead{}).Where("chain_id=?", "instance").Updates(map[string]interface{}{"chain_sequence": 0, "event_id": 0, "event_hash": "", "retired_sequence": 0})
 
 	// Reset users table to default state.
 	db.Not("id", 1).Delete(User{})

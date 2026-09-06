@@ -53,6 +53,13 @@ jobs:
         uses: ./.github/actions/persistence-compat
         with:
           backend: sqlite3
+      - name: Verify v0.5 SQLite audit compatibility
+        uses: ./.github/actions/persistence-compat
+        with:
+          baseline: e38c64c9a90c3f6b96063fb569249e31be8ae611
+          backend: sqlite3
+          fixture: audit-v05
+
       - name: Vet
         run: go vet ./...
       - name: Staticcheck
@@ -111,6 +118,8 @@ jobs:
           sudo systemctl start mysql.service
           mysql -uroot -proot -e 'CREATE DATABASE darkphish_migration_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
           mysql -uroot -proot -e 'CREATE DATABASE darkphish_compatibility_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
+          mysql -uroot -proot -e 'CREATE DATABASE darkphish_audit_compat_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
+          mysql -uroot -proot -e 'CREATE DATABASE darkphish_audit_process_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
       - name: Exercise MySQL migrations
         env:
           DARKPHISH_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/darkphish_migration_test?charset=utf8mb4&parseTime=true&multiStatements=true"
@@ -124,6 +133,19 @@ jobs:
         with:
           backend: mysql
           dsn: "root:root@tcp(127.0.0.1:3306)/darkphish_compatibility_test?charset=utf8mb4&parseTime=true&multiStatements=true"
+      - name: Verify v0.5 MySQL audit compatibility
+        uses: ./.github/actions/persistence-compat
+        with:
+          baseline: e38c64c9a90c3f6b96063fb569249e31be8ae611
+          backend: mysql
+          dsn: "root:root@tcp(127.0.0.1:3306)/darkphish_audit_compat_test?charset=utf8mb4&parseTime=true&multiStatements=true"
+          fixture: audit-v05
+      - name: Verify independent-process MySQL audit concurrency
+        env:
+          DARKPHISH_AUDIT_TEST_BACKEND: mysql
+          DARKPHISH_AUDIT_TEST_DSN: "root:root@tcp(127.0.0.1:3306)/darkphish_audit_process_test?charset=utf8mb4&parseTime=true&multiStatements=true"
+        run: go test ./models -run '^TestAuditMultiProcess$' -count=1 -v
+
 
   postgres-migrations:
     name: PostgreSQL migrations up/down/up
@@ -159,12 +181,28 @@ jobs:
       - name: Create isolated PostgreSQL compatibility database
         env:
           PGPASSWORD: darkphish-test-only
-        run: createdb -h 127.0.0.1 -U darkphish darkphish_compatibility_test
+        run: |
+          createdb -h 127.0.0.1 -U darkphish darkphish_compatibility_test
+          createdb -h 127.0.0.1 -U darkphish darkphish_audit_compat_test
+          createdb -h 127.0.0.1 -U darkphish darkphish_audit_process_test
       - name: Verify v0.4 PostgreSQL database compatibility
         uses: ./.github/actions/persistence-compat
         with:
           backend: postgres
           dsn: "postgres://darkphish:darkphish-test-only@127.0.0.1:5432/darkphish_compatibility_test?sslmode=disable"
+      - name: Verify v0.5 PostgreSQL audit compatibility
+        uses: ./.github/actions/persistence-compat
+        with:
+          baseline: e38c64c9a90c3f6b96063fb569249e31be8ae611
+          backend: postgres
+          dsn: "postgres://darkphish:darkphish-test-only@127.0.0.1:5432/darkphish_audit_compat_test?sslmode=disable"
+          fixture: audit-v05
+      - name: Verify independent-process PostgreSQL audit concurrency
+        env:
+          DARKPHISH_AUDIT_TEST_BACKEND: postgres
+          DARKPHISH_AUDIT_TEST_DSN: "postgres://darkphish:darkphish-test-only@127.0.0.1:5432/darkphish_audit_process_test?sslmode=disable"
+        run: go test ./models -run '^TestAuditMultiProcess$' -count=1 -v
+
 
   frontend:
     name: Frontend reproducibility

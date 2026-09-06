@@ -68,6 +68,7 @@ type SecretsConfig struct {
 }
 
 type AuditConfig struct {
+	MultiInstance      bool              `json:"multi_instance"`
 	RetentionDays      int               `json:"retention_days"`
 	CheckpointInterval int               `json:"checkpoint_interval"`
 	ActiveSigningKeyID string            `json:"active_signing_key_id"`

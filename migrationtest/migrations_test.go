@@ -45,8 +45,8 @@ func exerciseLatestMigration(t *testing.T, driver, dialect, dsn, migrations stri
 	if err := goose.Down(database, migrations); err != nil {
 		t.Fatalf("migrate latest down: %v", err)
 	}
-	if _, err := database.Exec("SELECT COUNT(*) FROM campaign_reviewers"); err == nil {
-		t.Fatal("campaign_reviewers still exists after rolling back the 0.3 migration")
+	if _, err := database.Exec("SELECT COUNT(*) FROM audit_chain_heads"); err == nil {
+		t.Fatal("audit_chain_heads still exists after rolling back the 0.6 migration")
 	}
 	if err := goose.Up(database, migrations); err != nil {
 		t.Fatalf("migrate up after rollback: %v", err)
@@ -56,7 +56,7 @@ func exerciseLatestMigration(t *testing.T, driver, dialect, dsn, migrations stri
 
 func assertSecuritySchema(t *testing.T, database *sql.DB) {
 	t.Helper()
-	for _, table := range []string{"campaign_credential_policies", "credential_policy_results", "encrypted_credentials", "personal_access_tokens", "audit_events", "privileged_sessions", "campaign_reviewers", "audit_outbox", "audit_checkpoints"} {
+	for _, table := range []string{"campaign_credential_policies", "credential_policy_results", "encrypted_credentials", "personal_access_tokens", "audit_events", "privileged_sessions", "campaign_reviewers", "audit_outbox", "audit_checkpoints", "audit_chain_heads", "audit_delivery_receipts"} {
 		if _, err := database.Exec("SELECT COUNT(*) FROM " + table); err != nil {
 			t.Fatalf("security table %s is unavailable: %v", table, err)
 		}

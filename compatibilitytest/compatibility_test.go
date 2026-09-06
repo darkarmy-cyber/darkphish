@@ -298,11 +298,11 @@ func schemaSnapshot(t *testing.T, connection *sql.DB, backend string) string {
 	t.Helper()
 	switch backend {
 	case "sqlite3":
-		return querySnapshot(t, connection, "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name")
+		return querySnapshot(t, connection, "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities') AND name <> 'idx_audit_checkpoints_chain_sequence' ORDER BY type,name")
 	case "mysql":
-		return querySnapshot(t, connection, "SELECT table_name,column_name,column_type,is_nullable,column_default,extra FROM information_schema.columns WHERE table_schema=DATABASE() ORDER BY table_name,ordinal_position")
+		return querySnapshot(t, connection, "SELECT table_name,column_name,column_type,is_nullable,column_default,extra FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities') ORDER BY table_name,ordinal_position")
 	case "postgres":
-		return querySnapshot(t, connection, "SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() ORDER BY table_name,ordinal_position")
+		return querySnapshot(t, connection, "SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() AND table_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities') ORDER BY table_name,ordinal_position")
 	default:
 		t.Fatal("unsupported fixture backend")
 		return ""
@@ -319,7 +319,11 @@ func contentSnapshot(t *testing.T, connection *sql.DB, backend string) string {
 		if backend == "mysql" {
 			quoted = "`" + table + "`"
 		}
-		parts = append(parts, table+":"+querySnapshot(t, connection, "SELECT * FROM "+quoted))
+		query := "SELECT * FROM " + quoted
+		if table == "goose_db_version" {
+			query += " WHERE version_id <= 20260905010000"
+		}
+		parts = append(parts, table+":"+querySnapshot(t, connection, query))
 	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
 	return hex.EncodeToString(sum[:])

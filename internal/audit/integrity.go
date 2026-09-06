@@ -168,6 +168,16 @@ func NewEphemeralSigningKeyring() (*SigningKeyring, error) {
 
 func (s *SigningKeyring) ActiveKeyID() string { return s.active }
 
+// PublicKeyFingerprints exposes identities only, never private signing material.
+func (s *SigningKeyring) PublicKeyFingerprints() map[string]string {
+	values := make(map[string]string, len(s.public))
+	for id, key := range s.public {
+		digest := sha256.Sum256(key)
+		values[id] = hex.EncodeToString(digest[:])
+	}
+	return values
+}
+
 func (s *SigningKeyring) SignCheckpoint(value *Checkpoint) error {
 	value.KeyID = s.active
 	payload, err := canonicalCheckpoint(*value)

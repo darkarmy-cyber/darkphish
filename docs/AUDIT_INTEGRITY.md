@@ -50,3 +50,33 @@ previous hash, changed sequence/order, bad checkpoint data or signature,
 unsupported format version, modified export, missing checkpoint, or unknown key.
 Run verification before and after backup/restore, signing-key rotation, retention,
 and security investigations.
+# Multi-instance audit coordination (0.6)
+
+For multiple audit-writing processes, use MySQL or PostgreSQL and set
+`audit.multi_instance` to `true` on every process. Provision the same persistent
+audit signing keyring on all instances. The database stores public-key
+fingerprints and rejects mismatched or missing keys, including a process that
+omits multi-instance mode after it has been enabled. Private keys remain in
+the existing configuration/key storage. SQLite remains single-instance only.
+
+Stop all 0.5 writers before upgrading. Back up the database and keyrings, apply
+Goose migrations through one 0.6 instance, verify the audit, then start the other
+0.6 instances. Mixed 0.5/0.6 writers and concurrent migration runners are not
+supported. Existing event hashes and signed checkpoints are not re-signed.
+
+All audit writes, checkpoints, verification, exports and retention take the
+chain-head row lock in a transaction. This prioritizes consistency over audit
+throughput: a large verification/export can delay writers. Transactions have a
+30-second deadline and at most six attempts, with bounded backoff only for typed
+deadlock, serialization and lock-contention errors. Integrity errors and unknown
+commit outcomes are not blindly retried. Outbox retries use durable receipts.
+
+Retention deletes only a contiguous prefix and commits its signed checkpoint
+and retention boundary atomically. The last sequence/hash survives full event
+retention. Delivery receipts intentionally survive retention and contain only
+numeric outbox/event/sequence identifiers; do not purge them while delayed
+delivery is possible. They cannot reconstruct already-retired pre-upgrade events.
+
+For signing-key rotation, stop writers, distribute the expanded keyring to all
+instances, switch the active key, and restart. Keep historical keys for signature
+verification. Once registered, a key ID must never identify different key material.

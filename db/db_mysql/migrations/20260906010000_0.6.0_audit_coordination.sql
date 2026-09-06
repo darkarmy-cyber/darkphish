@@ -10,7 +10,7 @@ CREATE TABLE audit_chain_heads (
     initialized BOOLEAN NOT NULL DEFAULT FALSE
 ) ENGINE=InnoDB;
 INSERT INTO audit_chain_heads (chain_id, persistent_signing_required)
-SELECT 'instance', EXISTS (SELECT 1 FROM audit_checkpoints WHERE chain_id='instance' AND key_id<>'ephemeral-development');
+SELECT 'instance', EXISTS (SELECT 1 FROM audit_checkpoints WHERE chain_id='instance' AND BINARY key_id<>'ephemeral-development');
 CREATE TABLE audit_delivery_receipts (
     outbox_id BIGINT PRIMARY KEY,
     event_id BIGINT NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE audit_delivery_receipts (
 CREATE UNIQUE INDEX idx_audit_checkpoints_chain_sequence ON audit_checkpoints (chain_id, last_sequence);
 
 CREATE TABLE audit_signing_identities (
-    key_id VARCHAR(64) PRIMARY KEY,
+    key_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
     fingerprint VARCHAR(64) NOT NULL
 ) ENGINE=InnoDB;
 

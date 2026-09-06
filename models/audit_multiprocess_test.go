@@ -28,7 +28,7 @@ func auditProcessConfig(t *testing.T) *config.Config {
 	return &config.Config{
 		DBName: backend, DBPath: os.Getenv("DARKPHISH_AUDIT_TEST_DSN"),
 		MigrationsPath: "../db/db_" + backend + "/migrations",
-		Audit:          config.AuditConfig{MultiInstance: true, ActiveSigningKeyID: "test-shared", SigningKeys: map[string]string{"test-shared": "base64:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{73}, 32))}, CheckpointInterval: 7},
+		Audit:          config.AuditConfig{MultiInstance: true, ActiveSigningKeyID: "test-shared", SigningKeys: map[string]string{"test-shared": "base64:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{73}, 32)), "TEST-SHARED": "base64:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{75}, 32))}, CheckpointInterval: 7},
 	}
 }
 

@@ -91,7 +91,12 @@ func (s *ModelsSuite) TestEphemeralCheckpointDoesNotPreventDevelopmentRestart(c 
 	c.Assert(errors.Is(err, audit.ErrInvalidSignature), check.Equals, true)
 	// First 0.6 initialization of a 0.5 development database has the same rule.
 	c.Assert(db.Model(&auditChainHead{}).Where("chain_id=?", audit.DefaultChainID).Update("initialized", false).Error, check.IsNil)
+	c.Assert(initializeAuditChain(), check.NotNil)
+	recovery := *conf
+	recovery.Audit.AllowLegacyEphemeralRecovery = true
+	conf = &recovery
 	c.Assert(initializeAuditChain(), check.IsNil)
+	conf = previousConfig
 	c.Assert(audit.AppendEvent(audit.Event{Timestamp: time.Now().UTC(), Actor: "test", Action: "after.restart", Metadata: "{}"}), check.IsNil)
 	// A configured persistent keyring may never use the development exception.
 	persistent := *conf
@@ -151,6 +156,31 @@ func (s *ModelsSuite) TestSingleInstancePersistentSigningCannotDowngrade(c *chec
 	// Also reject missing configuration on the first upgrade of a legacy DB.
 	c.Assert(db.Model(&auditChainHead{}).Where("chain_id=?", audit.DefaultChainID).Updates(map[string]interface{}{"persistent_signing_required": false, "initialized": false}).Error, check.IsNil)
 	c.Assert(db.Where("1=1").Delete(&auditSigningIdentity{}).Error, check.IsNil)
+	c.Assert(configureAuditStore(), check.NotNil)
+	conf = &persistent
+	c.Assert(configureAuditStore(), check.IsNil)
+	_, err = VerifyAuditChain()
+	c.Assert(err, check.IsNil)
+	var unchanged auditCheckpointRow
+	c.Assert(db.First(&unchanged, checkpoint.ID).Error, check.IsNil)
+	c.Assert(unchanged.Signature, check.Equals, checkpoint.Signature)
+}
+
+func (s *ModelsSuite) TestLegacyEphemeralNamedPersistentKeyIsNotImplicitlyTrusted(c *check.C) {
+	previousSigner, previousConfig := auditSigner, conf
+	defer func() { auditSigner, conf = previousSigner, previousConfig }()
+	persistent := *conf
+	persistent.Audit.ActiveSigningKeyID = "ephemeral-development"
+	persistent.Audit.SigningKeys = map[string]string{"ephemeral-development": "abcdef0123456789abcdef0123456789"}
+	conf = &persistent
+	c.Assert(configureAuditStore(), check.IsNil)
+	c.Assert(audit.AppendEvent(audit.Event{Timestamp: time.Now().UTC(), Actor: "test", Action: "legacy.named.key", Metadata: "{}"}), check.IsNil)
+	checkpoint, err := CreateAuditCheckpoint()
+	c.Assert(err, check.IsNil)
+	// Model the pre-0.6 absence of signing metadata. The key ID alone is ambiguous.
+	c.Assert(db.Model(&auditChainHead{}).Where("chain_id=?", audit.DefaultChainID).Updates(map[string]interface{}{"persistent_signing_required": false, "initialized": false}).Error, check.IsNil)
+	c.Assert(db.Where("1=1").Delete(&auditSigningIdentity{}).Error, check.IsNil)
+	conf = previousConfig
 	c.Assert(configureAuditStore(), check.NotNil)
 	conf = &persistent
 	c.Assert(configureAuditStore(), check.IsNil)

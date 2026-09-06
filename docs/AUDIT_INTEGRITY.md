@@ -87,7 +87,7 @@ and keys together. Goose Down removes the new coordination metadata and delivery
 receipts; it is a schema rollback test, not a lossless operational downgrade after
 0.6 activity or retention.
 
-Legacy single-instance development with ephemeral keys can still restart. Startup
+Single-instance 0.6 development with recorded ephemeral mode can still restart. Startup
 checks event hashes and checkpoint linkage but cannot authenticate signatures
 whose original ephemeral key was lost. Explicit verification, export and retention
 continue to fail closed for those signatures. Persistent-key and multi-instance
@@ -98,3 +98,11 @@ Configured signing is sticky for single-instance databases too: the head and
 public-key identities prevent an accidentally omitted keyring from downgrading to
 ephemeral development. Migration recognizes legacy non-ephemeral checkpoint key
 IDs. Restoring the original configured keyring is required after such a rejection.
+
+On first upgrade, a legacy checkpoint named `ephemeral-development` is ambiguous:
+0.5 also allowed that name for a configured persistent key. Restore the original
+keyring. Only for known lost-key development data, explicitly set
+`audit.allow_legacy_ephemeral_recovery` to `true` for initial migration. This is
+limited to unkeyed, non-production, single-instance development; it cannot bypass
+a recorded persistent signing requirement. Unset it after initialization. Old
+signatures remain unchanged and unauthenticated when their keys were lost.

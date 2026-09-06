@@ -45,7 +45,12 @@ jobs:
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
-          test "$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')" = "$RELEASE_SHA"
+          tag_ref="$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG")"
+          tag_sha="$(jq -r '.object.sha' <<< "$tag_ref")"
+          if [ "$(jq -r '.object.type' <<< "$tag_ref")" = tag ]; then
+            tag_sha="$(gh api "repos/$GH_REPO/git/tags/$tag_sha" --jq '.object.sha')"
+          fi
+          test "$tag_sha" = "$RELEASE_SHA"
           gh release download "$RELEASE_TAG" --pattern "darkphish-$RELEASE_TAG-linux-amd64.tar.gz" --pattern SHA256SUMS --dir .cache/released-audit
           (cd .cache/released-audit && sha256sum --check --ignore-missing SHA256SUMS)
           tar -xzf ".cache/released-audit/darkphish-$RELEASE_TAG-linux-amd64.tar.gz" -C .cache/released-audit

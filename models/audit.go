@@ -268,6 +268,9 @@ func (databaseAuditStore) DeleteBefore(before time.Time) (int64, error) {
 
 func configureAuditStore() error {
 	var err error
+	if conf != nil && conf.Audit.AllowLegacyEphemeralRecovery && (conf.ProductionMode || conf.Audit.MultiInstance || conf.Audit.ActiveSigningKeyID != "") {
+		return errors.New("legacy ephemeral recovery is only available for unkeyed single-instance development")
+	}
 	if conf != nil && conf.Audit.MultiInstance {
 		if conf.DBName != "mysql" && conf.DBName != "postgres" {
 			return errors.New("audit.multi_instance requires MySQL or PostgreSQL; SQLite is single-instance only")

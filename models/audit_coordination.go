@@ -51,19 +51,29 @@ func checkAuditSigningIdentity(tx *gorm.DB, head *auditChainHead) error {
 		return errors.New("shared audit chain requires audit.multi_instance on every instance")
 	}
 	if !persistentAuditSigning() {
-		if multi || head.SharedSigningRequired || head.PersistentSigningRequired {
+		if multi || (conf != nil && conf.ProductionMode) || head.SharedSigningRequired || head.PersistentSigningRequired {
 			return errors.New("audit chain requires its configured persistent signing keyring")
 		}
-		// Pre-0.6 checkpoints identify legacy persistent signing even before the
-		// head has been initialized. Only the reserved ephemeral key ID may use
-		// development recovery when there is no persisted signing requirement.
+		// Pre-0.6 key IDs cannot prove signing mode: even "ephemeral-development"
+		// was legal for a configured key. Ambiguous lost-key recovery therefore
+		// requires explicit development-only operator consent on first upgrade.
 		if !head.Initialized {
 			var count int64
-			if err := tx.Model(&auditCheckpointRow{}).Where("chain_id=? AND key_id<>?", audit.DefaultChainID, "ephemeral-development").Count(&count).Error; err != nil {
+			keyPredicate := "key_id<>?"
+			if tx.Dialector.Name() == "mysql" {
+				keyPredicate = "BINARY key_id<>?"
+			}
+			if err := tx.Model(&auditCheckpointRow{}).Where("chain_id=?", audit.DefaultChainID).Where(keyPredicate, "ephemeral-development").Count(&count).Error; err != nil {
 				return err
 			}
 			if count != 0 {
 				return errors.New("legacy audit checkpoints require their persistent signing keyring")
+			}
+			if err := tx.Model(&auditCheckpointRow{}).Where("chain_id=?", audit.DefaultChainID).Count(&count).Error; err != nil {
+				return err
+			}
+			if count != 0 && (conf == nil || !conf.Audit.AllowLegacyEphemeralRecovery) {
+				return errors.New("legacy checkpoint signing mode is ambiguous: configure the original keyring, or explicitly enable audit.allow_legacy_ephemeral_recovery for lost-key development data")
 			}
 		}
 		return nil

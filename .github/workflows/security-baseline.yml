@@ -1,0 +1,25 @@
+name: Read-only CodeQL baseline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: read
+
+jobs:
+  baseline:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.19.0
+      - name: Verify current protected default-branch CodeQL baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/codeql-baseline.mjs

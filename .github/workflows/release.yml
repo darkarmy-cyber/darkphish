@@ -21,6 +21,12 @@ concurrency:
 
 jobs:
   metadata:
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
+      security-events: read
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
@@ -166,6 +172,7 @@ jobs:
       pull-requests: read
       id-token: write
       attestations: write
+      security-events: read
     steps:
       - uses: actions/checkout@v7
         with:

@@ -67,7 +67,10 @@ different unapproved address is denied. These boundary tests passed before the
 without making external network calls.
 
 **Classification: FALSE POSITIVE — PROVEN for unrestricted/internal-destination
-request forgery; individual GitHub disposition pending.** No connection-policy
+request forgery.** Explicit user approval was obtained after safety review
+paused the operation. Alert #6 was individually dismissed at 2026-09-06 10:35:21
+UTC and its relocated #11 at 10:35:34 UTC, both with reason `false positive` and
+specific evidence comments. No connection-policy
 bypass, anonymous listener crossover, code execution, filesystem access or
 credential exposure was established in v0.3.0. This classification rests on the
 mandatory connect-time guard, not merely on passing tests or intended behavior.
@@ -118,7 +121,9 @@ routes including the audit writer, with a synthetic non-XML ZIP member: one vali
 escaped JSON response, no raw ZIP/HTML response, and unchanged simulation content
 after JSON decoding. The test passes without altering the runtime writer.
 
-**Classification: FALSE POSITIVE — PROVEN**, individual GitHub disposition pending.
+**Classification: FALSE POSITIVE — PROVEN**, individually dismissed on
+2026-09-06 at 10:20:39 UTC with reason `false positive` and a concise evidence
+comment. Evidence commit: `e34ff6b8f37d934060ddb3946068ef1327ebaaa5`.
 Do not remove the audit wrapper, globally sanitize templates, or rewrite the ZIP
 implementation to conceal this analysis limitation.
 
@@ -137,7 +142,8 @@ Exact matching/reuse is preserved, owner checks unchanged. The shared
 `exerciseGroupInputIsolation` fixture covers SQL-shaped synthetic strings,
 empty fields, distinct/exact identity and owner isolation on SQLite, strict
 MySQL and PostgreSQL. Resolution: **FIXED by explicit parameterization and identity
-hardening**; commit and full hosted matrix pending.
+hardening**, commit `9c552af`. SQLite passed locally; strict MySQL and PostgreSQL
+security-model jobs passed in hosted CI `34026741572` and `34027043624`.
 
 ## Frontend parsers: #2–5
 
@@ -158,7 +164,8 @@ preserve raw encoded values and first-match behavior required by XDTMaster,
 including embedded equals signs. The test covers both legitimate protocol names
 and regex metacharacter names without any DOM execution.
 
-Resolution for each of #2, #3, #4 and #5: **FIXED**, commit/hosted closure pending.
+Resolution for each of #2, #3, #4 and #5: **FIXED**, commit `b9b640e`;
+full-branch analyses no longer report these findings. Main closure awaits merge.
 The regression cases failed on the old implementations. Vendored helper changes
 are deliberately narrow; there is no broad editor upgrade or dependency churn.
 
@@ -167,7 +174,8 @@ are deliberately narrow; there is no broad editor upgrade or dependency churn.
 #1: text typed in the administrative template editor reaches an autocomplete
 matcher. `[A-z]` includes punctuation; the matcher returns text offsets, not an
 executable value. Fix `[A-Za-z]`; tests preserve every supported template name
-and reject the intervening ASCII punctuation. **FIXED**, commit/hosted closure pending.
+and reject the intervening ASCII punctuation. **FIXED**, commit `b9b640e`;
+full-branch analyses no longer report it. Main closure awaits merge.
 
 #8: unauthenticated login `next` value reaches the post-login HTTP redirect.
 The old path rewriting prepended a single slash, so no external redirect was
@@ -177,7 +185,8 @@ reject absolute/authority URLs rather than rewriting them. Query/fragment remova
 matches previous behavior. `/logout` and `/impersonate` are not return destinations.
 Simulation campaign redirects are untouched. The regression covers legitimate
 navigation, schemes, authorities, backslashes, encoded separators, traversal,
-control characters and unknown/action routes. **FIXED**, commit/hosted closure pending.
+control characters and unknown/action routes. **FIXED**, commit `31200a9`;
+full-branch analyses no longer report it. Main closure awaits merge.
 
 ## Related variants and preserved boundaries
 
@@ -201,9 +210,12 @@ control characters and unknown/action routes. **FIXED**, commit/hosted closure p
 | Cycle | Source | Hosted result | CodeQL observation |
 | --- | --- | --- | --- |
 | 1 | `af59c1a` (PR merge analysis `08dcf87e`) | CI `34026098007`, CodeQL `34026097988`: all ten required checks pass, including Linux race and both database jobs | PR incremental analysis reported relocated #11 (Go 1, JS 0); this does not measure inherited main alerts. No dismissal yet. |
+| 2 | `e34ff6b` | Full CodeQL `34026739823` passed; CI `34026741572` passed Go, race, databases, secrets and automation, but exposed a generated bundle mode mismatch | Full Go results #9/#11 only; the eight original code-remediated findings are absent. JS reported new test-fixture matcher #12, not a runtime flow. |
+| 3 | `f3460d3` | Full CodeQL `34027041734` passed; CI `34027043624` again exposed variable bundle mode inheritance | Full Go #9/#11; JS fixture matcher moved to #13 after a partial parser correction. Both harness findings are repaired by exact repository-owned fixture extraction, without dismissal. Gulp now explicitly sets the bundle data-file mode to 0644. |
 
-Codex review of `af59c1a` reported no major issues. Security-mode review was also
-requested; final review coverage must be verified on the completed diff.
+Codex code reviews of `af59c1a` and `e34ff6b` reported no major issues. The explicit
+security review of `e34ff6b` completed with no security findings. Final gate/build
+follow-up review and hosted checks must also be verified before readiness.
 
 Local first-batch validation passed unit tests, vet, staticcheck, build, frozen
 frontend install/build/audit, actionlint, changelog and automation tests. Windows
@@ -211,6 +223,20 @@ race failed in ThreadSanitizer allocation before execution; hosted Linux race
 passed. Govulncheck found no reachable/imported-package vulnerabilities; its
 unused OpenPGP module advisory is not suppressed.
 
-After remediation, a read-only fail-closed default-branch alert diagnostic will
-be integrated with preparation and publication. The baseline, protected merge,
-release tag, seven native assets and final source scan remain to be verified.
+The read-only fail-closed default-branch diagnostic (`3afeba2`) is integrated with preparation
+and publication, including a second check before the final draft publication.
+Nine focused tests cover current-source language evidence, all severity levels,
+pagination, API/permission failures, inconsistent records and changing source.
+It was tested against live main and correctly blocked on nine open alerts after
+the individual #9 disposition (1 critical, 6 high, 2 medium). This is an expected
+pre-merge result, not a claimed release baseline.
+
+Safety review initially blocked the attempted critical #6 disposition before
+the API call. No workaround was used. The user then explicitly approved the two
+evidence-backed dispositions; #6 and #11 were dismissed individually as recorded
+above. The eight other original findings are resolved in code, not dismissed.
+The final deterministic bundle/fixture correction is `9c6b93d`. Full hosted
+checks and complete-diff review of these follow-ups remain required.
+
+The final protected-main zero count, release PR/tag, native assets, checksums,
+SBOM and smoke tests must be recorded only after actual release verification.

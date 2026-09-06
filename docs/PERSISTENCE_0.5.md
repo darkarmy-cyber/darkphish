@@ -299,3 +299,21 @@ the migration. A suffix names the individual method at that original line.
   errors entered the transient retry loop. Immediate rejection is restored,
   with missing/invalid-PEM startup tests. Final-head rechecks and both review
   completions are still mandatory before protected merge.
+
+### Post-readiness PostgreSQL trust follow-up
+
+- Engineering head `ddef190` passed all ten checks, zero-open CodeQL, normal
+  review and explicit security review before PR #13 was marked ready. It merged
+  through protections as `f784a5d`; that exact main independently passed all ten
+  checks and the zero-open baseline. Generated-only release PR #14 exactly
+  matched the trusted generator and merged as `26b1cc6`.
+- The additional normal review triggered by marking #13 ready subsequently
+  identified the same permanent-CA delay for structured PostgreSQL settings.
+  The expanded actual-Setup regression test fails on the pre-fix code under a
+  five-second timeout, proving entry into the retry sleep. A narrow protected
+  follow-up validates the configured PostgreSQL CA with the same parser as
+  MySQL, returning redacted ErrTrust before opening; neither TLS verification
+  nor transient database retries is weakened. No schema/dependency change.
+- This later finding is not treated as resolved by the earlier clean review.
+  The follow-up requires its own checks/reviews and regenerated release material
+  before publication can be considered verified.

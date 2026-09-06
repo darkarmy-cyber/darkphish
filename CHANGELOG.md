@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.0 - 2026-09-06
+
+### Changed
+
+- Introduce maintained GORM v2 database adapters and a pgx-backed PostgreSQL connection layer, preserving verified TLS, explicit pool limits, Goose schema ownership and secret-free connection errors.
+- Establish shared persistence and security regression contracts for SQLite, strict MySQL and PostgreSQL before modernizing the ORM, preserving explicit Goose schema management and existing database compatibility.
+- Move all application persistence to GORM v2 and the maintained pgx-backed PostgreSQL driver; remove legacy GORM and lib/pq without changing the Goose-managed schema.
+- Preserve explicit zero-value writes, nullable timestamp hooks, missing-record errors, ownership predicates and manually maintained associations; isolate reused query statements and propagate aggregate errors.
+
+### Fixed
+
+- Restore default server startup after adding administrative CLI commands; bare invocation and explicit `serve` now start the configured servers while version, migration, secret and audit commands remain distinct.
+- Reject permanent database trust/configuration errors immediately instead of delaying startup through transient connection retries; connection errors remain free of credentials and connection strings.
+
+### Security
+
+- Preserve security transaction rollback on outbox failure and harden panic/commit handling; retain unscoped-write protection with explicit join-table inserts and scoped mail-lock updates.
+- Extend the shared database contract with nested transactions, cancellation, failed PAT/reviewer/account changes, ciphertext-write failure, secret-rotation rollback, summary ownership and unchanged campaign-association checks.
+
+### Migration
+
+- Verify direct upgrade from real v0.4-created SQLite, MySQL and PostgreSQL data, including unchanged startup schema/data, encrypted credential bytes, authorization, signed audit records, normal writes and restart read-back.
+- Existing v0.4 integration settings may contain plaintext left by automatic association saves. GORM v2 campaign persistence prevents new association rewrites; inspect existing data with `secrets status` and explicitly repair it with `secrets migrate` after backing up and configuring the key provider. Startup preserves existing bytes and does not silently rotate secrets.
+
 ## 0.4.0 - 2026-09-06
 
 ### Fixed

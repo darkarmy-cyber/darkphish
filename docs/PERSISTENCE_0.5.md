@@ -267,3 +267,27 @@ the migration. A suffix names the individual method at that original line.
   audit and clean-output verification, 22 automation tests, changelog validation,
   actionlint and formatting/whitespace checks passed. Windows race execution is
   unavailable in this environment; hosted Linux race remains authoritative.
+- Runtime head `0e8704a90a0aac729b4eba68a0c01f342475eb76` passed hosted
+  PostgreSQL security/compatibility, SQLite compatibility, Linux race, Go checks,
+  workflow checks, frontend, secret scan and full-branch CodeQL. MySQL's new
+  association snapshot helper initially omitted quoting the reserved `groups`
+  identifier; the helper was corrected without changing strict mode or queries
+  in the application. Its rerun remains required.
+- The actual v0.4 fixture has one plaintext SMTP setting after its automatic
+  campaign association save. The v2 candidate intentionally preserves existing
+  bytes on startup; it prevents future association rewrites and the existing
+  `secrets status` / `secrets migrate` commands detect and explicitly encrypt
+  such legacy values. Operators should inspect and migrate existing plaintext
+  integration settings with the configured key provider, after taking a backup;
+  startup does not silently rotate them. No real deployment was accessed.
+- Native-process smoke preparation discovered that the pre-existing CLI had
+  subcommands but no default server command, making bare startup print help.
+  A default `serve` command restores the documented launch behavior, with
+  parsing tests that keep administrative commands distinct. This is necessary
+  for the requested real-binary persistence/restart scenario, not a new product
+  capability. Release smoke must still run on the downloaded final artifact.
+- The locally built candidate passed the native-process smoke after that fix:
+  v0.4 database copy, explicit legacy secret migration, invalid-token denial,
+  PAT authentication, campaign read/completion, persisted audit verification,
+  process restart/readback and signed export verification. The server bound
+  only loopback with the mailer disabled and synthetic accounts/values.

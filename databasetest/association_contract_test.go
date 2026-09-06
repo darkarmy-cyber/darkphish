@@ -12,11 +12,15 @@ import (
 
 // Fixed read-only queries cover all manually maintained campaign dependencies.
 // Only a hash is compared/reported; protected configuration values stay local.
-func associationFingerprint(t *testing.T, connection *sql.DB) [32]byte {
+func associationFingerprint(t *testing.T, connection *sql.DB, backend string) [32]byte {
 	t.Helper()
 	hash := sha256.New()
+	groupsQuery := "SELECT * FROM \"groups\" ORDER BY id"
+	if backend == "mysql" {
+		groupsQuery = "SELECT * FROM `groups` ORDER BY id"
+	}
 	for _, query := range []string{
-		"SELECT * FROM groups ORDER BY id",
+		groupsQuery,
 		"SELECT * FROM targets ORDER BY id",
 		"SELECT * FROM group_targets ORDER BY group_id, target_id",
 		"SELECT * FROM templates ORDER BY id",

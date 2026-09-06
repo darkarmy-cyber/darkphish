@@ -125,11 +125,11 @@ func exerciseSecurityModel(t *testing.T, database, dsn string) {
 		CredentialCaptureMode: models.CredentialModeEncryptedReview, CredentialRetentionHours: 24,
 		CredentialPolicy: models.CredentialPolicy{MinLength: 12, MaxLength: 128, MinDigits: 1},
 	}
-	associationsBefore := associationFingerprint(t, connection)
+	associationsBefore := associationFingerprint(t, connection, database)
 	if err := models.PostCampaign(&campaign, admin.Id); err != nil {
 		t.Fatal(err)
 	}
-	if associationFingerprint(t, connection) != associationsBefore {
+	if associationFingerprint(t, connection, database) != associationsBefore {
 		t.Fatal("campaign creation rewrote existing associations or protected SMTP bytes")
 	}
 	exerciseSummaryOwnership(t, campaign, group)

@@ -118,6 +118,17 @@ func (databaseAuditStore) Append(event audit.Event) (int64, error) {
 			if err := tx.Where("outbox_id=?", event.OutboxID).First(&receipt).Error; err == nil {
 				id = receipt.EventID
 				if receipt.Sequence > head.RetiredSequence && receipt.Sequence%int64(auditCheckpointEvery) == 0 {
+					// The event, receipt and checkpoint already committed together.
+					// Legacy development may have lost its ephemeral signing key;
+					// acknowledging that delivery must not wedge the pending outbox.
+					if !persistentAuditSigning() {
+						var checkpoint auditCheckpointRow
+						if err := tx.Where("chain_id=? AND last_sequence=?", audit.DefaultChainID, receipt.Sequence).First(&checkpoint).Error; err == nil {
+							return nil
+						} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+							return err
+						}
+					}
 					_, err = createAuditCheckpointTx(tx, receipt.Sequence)
 					return err
 				}

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/mattn/go-sqlite3"
 	"gopkg.in/check.v1"
+	"gorm.io/gorm"
 )
 
 func TestAuditRetryClassification(t *testing.T) {
@@ -101,4 +102,31 @@ func (s *ModelsSuite) TestEphemeralCheckpointDoesNotPreventDevelopmentRestart(c 
 	// Even ephemeral development startup still fails on modified event hashes.
 	c.Assert(db.Model(&auditEventRow{}).Where("id=?", rows[0].ID).Update("action", "tampered").Error, check.IsNil)
 	c.Assert(errors.Is(initializeAuditChain(), audit.ErrBrokenChain), check.Equals, true)
+}
+
+func (s *ModelsSuite) TestEphemeralRestartAcknowledgesCommittedOutboxCheckpoint(c *check.C) {
+	previousSigner, previousInterval := auditSigner, auditCheckpointEvery
+	defer func() { auditSigner, auditCheckpointEvery = previousSigner, previousInterval }()
+	auditCheckpointEvery = 1
+	event := audit.Event{Timestamp: time.Now().UTC(), Actor: "test", Action: "outbox.before.crash", Metadata: "{}"}
+	c.Assert(db.Transaction(func(tx *gorm.DB) error { return enqueueAuditEvent(tx, event) }), check.IsNil)
+	var pending auditOutboxRow
+	c.Assert(db.First(&pending).Error, check.IsNil)
+	event.OutboxID = pending.ID
+	_, err := (databaseAuditStore{}).Append(event)
+	c.Assert(err, check.IsNil)
+	// Crash window: the event/checkpoint committed, but dispatched_at is NULL.
+	c.Assert(db.Transaction(func(tx *gorm.DB) error {
+		return enqueueAuditEvent(tx, audit.Event{Timestamp: time.Now().UTC(), Actor: "test", Action: "outbox.after.crash", Metadata: "{}"})
+	}), check.IsNil)
+	c.Assert(configureAuditStore(), check.IsNil)
+	c.Assert(FlushAuditOutbox(), check.IsNil)
+	var count int64
+	c.Assert(db.Model(&auditOutboxRow{}).Where("dispatched_at IS NULL").Count(&count).Error, check.IsNil)
+	c.Assert(count, check.Equals, int64(0))
+	c.Assert(db.Model(&auditEventRow{}).Count(&count).Error, check.IsNil)
+	c.Assert(count, check.Equals, int64(2))
+	// Acknowledgement does not turn a lost-key signature into a verified one.
+	_, err = VerifyAuditChain()
+	c.Assert(errors.Is(err, audit.ErrInvalidSignature), check.Equals, true)
 }

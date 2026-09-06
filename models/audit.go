@@ -428,6 +428,18 @@ func verifyAuditChainTx(tx *gorm.DB, head *auditChainHead) (AuditVerification, e
 		return report, errors.New("audit chain is not initialized")
 	}
 	if len(rows) == 0 {
+		checkpoints := []auditCheckpointRow{}
+		if err := tx.Where("chain_id=?", audit.DefaultChainID).Find(&checkpoints).Error; err != nil {
+			return report, err
+		}
+		for _, checkpoint := range checkpoints {
+			if checkpoint.LastSequence > head.Sequence {
+				return report, audit.ErrBrokenChain
+			}
+			if err := auditSigner.VerifyCheckpoint(rowCheckpoint(checkpoint)); err != nil {
+				return report, err
+			}
+		}
 		if head.Sequence == 0 && head.RetiredSequence == 0 && head.EventHash == "" {
 			return report, nil
 		}

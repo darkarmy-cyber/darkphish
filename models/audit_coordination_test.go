@@ -54,3 +54,26 @@ func (s *ModelsSuite) TestAuditTailDeletionDetected(c *check.C) {
 	_, err := VerifyAuditChain()
 	c.Assert(errors.Is(err, audit.ErrBrokenChain), check.Equals, true)
 }
+
+func (s *ModelsSuite) TestAuditCheckpointFailureRollsBackAppend(c *check.C) {
+	previousSigner, previousInterval := auditSigner, auditCheckpointEvery
+	defer func() { auditSigner, auditCheckpointEvery = previousSigner, previousInterval }()
+	auditSigner, auditCheckpointEvery = nil, 1
+	event := audit.Event{Timestamp: time.Now().UTC(), Action: "rollback", Actor: "test", Metadata: "{}", OutboxID: 90231}
+	_, err := (databaseAuditStore{}).Append(event)
+	c.Assert(err, check.NotNil)
+	var head auditChainHead
+	c.Assert(db.First(&head).Error, check.IsNil)
+	c.Assert(head.Sequence, check.Equals, int64(0))
+	var count int64
+	c.Assert(db.Model(&auditEventRow{}).Count(&count).Error, check.IsNil)
+	c.Assert(count, check.Equals, int64(0))
+	c.Assert(db.Model(&auditDeliveryReceipt{}).Count(&count).Error, check.IsNil)
+	c.Assert(count, check.Equals, int64(0))
+	auditSigner = previousSigner
+	_, err = (databaseAuditStore{}).Append(event)
+	c.Assert(err, check.IsNil)
+	report, err := VerifyAuditChain()
+	c.Assert(err, check.IsNil)
+	c.Assert(report.RecordCount, check.Equals, int64(1))
+}

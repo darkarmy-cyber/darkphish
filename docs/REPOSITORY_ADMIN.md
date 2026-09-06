@@ -32,6 +32,49 @@ main, requires repository auto-merge to remain enabled, and matches the expected
 head SHA. It never uses an administrator override. GitHub's queue-only GraphQL
 mutation rejects already-clean PRs, which otherwise breaks safe release retries.
 
+### Read-only bot-release approval preflight
+
+Before preparing a release authored by `github-actions[bot]`, check the live,
+effective rules for `main`. Zero required approvals is incompatible with
+`require_extra_approval_for_unattributed_changes: true` when the bot has author
+association `NONE`. Keep that extra-approval setting **off** for the selected
+single-maintainer policy. This is not permission to weaken other protections.
+
+Run the following with an authenticated GitHub CLI from a trusted administrative
+session. It only reads repository rules; API/permission failures and incompatible
+configuration exit nonzero. The filter also fails if no active PR rule is visible.
+It does not edit rules, approve a review, or merge a PR.
+
+```sh
+gh api repos/darkarmy-cyber/darkphish/rules/branches/main --jq '
+  [.[] | select(.type == "pull_request")] as $rules |
+  if ($rules | length) == 0 then
+    error("Cannot verify release policy: no active pull-request rule returned")
+  elif any($rules[];
+    .parameters.required_approving_review_count == 0 and
+    .parameters.require_extra_approval_for_unattributed_changes == true)
+  then
+    error("ADMIN ACTION REQUIRED: github-actions[bot] releases conflict with zero approvals plus extra unattributed-change approval. In main-protection, set Require extra approval for unattributed changes to OFF; preserve every other protection.")
+  else
+    "No zero-approval/unattributed-change conflict for github-actions[bot]."
+  end'
+```
+
+This narrowly checks the known bot/zero-approval conflict, not overall release
+readiness. Continue checking the exact PR head, all ten required checks, resolved
+conversations, private standalone repository status, and immutable release tags.
+Never give an ordinary release workflow ruleset-write permission to repair drift.
+The diagnostic was verified against the corrected live policy and an in-memory
+fixture with the old conflicting flag; the fixture did not modify GitHub rules.
+
+Workflow-execution approval is a separate gate from PR review approval. If the
+PR-triggered CI or CodeQL run reports `action_required` with no jobs, inspect the
+run and verify the exact generated PR diff and head before a maintainer authorizes
+that workflow to execute. Do not substitute green manually dispatched runs for
+held PR runs, fabricate check results, submit an approval review, or bypass merge
+protections. Recovery of PR #9 required the ordinary workflow-run approval endpoint
+for its two held runs; native auto-merge then completed with zero PR reviews.
+
 Both preparation and publication have independent 15-minute scheduled preflights.
 Hosted validation confirmed that checks explicitly dispatched by GITHUB_TOKEN can
 finish without emitting the expected downstream workflow_run executions. The

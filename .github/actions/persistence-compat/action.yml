@@ -1,0 +1,46 @@
+name: Verify v0.4 persistence compatibility
+description: Seed a disposable database with the immutable v0.4 runtime, then open it with the candidate without export/import.
+inputs:
+  backend:
+    description: Fixed supported database backend
+    required: true
+  dsn:
+    description: Disposable CI database connection (SQLite uses an isolated temporary file)
+    default: ''
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ae36e9c10ef23c1b20438bd219a3d51c9d9b47cc
+        path: .cache/compat-v04
+        persist-credentials: false
+    - name: Seed with exact v0.4 source
+      shell: bash
+      env:
+        DARKPHISH_COMPAT_BACKEND: ${{ inputs.backend }}
+        DARKPHISH_COMPAT_DSN: ${{ inputs.dsn }}
+        DARKPHISH_COMPAT_PHASE: seed
+      run: |
+        case "$DARKPHISH_COMPAT_BACKEND" in sqlite3|mysql|postgres) ;; *) exit 1 ;; esac
+        export DARKPHISH_COMPAT_DIRECTORY="$RUNNER_TEMP/persistence-v04-$DARKPHISH_COMPAT_BACKEND"
+        if [ "$DARKPHISH_COMPAT_BACKEND" = sqlite3 ]; then
+          export DARKPHISH_COMPAT_DSN="$DARKPHISH_COMPAT_DIRECTORY/legacy.db"
+        fi
+        test "$(git -C .cache/compat-v04 rev-parse HEAD)" = ae36e9c10ef23c1b20438bd219a3d51c9d9b47cc
+        mkdir -p .cache/compat-v04/compatibilitytest
+        cp compatibilitytest/compatibility_test.go .cache/compat-v04/compatibilitytest/compatibility_test.go
+        go -C .cache/compat-v04 test ./compatibilitytest -run '^TestVersionedDatabaseCompatibility$' -count=1 -v
+    - name: Open and restart with candidate runtime
+      shell: bash
+      env:
+        DARKPHISH_COMPAT_BACKEND: ${{ inputs.backend }}
+        DARKPHISH_COMPAT_DSN: ${{ inputs.dsn }}
+        DARKPHISH_COMPAT_PHASE: check
+      run: |
+        case "$DARKPHISH_COMPAT_BACKEND" in sqlite3|mysql|postgres) ;; *) exit 1 ;; esac
+        export DARKPHISH_COMPAT_DIRECTORY="$RUNNER_TEMP/persistence-v04-$DARKPHISH_COMPAT_BACKEND"
+        if [ "$DARKPHISH_COMPAT_BACKEND" = sqlite3 ]; then
+          export DARKPHISH_COMPAT_DSN="$DARKPHISH_COMPAT_DIRECTORY/legacy.db"
+        fi
+        go test ./compatibilitytest -run '^TestVersionedDatabaseCompatibility$' -count=1 -v

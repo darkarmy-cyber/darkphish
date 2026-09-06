@@ -6,12 +6,12 @@ import (
 	"time"
 
 	log "github.com/darkarmy-cyber/darkphish/logger"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 // Template models hold the attributes for an email template to be sent to targets
 type Template struct {
-	Id             int64        `json:"id" gorm:"column:id; primary_key:yes"`
+	Id             int64        `json:"id" gorm:"column:id; primaryKey"`
 	UserId         int64        `json:"-" gorm:"column:user_id"`
 	Name           string       `json:"name"`
 	EnvelopeSender string       `json:"envelope_sender"`
@@ -19,7 +19,7 @@ type Template struct {
 	Text           string       `json:"text"`
 	HTML           string       `json:"html" gorm:"column:html"`
 	ModifiedDate   time.Time    `json:"modified_date"`
-	Attachments    []Attachment `json:"attachments"`
+	Attachments    []Attachment `json:"attachments" gorm:"-"`
 }
 
 // ErrTemplateNameNotSpecified is thrown when a template name is not specified
@@ -70,7 +70,7 @@ func GetTemplates(uid int64) ([]Template, error) {
 		if err == nil && len(ts[i].Attachments) == 0 {
 			ts[i].Attachments = make([]Attachment, 0)
 		}
-		if err != nil && err != gorm.ErrRecordNotFound {
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Error(err)
 			return ts, err
 		}
@@ -81,7 +81,7 @@ func GetTemplates(uid int64) ([]Template, error) {
 // GetTemplate returns the template, if it exists, specified by the given id and user_id.
 func GetTemplate(id int64, uid int64) (Template, error) {
 	t := Template{}
-	err := db.Where("user_id=? and id=?", uid, id).Find(&t).Error
+	err := db.Where("user_id=? and id=?", uid, id).Take(&t).Error
 	if err != nil {
 		log.Error(err)
 		return t, err
@@ -89,7 +89,7 @@ func GetTemplate(id int64, uid int64) (Template, error) {
 
 	// Get Attachments
 	err = db.Where("template_id=?", t.Id).Find(&t.Attachments).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Error(err)
 		return t, err
 	}
@@ -102,7 +102,7 @@ func GetTemplate(id int64, uid int64) (Template, error) {
 // GetTemplateByName returns the template, if it exists, specified by the given name and user_id.
 func GetTemplateByName(n string, uid int64) (Template, error) {
 	t := Template{}
-	err := db.Where("user_id=? and name=?", uid, n).Find(&t).Error
+	err := db.Where("user_id=? and name=?", uid, n).Take(&t).Error
 	if err != nil {
 		log.Error(err)
 		return t, err
@@ -110,7 +110,7 @@ func GetTemplateByName(n string, uid int64) (Template, error) {
 
 	// Get Attachments
 	err = db.Where("template_id=?", t.Id).Find(&t.Attachments).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Error(err)
 		return t, err
 	}
@@ -152,11 +152,11 @@ func PutTemplate(t *Template) error {
 	}
 	// Delete all attachments, and replace with new ones
 	err := db.Where("template_id=?", t.Id).Delete(&Attachment{}).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Error(err)
 		return err
 	}
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		err = nil
 	}
 	for i := range t.Attachments {

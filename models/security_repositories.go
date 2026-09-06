@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 // CampaignRepository isolates campaign authorization from query details.
@@ -138,13 +138,7 @@ func (r gormReviewerRepository) HasActive(campaignID, userID int64, now time.Tim
 }
 
 func withSecurityTransaction(fn func(*gorm.DB) error) error {
-	tx := db.Begin()
-	if tx.Error != nil {
-		return tx.Error
-	}
-	if err := fn(tx); err != nil {
-		_ = tx.Rollback().Error
-		return err
-	}
-	return tx.Commit().Error
+	// GORM v2 rolls back on returned errors, panic and failed commit; a fresh
+	// transaction statement prevents predicates from leaking between writes.
+	return db.Transaction(fn)
 }

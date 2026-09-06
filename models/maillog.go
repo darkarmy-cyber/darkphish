@@ -267,7 +267,7 @@ func (m *MailLog) Generate(msg *gomail.Message) error {
 func GetQueuedMailLogs(t time.Time) ([]*MailLog, error) {
 	ms := []*MailLog{}
 	err := db.Where("send_date <= ? AND processing = ?", t, false).
-		Find(&ms).Error
+		Order("send_date ASC, id ASC").Find(&ms).Error
 	if err != nil {
 		log.Warn(err)
 	}
@@ -277,13 +277,17 @@ func GetQueuedMailLogs(t time.Time) ([]*MailLog, error) {
 // GetMailLogsByCampaign returns all of the mail logs for a given campaign.
 func GetMailLogsByCampaign(cid int64) ([]*MailLog, error) {
 	ms := []*MailLog{}
-	err := db.Where("campaign_id = ?", cid).Find(&ms).Error
+	err := db.Where("campaign_id = ?", cid).Order("id ASC").Find(&ms).Error
 	return ms, err
 }
 
 // LockMailLogs locks or unlocks a slice of maillogs for processing.
 func LockMailLogs(ms []*MailLog, lock bool) error {
 	tx := db.Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
 	for i := range ms {
 		ms[i].Processing = lock
 		err := tx.Save(ms[i]).Error
@@ -292,15 +296,14 @@ func LockMailLogs(ms []*MailLog, lock bool) error {
 			return err
 		}
 	}
-	tx.Commit()
-	return nil
+	return tx.Commit().Error
 }
 
 // UnlockAllMailLogs removes the processing lock for all maillogs
 // in the database. This is intended to be called when Darkphish is started
 // so that any previously locked maillogs can resume processing.
 func UnlockAllMailLogs() error {
-	return db.Model(&MailLog{}).Update("processing", false).Error
+	return db.Model(&MailLog{}).Where("processing=?", true).Update("processing", false).Error
 }
 
 var maxBigInt = big.NewInt(math.MaxInt64)

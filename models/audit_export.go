@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 func auditEventsAscending() ([]audit.Event, error) {
@@ -99,7 +99,7 @@ func VerifyAuditExport(content, manifestContent []byte) (audit.ExportManifest, e
 		if manifest.CheckpointReference != 0 {
 			var row auditCheckpointRow
 			if err := db.Where("id=?", manifest.CheckpointReference).First(&row).Error; err != nil {
-				if err == gorm.ErrRecordNotFound {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
 					return manifest, errors.New("referenced audit checkpoint is missing")
 				}
 				return manifest, err

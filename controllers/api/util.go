@@ -2,13 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/mail"
 
 	ctx "github.com/darkarmy-cyber/darkphish/context"
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/models"
-	"github.com/jinzhu/gorm"
 	"github.com/sirupsen/logrus"
 )
 
@@ -48,7 +48,7 @@ func (as *Server) SendTestEmail(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Get the Template requested by name
 		s.Template, err = models.GetTemplateByName(s.Template.Name, s.UserId)
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, models.ErrRecordNotFound) {
 			log.WithFields(logrus.Fields{
 				"template": s.Template.Name,
 			}).Error("Template does not exist")
@@ -67,7 +67,7 @@ func (as *Server) SendTestEmail(w http.ResponseWriter, r *http.Request) {
 
 	if s.Page.Name != "" {
 		s.Page, err = models.GetPageByName(s.Page.Name, s.UserId)
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, models.ErrRecordNotFound) {
 			log.WithFields(logrus.Fields{
 				"page": s.Page.Name,
 			}).Error("Page does not exist")

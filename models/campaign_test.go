@@ -227,9 +227,9 @@ func BenchmarkCampaign100(b *testing.B) {
 			b.Fatalf("error posting campaign: %v", err)
 		}
 		b.StopTimer()
-		db.Delete(Result{})
-		db.Delete(MailLog{})
-		db.Delete(Campaign{})
+		db.Where("1 = 1").Delete(Result{})
+		db.Where("1 = 1").Delete(MailLog{})
+		db.Where("1 = 1").Delete(Campaign{})
 	}
 	tearDownBenchmark(b)
 }
@@ -252,9 +252,9 @@ func BenchmarkCampaign1000(b *testing.B) {
 			b.Fatalf("error posting campaign: %v", err)
 		}
 		b.StopTimer()
-		db.Delete(Result{})
-		db.Delete(MailLog{})
-		db.Delete(Campaign{})
+		db.Where("1 = 1").Delete(Result{})
+		db.Where("1 = 1").Delete(MailLog{})
+		db.Where("1 = 1").Delete(Campaign{})
 	}
 	tearDownBenchmark(b)
 }
@@ -277,9 +277,9 @@ func BenchmarkCampaign10000(b *testing.B) {
 			b.Fatalf("error posting campaign: %v", err)
 		}
 		b.StopTimer()
-		db.Delete(Result{})
-		db.Delete(MailLog{})
-		db.Delete(Campaign{})
+		db.Where("1 = 1").Delete(Result{})
+		db.Where("1 = 1").Delete(MailLog{})
+		db.Where("1 = 1").Delete(Campaign{})
 	}
 	tearDownBenchmark(b)
 }

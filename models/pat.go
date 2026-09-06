@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 const patTokenPrefix = "darkphish_pat_"

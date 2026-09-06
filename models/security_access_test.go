@@ -112,11 +112,11 @@ func (s *ModelsSuite) TestCredentialPersistenceRollsBackWhenCiphertextWriteFails
 	defer db.Exec("DROP TRIGGER IF EXISTS reject_encrypted_credential")
 
 	c.Assert(RecordCredentialSubmission(campaign, result, "Synthetic-credential-9!"), check.NotNil)
-	var findingCount, ciphertextCount int
+	var findingCount, ciphertextCount int64
 	c.Assert(db.Model(&CredentialPolicyResult{}).Where("result_id=?", result.Id).Count(&findingCount).Error, check.IsNil)
 	c.Assert(db.Model(&EncryptedCredential{}).Where("result_id=?", result.Id).Count(&ciphertextCount).Error, check.IsNil)
-	c.Assert(findingCount, check.Equals, 0)
-	c.Assert(ciphertextCount, check.Equals, 0)
+	c.Assert(findingCount, check.Equals, int64(0))
+	c.Assert(ciphertextCount, check.Equals, int64(0))
 }
 
 func (s *ModelsSuite) TestNonRetainableResubmissionRemovesStaleCiphertext(c *check.C) {
@@ -135,9 +135,9 @@ func (s *ModelsSuite) TestNonRetainableResubmissionRemovesStaleCiphertext(c *che
 	c.Assert(RecordCredentialSubmission(campaign, result, "Short-9!"), check.IsNil)
 
 	c.Assert(RecordCredentialSubmission(campaign, result, strings.Repeat("x", campaign.CredentialPolicy.MaxLength+1)), check.IsNil)
-	var ciphertextCount int
+	var ciphertextCount int64
 	c.Assert(db.Model(&EncryptedCredential{}).Where("result_id=? AND encrypted_value <> ''", result.Id).Count(&ciphertextCount).Error, check.IsNil)
-	c.Assert(ciphertextCount, check.Equals, 0)
+	c.Assert(ciphertextCount, check.Equals, int64(0))
 }
 
 func (s *ModelsSuite) TestReviewerAssignmentRollsBackWhenOutboxWriteFails(c *check.C) {
@@ -151,9 +151,9 @@ func (s *ModelsSuite) TestReviewerAssignmentRollsBackWhenOutboxWriteFails(c *che
 
 	_, err = AssignCampaignReviewer(campaign.Id, reviewer.Id, admin, nil, audit.Event{Result: "success", Metadata: "{}"})
 	c.Assert(err, check.NotNil)
-	var count int
+	var count int64
 	c.Assert(db.Model(&CampaignReviewer{}).Where("campaign_id=? AND user_id=?", campaign.Id, reviewer.Id).Count(&count).Error, check.IsNil)
-	c.Assert(count, check.Equals, 0)
+	c.Assert(count, check.Equals, int64(0))
 }
 
 func (s *ModelsSuite) TestReviewerExpiryIsAuditedExactlyOnce(c *check.C) {
@@ -190,9 +190,9 @@ func (s *ModelsSuite) TestAuditedPATCreationRollsBackWhenOutboxWriteFails(c *che
 	_, raw, err := CreatePersonalAccessTokenWithAudit(1, "outbox failure", []string{"campaigns:read"}, time.Now().UTC().Add(time.Hour), audit.Event{Result: "success", Metadata: "{}"})
 	c.Assert(err, check.NotNil)
 	c.Assert(raw, check.Equals, "")
-	var count int
+	var count int64
 	c.Assert(db.Model(&PersonalAccessToken{}).Where("name=?", "outbox failure").Count(&count).Error, check.IsNil)
-	c.Assert(count, check.Equals, 0)
+	c.Assert(count, check.Equals, int64(0))
 }
 
 func (s *ModelsSuite) TestSecretMigrationRollsBackWhenOutboxWriteFails(c *check.C) {

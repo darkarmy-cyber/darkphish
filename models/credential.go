@@ -10,7 +10,7 @@ import (
 	"unicode/utf8"
 
 	secretpkg "github.com/darkarmy-cyber/darkphish/internal/secrets"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 const (
@@ -31,7 +31,7 @@ var (
 // DisallowedPatterns are evaluated case-insensitively and are never copied to
 // result rows alongside submitted values.
 type CredentialPolicy struct {
-	CampaignID            int64    `json:"-" gorm:"column:campaign_id;primary_key"`
+	CampaignID            int64    `json:"-" gorm:"column:campaign_id;primaryKey"`
 	MinLength             int      `json:"min_length"`
 	MaxLength             int      `json:"max_length"`
 	MinUppercase          int      `json:"minimum_uppercase"`
@@ -373,10 +373,10 @@ func DeleteExpiredCredentialValues(now time.Time) (int64, error) {
 }
 
 func deleteCampaignCredentialData(campaignID int64) error {
-	if err := db.Where("campaign_id=?", campaignID).Delete(&EncryptedCredential{}).Error; err != nil && err != gorm.ErrRecordNotFound {
+	if err := db.Where("campaign_id=?", campaignID).Delete(&EncryptedCredential{}).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	if err := db.Where("campaign_id=?", campaignID).Delete(&CredentialPolicyResult{}).Error; err != nil && err != gorm.ErrRecordNotFound {
+	if err := db.Where("campaign_id=?", campaignID).Delete(&CredentialPolicyResult{}).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
 	return db.Where("campaign_id=?", campaignID).Delete(&CredentialPolicy{}).Error

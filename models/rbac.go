@@ -83,15 +83,11 @@ func GetRoleBySlug(slug string) (Role, error) {
 // HasPermission checks to see if the user has a role with the requested
 // permission.
 func (u *User) HasPermission(slug string) (bool, error) {
-	perm := []Permission{}
-	err := db.Model(Role{ID: u.RoleID}).Where("slug=?", slug).Association("Permissions").Find(&perm).Error
+	var count int64
+	err := db.Table("permissions p").Joins("JOIN role_permissions rp ON rp.permission_id=p.id").
+		Where("rp.role_id=? AND p.slug=?", u.RoleID, slug).Count(&count).Error
 	if err != nil {
 		return false, err
 	}
-	// Gorm doesn't return an ErrRecordNotFound whe scanning into a slice, so
-	// we need to check the length (ref jinzhu/gorm#228)
-	if len(perm) == 0 {
-		return false, nil
-	}
-	return true, nil
+	return count > 0, nil
 }

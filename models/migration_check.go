@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/darkarmy-cyber/darkphish/config"
-	"github.com/jinzhu/gorm"
+	"github.com/darkarmy-cyber/darkphish/internal/persistence"
 )
 
 func LegacyAPIKeyRecordCount() (int64, error) {
@@ -25,26 +25,29 @@ func InspectLegacyDatabase(conf *config.Config) (int64, int64, error) {
 			return 0, 0, fmt.Errorf("inspect database path: %w", err)
 		}
 	}
-	inspection, err := gorm.Open(conf.DBName, conf.DBPath)
+	inspection, err := persistence.Open(conf)
 	if err != nil {
 		return 0, 0, fmt.Errorf("open database for read-only migration inspection: %w", err)
 	}
-	defer inspection.Close()
-	inspection.LogMode(false)
+	connection, err := inspection.DB()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer connection.Close()
 	if conf.DBName == "sqlite3" {
 		if err := inspection.Exec("PRAGMA query_only = ON").Error; err != nil {
 			return 0, 0, fmt.Errorf("enable read-only SQLite inspection: %w", err)
 		}
 	}
 	var legacyAPIKeys int64
-	if inspection.HasTable("users") {
+	if inspection.Migrator().HasTable("users") {
 		if err := inspection.Table("users").Where("api_key NOT LIKE ?", "disabled-%").Count(&legacyAPIKeys).Error; err != nil {
 			return 0, 0, err
 		}
 	}
 	var plaintext int64
 	for _, target := range protectedTargets() {
-		if !inspection.HasTable(target.table) {
+		if !inspection.Migrator().HasTable(target.table) {
 			continue
 		}
 		var count int64

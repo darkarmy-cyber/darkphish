@@ -15,6 +15,7 @@ import (
 	"github.com/darkarmy-cyber/darkphish/auth"
 	"github.com/darkarmy-cyber/darkphish/config"
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
+	"github.com/darkarmy-cyber/darkphish/internal/persistence"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -41,7 +42,7 @@ func exerciseSecurityModel(t *testing.T, database, dsn string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = models.Close() })
-	connection, err := sql.Open(database, dsn)
+	connection, err := sql.Open(persistence.DriverName(database), dsn)
 	if err != nil {
 		t.Fatal("open verification database")
 	}
@@ -110,7 +111,7 @@ func exerciseSecurityModel(t *testing.T, database, dsn string) {
 	if err := models.PostPage(&page); err != nil {
 		t.Fatal(err)
 	}
-	smtp := models.SMTP{Name: "database smtp", UserId: admin.Id, Host: "example.test:25", FromAddress: "sender@example.test"}
+	smtp := models.SMTP{Name: "database smtp", UserId: admin.Id, Host: "example.test:25", FromAddress: "sender@example.test", Password: "Synthetic-integration-password-9!"}
 	if err := models.PostSMTP(&smtp); err != nil {
 		t.Fatal(err)
 	}
@@ -124,9 +125,14 @@ func exerciseSecurityModel(t *testing.T, database, dsn string) {
 		CredentialCaptureMode: models.CredentialModeEncryptedReview, CredentialRetentionHours: 24,
 		CredentialPolicy: models.CredentialPolicy{MinLength: 12, MaxLength: 128, MinDigits: 1},
 	}
+	associationsBefore := associationFingerprint(t, connection, database)
 	if err := models.PostCampaign(&campaign, admin.Id); err != nil {
 		t.Fatal(err)
 	}
+	if associationFingerprint(t, connection, database) != associationsBefore {
+		t.Fatal("campaign creation rewrote existing associations or protected SMTP bytes")
+	}
+	exerciseSummaryOwnership(t, campaign, group)
 	credential := "Database-synthetic-credential-9!"
 	if err := models.RecordCredentialSubmission(campaign, campaign.Results[0], credential); err != nil {
 		t.Fatal(err)
@@ -230,6 +236,8 @@ func exerciseSecurityModel(t *testing.T, database, dsn string) {
 	if err := connection.QueryRow("SELECT COUNT(*) FROM personal_access_tokens WHERE name='rollback integration'").Scan(&tokens); err != nil || tokens != 0 {
 		t.Fatal("failed PAT creation did not roll back")
 	}
+	exercisePersistenceContract(t, database, dsn, admin.Id)
+	exerciseSecurityRollback(t, conf, connection, admin, reviewer, campaign, binding, credential)
 }
 
 func rejectOutbox(t *testing.T, db *sql.DB, backend string) func() {

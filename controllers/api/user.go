@@ -12,7 +12,6 @@ import (
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/gorilla/mux"
-	"github.com/jinzhu/gorm"
 )
 
 // ErrUsernameTaken is thrown when a user attempts to register a username that is taken.
@@ -58,7 +57,7 @@ func (ur *userRequest) Validate(existingUser *models.User) error {
 		}
 	}
 	// If we have an error which is not simply indicating that no user was found, report it
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, models.ErrRecordNotFound) {
 		return err
 	}
 	return nil

@@ -36,23 +36,26 @@ func (s *ModelsSuite) SetUpSuite(c *check.C) {
 func (s *ModelsSuite) TearDownTest(c *check.C) {
 	// Clear database tables between each test. If new tables are
 	// used in this test suite they will need to be cleaned up here.
-	db.Delete(Group{})
-	db.Delete(Target{})
-	db.Delete(GroupTarget{})
-	db.Delete(SMTP{})
-	db.Delete(Page{})
-	db.Delete(Result{})
-	db.Delete(MailLog{})
-	db.Delete(Campaign{})
-	db.Delete(CredentialPolicy{})
-	db.Delete(CredentialPolicyResult{})
-	db.Delete(EncryptedCredential{})
-	db.Delete(PersonalAccessToken{})
-	db.Delete(PrivilegedSession{})
-	db.Delete(CampaignReviewer{})
-	db.Delete(auditOutboxRow{})
-	db.Delete(auditCheckpointRow{})
-	db.Delete(auditEventRow{})
+	db.Where("1 = 1").Delete(Attachment{})
+	db.Where("1 = 1").Delete(Template{})
+	db.Where("1 = 1").Delete(Header{})
+	db.Where("1 = 1").Delete(Group{})
+	db.Where("1 = 1").Delete(Target{})
+	db.Where("1 = 1").Delete(GroupTarget{})
+	db.Where("1 = 1").Delete(SMTP{})
+	db.Where("1 = 1").Delete(Page{})
+	db.Where("1 = 1").Delete(Result{})
+	db.Where("1 = 1").Delete(MailLog{})
+	db.Where("1 = 1").Delete(Campaign{})
+	db.Where("1 = 1").Delete(CredentialPolicy{})
+	db.Where("1 = 1").Delete(CredentialPolicyResult{})
+	db.Where("1 = 1").Delete(EncryptedCredential{})
+	db.Where("1 = 1").Delete(PersonalAccessToken{})
+	db.Where("1 = 1").Delete(PrivilegedSession{})
+	db.Where("1 = 1").Delete(CampaignReviewer{})
+	db.Where("1 = 1").Delete(auditOutboxRow{})
+	db.Where("1 = 1").Delete(auditCheckpointRow{})
+	db.Where("1 = 1").Delete(auditEventRow{})
 
 	// Reset users table to default state.
 	db.Not("id", 1).Delete(User{})
@@ -130,28 +133,31 @@ func setupBenchmark(b *testing.B) {
 }
 
 func tearDownBenchmark(b *testing.B) {
-	err := db.Close()
+	err := Close()
 	if err != nil {
 		b.Fatalf("error closing database: %v", err)
 	}
 }
 
 func resetBenchmark(b *testing.B) {
-	db.Delete(Group{})
-	db.Delete(Target{})
-	db.Delete(GroupTarget{})
-	db.Delete(SMTP{})
-	db.Delete(Page{})
-	db.Delete(Result{})
-	db.Delete(MailLog{})
-	db.Delete(Campaign{})
-	db.Delete(CredentialPolicy{})
-	db.Delete(CredentialPolicyResult{})
-	db.Delete(EncryptedCredential{})
-	db.Delete(PersonalAccessToken{})
-	db.Delete(auditEventRow{})
+	db.Where("1 = 1").Delete(Attachment{})
+	db.Where("1 = 1").Delete(Template{})
+	db.Where("1 = 1").Delete(Header{})
+	db.Where("1 = 1").Delete(Group{})
+	db.Where("1 = 1").Delete(Target{})
+	db.Where("1 = 1").Delete(GroupTarget{})
+	db.Where("1 = 1").Delete(SMTP{})
+	db.Where("1 = 1").Delete(Page{})
+	db.Where("1 = 1").Delete(Result{})
+	db.Where("1 = 1").Delete(MailLog{})
+	db.Where("1 = 1").Delete(Campaign{})
+	db.Where("1 = 1").Delete(CredentialPolicy{})
+	db.Where("1 = 1").Delete(CredentialPolicyResult{})
+	db.Where("1 = 1").Delete(EncryptedCredential{})
+	db.Where("1 = 1").Delete(PersonalAccessToken{})
+	db.Where("1 = 1").Delete(auditEventRow{})
 
 	// Reset users table to default state.
 	db.Not("id", 1).Delete(User{})
-	db.Model(User{}).Update("username", "admin")
+	db.Model(User{}).Where("id=?", 1).Update("username", "admin")
 }

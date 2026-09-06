@@ -7,7 +7,7 @@ import (
 
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	secretpkg "github.com/darkarmy-cyber/darkphish/internal/secrets"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 type protectedColumn struct {

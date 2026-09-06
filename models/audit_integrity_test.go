@@ -142,9 +142,9 @@ func (s *ModelsSuite) TestAuditOutboxRetryRestoresRequiredCheckpoint(c *check.C)
 	c.Assert(audit.AppendEvent(event), check.IsNil)
 	c.Assert(db.Where("chain_id=?", audit.DefaultChainID).Delete(&auditCheckpointRow{}).Error, check.IsNil)
 	c.Assert(audit.AppendEvent(event), check.IsNil)
-	var eventCount, checkpointCount int
+	var eventCount, checkpointCount int64
 	c.Assert(db.Model(&auditEventRow{}).Where("audit_outbox_id=?", event.OutboxID).Count(&eventCount).Error, check.IsNil)
 	c.Assert(db.Model(&auditCheckpointRow{}).Count(&checkpointCount).Error, check.IsNil)
-	c.Assert(eventCount, check.Equals, 1)
-	c.Assert(checkpointCount, check.Equals, 1)
+	c.Assert(eventCount, check.Equals, int64(1))
+	c.Assert(checkpointCount, check.Equals, int64(1))
 }

@@ -61,6 +61,7 @@ var (
 	disableMailer = kingpin.Flag("disable-mailer", "Disable the mailer (for use with multi-system deployments)").Bool()
 	mode          = kingpin.Flag("mode", fmt.Sprintf("Run the binary in one of the modes (%s, %s or %s)", modeAll, modeAdmin, modePhish)).
 			Default("all").Enum(modeAll, modeAdmin, modePhish)
+	serveCommand             = kingpin.Command("serve", "Run the configured Darkphish servers.").Default()
 	versionCommand           = kingpin.Command("version", "Print Darkphish version and build information.")
 	auditCommand             = kingpin.Command("audit", "Verify and export the tamper-evident audit trail.")
 	auditVerifyCommand       = auditCommand.Command("verify", "Verify the database audit chain and signed checkpoints.")
@@ -194,6 +195,8 @@ func main() {
 		log.Fatal(err)
 	}
 	switch command {
+	case serveCommand.FullCommand():
+		// Bare invocation preserves the historical server-start behavior.
 	case auditVerifyCommand.FullCommand():
 		report, verifyErr := models.VerifyAuditChain()
 		if verifyErr != nil {

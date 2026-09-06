@@ -7,11 +7,11 @@ import (
 
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	log "github.com/darkarmy-cyber/darkphish/logger"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 type auditOutboxRow struct {
-	ID           int64      `gorm:"primary_key"`
+	ID           int64      `gorm:"primaryKey"`
 	EventJSON    string     `gorm:"column:event_json"`
 	CreatedAt    time.Time  `gorm:"column:created_at"`
 	DispatchedAt *time.Time `gorm:"column:dispatched_at"`

@@ -7,8 +7,8 @@ import (
 	"time"
 
 	log "github.com/darkarmy-cyber/darkphish/logger"
-	"github.com/jinzhu/gorm"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 // Group contains the fields needed for a user -> group mapping
@@ -18,7 +18,7 @@ type Group struct {
 	UserId       int64     `json:"-"`
 	Name         string    `json:"name"`
 	ModifiedDate time.Time `json:"modified_date"`
-	Targets      []Target  `json:"targets" sql:"-"`
+	Targets      []Target  `json:"targets" gorm:"-"`
 }
 
 // GroupSummaries is a struct representing the overview of Groups.
@@ -146,7 +146,7 @@ func GetGroupSummaries(uid int64) (GroupSummaries, error) {
 // GetGroup returns the group, if it exists, specified by the given id and user_id.
 func GetGroup(id int64, uid int64) (Group, error) {
 	g := Group{}
-	err := db.Where("user_id=? and id=?", uid, id).Find(&g).Error
+	err := db.Where("user_id=? and id=?", uid, id).Take(&g).Error
 	if err != nil {
 		log.Error(err)
 		return g, err
@@ -162,7 +162,7 @@ func GetGroup(id int64, uid int64) (Group, error) {
 func GetGroupSummary(id int64, uid int64) (GroupSummary, error) {
 	g := GroupSummary{}
 	query := db.Table("groups").Where("user_id=? and id=?", uid, id)
-	err := query.Select("id, name, modified_date").Scan(&g).Error
+	err := query.Select("id, name, modified_date").Take(&g).Error
 	if err != nil {
 		log.Error(err)
 		return g, err
@@ -178,7 +178,7 @@ func GetGroupSummary(id int64, uid int64) (GroupSummary, error) {
 // GetGroupByName returns the group, if it exists, specified by the given name and user_id.
 func GetGroupByName(n string, uid int64) (Group, error) {
 	g := Group{}
-	err := db.Where("user_id=? and name=?", uid, n).Find(&g).Error
+	err := db.Where("user_id=? and name=?", uid, n).Take(&g).Error
 	if err != nil {
 		log.Error(err)
 		return g, err
@@ -197,6 +197,10 @@ func PostGroup(g *Group) error {
 	}
 	// Insert the group into the DB
 	tx := db.Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
 	err := tx.Save(g).Error
 	if err != nil {
 		tx.Rollback()
@@ -245,6 +249,10 @@ func PutGroup(g *Group) error {
 	}
 
 	tx := db.Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
 	// Check existing targets, removing any that are no longer in the group.
 	for _, t := range ts {
 		if _, ok := cacheNew[t.Email]; ok {
@@ -258,6 +266,7 @@ func PutGroup(g *Group) error {
 			log.WithFields(logrus.Fields{
 				"email": t.Email,
 			}).Error("Error deleting email")
+			return err
 		}
 	}
 	// Add any targets that are not in the database yet.
@@ -329,7 +338,8 @@ func insertTargetIntoGroup(tx *gorm.DB, t Target, gid int64) error {
 		}).Error(err)
 		return err
 	}
-	err = tx.Save(&GroupTarget{GroupId: gid, TargetId: t.Id}).Error
+	// This join table has no model primary key: it is an insert, not an upsert.
+	err = tx.Create(&GroupTarget{GroupId: gid, TargetId: t.Id}).Error
 	if err != nil {
 		log.Error(err)
 		return err
@@ -362,6 +372,6 @@ func UpdateTarget(tx *gorm.DB, target Target) error {
 // GetTargets performs a many-to-many select to get all the Targets for a Group
 func GetTargets(gid int64) ([]Target, error) {
 	ts := []Target{}
-	err := db.Table("targets").Select("targets.id, targets.email, targets.first_name, targets.last_name, targets.position").Joins("left join group_targets gt ON targets.id = gt.target_id").Where("gt.group_id=?", gid).Scan(&ts).Error
+	err := db.Table("targets").Select("targets.id, targets.email, targets.first_name, targets.last_name, targets.position").Joins("left join group_targets gt ON targets.id = gt.target_id").Where("gt.group_id=?", gid).Order("targets.id ASC").Scan(&ts).Error
 	return ts, err
 }

@@ -8,29 +8,29 @@ import (
 
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/webhook"
-	"github.com/jinzhu/gorm"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 // Campaign is a struct representing a created campaign
 type Campaign struct {
 	Id                           int64            `json:"id"`
 	UserId                       int64            `json:"-"`
-	Name                         string           `json:"name" sql:"not null"`
+	Name                         string           `json:"name" gorm:"not null"`
 	CreatedDate                  time.Time        `json:"created_date"`
 	LaunchDate                   time.Time        `json:"launch_date"`
 	SendByDate                   *time.Time       `json:"send_by_date"`
 	CompletedDate                *time.Time       `json:"completed_date"`
 	TemplateId                   int64            `json:"-"`
-	Template                     Template         `json:"template"`
+	Template                     Template         `json:"template" gorm:"-"`
 	PageId                       int64            `json:"-"`
-	Page                         Page             `json:"page"`
+	Page                         Page             `json:"page" gorm:"-"`
 	Status                       string           `json:"status"`
-	Results                      []Result         `json:"results,omitempty"`
-	Groups                       []Group          `json:"groups,omitempty"`
-	Events                       []Event          `json:"timeline,omitempty"`
+	Results                      []Result         `json:"results,omitempty" gorm:"-"`
+	Groups                       []Group          `json:"groups,omitempty" gorm:"-"`
+	Events                       []Event          `json:"timeline,omitempty" gorm:"-"`
 	SMTPId                       int64            `json:"-"`
-	SMTP                         SMTP             `json:"smtp"`
+	SMTP                         SMTP             `json:"smtp" gorm:"-"`
 	URL                          string           `json:"url"`
 	CredentialCaptureMode        string           `json:"credential_capture_mode"`
 	CredentialRetentionHours     int              `json:"credential_retention_hours"`
@@ -61,8 +61,8 @@ type CampaignResults struct {
 	Id      int64    `json:"id"`
 	Name    string   `json:"name"`
 	Status  string   `json:"status"`
-	Results []Result `json:"results,omitempty"`
-	Events  []Event  `json:"timeline,omitempty"`
+	Results []Result `json:"results,omitempty" gorm:"-"`
+	Events  []Event  `json:"timeline,omitempty" gorm:"-"`
 }
 
 // CampaignSummaries is a struct representing the overview of campaigns
@@ -80,7 +80,7 @@ type CampaignSummary struct {
 	CompletedDate *time.Time    `json:"completed_date"`
 	Status        string        `json:"status"`
 	Name          string        `json:"name"`
-	Stats         CampaignStats `json:"stats"`
+	Stats         CampaignStats `json:"stats" gorm:"-"`
 }
 
 // CampaignStats is a struct representing the statistics for a single campaign
@@ -210,44 +210,44 @@ func (c *Campaign) getDetails() error {
 	policy, policyErr := loadCredentialPolicy(c.Id)
 	if policyErr == nil {
 		c.CredentialPolicy = policy
-	} else if policyErr != gorm.ErrRecordNotFound {
+	} else if !errors.Is(policyErr, gorm.ErrRecordNotFound) {
 		return policyErr
 	}
-	err := db.Model(c).Related(&c.Results).Error
+	err := db.Where("campaign_id=?", c.Id).Order("id ASC").Find(&c.Results).Error
 	if err != nil {
 		log.Warnf("%s: results not found for campaign", err)
 		return err
 	}
-	err = db.Model(c).Related(&c.Events).Error
+	err = db.Where("campaign_id=?", c.Id).Order("time ASC, id ASC").Find(&c.Events).Error
 	if err != nil {
 		log.Warnf("%s: events not found for campaign", err)
 		return err
 	}
-	err = db.Table("templates").Where("id=?", c.TemplateId).Find(&c.Template).Error
+	err = db.Table("templates").Where("id=?", c.TemplateId).Take(&c.Template).Error
 	if err != nil {
-		if err != gorm.ErrRecordNotFound {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		c.Template = Template{Name: "[Deleted]"}
 		log.Warnf("%s: template not found for campaign", err)
 	}
 	err = db.Where("template_id=?", c.Template.Id).Find(&c.Template.Attachments).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Warn(err)
 		return err
 	}
-	err = db.Table("pages").Where("id=?", c.PageId).Find(&c.Page).Error
+	err = db.Table("pages").Where("id=?", c.PageId).Take(&c.Page).Error
 	if err != nil {
-		if err != gorm.ErrRecordNotFound {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		c.Page = Page{Name: "[Deleted]"}
 		log.Warnf("%s: page not found for campaign", err)
 	}
-	err = db.Table("smtp").Where("id=?", c.SMTPId).Find(&c.SMTP).Error
+	err = db.Table("smtp").Where("id=?", c.SMTPId).Take(&c.SMTP).Error
 	if err != nil {
 		// Check if the SMTP was deleted
-		if err != gorm.ErrRecordNotFound {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		c.SMTP = SMTP{Name: "[Deleted]"}
@@ -259,7 +259,7 @@ func (c *Campaign) getDetails() error {
 		}
 	}
 	err = db.Where("smtp_id=?", c.SMTP.Id).Find(&c.SMTP.Headers).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Warn(err)
 		return err
 	}
@@ -303,20 +303,20 @@ func (c *Campaign) generateSendDate(idx int, totalRecipients int) time.Time {
 // It also backfills numbers as appropriate with a running total, so that the values are aggregated.
 func getCampaignStats(cid int64) (CampaignStats, error) {
 	s := CampaignStats{}
-	query := db.Table("results").Where("campaign_id = ?", cid)
+	query := db.Table("results").Where("campaign_id = ?", cid).Session(&gorm.Session{})
 	err := query.Count(&s.Total).Error
 	if err != nil {
 		return s, err
 	}
-	query.Where("status=?", EventDataSubmit).Count(&s.SubmittedData)
+	err = query.Where("status=?", EventDataSubmit).Count(&s.SubmittedData).Error
 	if err != nil {
 		return s, err
 	}
-	query.Where("status=?", EventClicked).Count(&s.ClickedLink)
+	err = query.Where("status=?", EventClicked).Count(&s.ClickedLink).Error
 	if err != nil {
 		return s, err
 	}
-	query.Where("reported=?", true).Count(&s.EmailReported)
+	err = query.Where("reported=?", true).Count(&s.EmailReported).Error
 	if err != nil {
 		return s, err
 	}
@@ -341,7 +341,7 @@ func getCampaignStats(cid int64) (CampaignStats, error) {
 // GetCampaigns returns the campaigns owned by the given user.
 func GetCampaigns(uid int64) ([]Campaign, error) {
 	cs := []Campaign{}
-	err := db.Model(&User{Id: uid}).Related(&cs).Error
+	err := db.Where("user_id=?", uid).Order("id ASC").Find(&cs).Error
 	if err != nil {
 		log.Error(err)
 	}
@@ -416,7 +416,7 @@ func GetCampaignSummary(id int64, uid int64) (CampaignSummary, error) {
 	cs := CampaignSummary{}
 	query := db.Table("campaigns").Where("user_id = ? AND id = ?", uid, id)
 	query = query.Select("id, name, created_date, launch_date, send_by_date, completed_date, status")
-	err := query.Scan(&cs).Error
+	err := query.Take(&cs).Error
 	if err != nil {
 		log.Error(err)
 		return cs, err
@@ -438,7 +438,7 @@ func GetAccessibleCampaignSummary(id int64, user User) (CampaignSummary, error) 
 		return summary, gorm.ErrRecordNotFound
 	}
 	if err := db.Table("campaigns").Where("id=?", id).
-		Select("id, name, created_date, launch_date, send_by_date, completed_date, status").Scan(&summary).Error; err != nil {
+		Select("id, name, created_date, launch_date, send_by_date, completed_date, status").Take(&summary).Error; err != nil {
 		return summary, err
 	}
 	summary.Stats, err = getCampaignStats(id)
@@ -455,11 +455,11 @@ func GetAccessibleCampaignSummary(id int64, user User) (CampaignSummary, error) 
 // ref: #1726
 func GetCampaignMailContext(id int64, uid int64) (Campaign, error) {
 	c := Campaign{}
-	err := db.Where("id = ?", id).Where("user_id = ?", uid).Find(&c).Error
+	err := db.Where("id = ?", id).Where("user_id = ?", uid).Take(&c).Error
 	if err != nil {
 		return c, err
 	}
-	err = db.Table("smtp").Where("id=?", c.SMTPId).Find(&c.SMTP).Error
+	err = db.Table("smtp").Where("id=?", c.SMTPId).Take(&c.SMTP).Error
 	if err != nil {
 		return c, err
 	}
@@ -467,15 +467,15 @@ func GetCampaignMailContext(id int64, uid int64) (Campaign, error) {
 		return c, err
 	}
 	err = db.Where("smtp_id=?", c.SMTP.Id).Find(&c.SMTP.Headers).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return c, err
 	}
-	err = db.Table("templates").Where("id=?", c.TemplateId).Find(&c.Template).Error
+	err = db.Table("templates").Where("id=?", c.TemplateId).Take(&c.Template).Error
 	if err != nil {
 		return c, err
 	}
 	err = db.Where("template_id=?", c.Template.Id).Find(&c.Template.Attachments).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return c, err
 	}
 	return c, nil
@@ -484,7 +484,7 @@ func GetCampaignMailContext(id int64, uid int64) (Campaign, error) {
 // GetCampaign returns the campaign, if it exists, specified by the given id and user_id.
 func GetCampaign(id int64, uid int64) (Campaign, error) {
 	c := Campaign{}
-	err := db.Where("id = ?", id).Where("user_id = ?", uid).Find(&c).Error
+	err := db.Where("id = ?", id).Where("user_id = ?", uid).Take(&c).Error
 	if err != nil {
 		log.Errorf("%s: campaign not found", err)
 		return c, err
@@ -501,7 +501,7 @@ func GetAccessibleCampaign(id int64, user User) (Campaign, error) {
 	if err != nil || !allowed {
 		return c, gorm.ErrRecordNotFound
 	}
-	if err = db.Where("id=?", id).Find(&c).Error; err != nil {
+	if err = db.Where("id=?", id).Take(&c).Error; err != nil {
 		return c, err
 	}
 	err = c.getDetails()
@@ -519,7 +519,7 @@ func GetCampaignResults(id int64, uid int64) (CampaignResults, error) {
 	if err != nil || !allowed {
 		return cr, gorm.ErrRecordNotFound
 	}
-	err = db.Table("campaigns").Where("id=?", id).Find(&cr).Error
+	err = db.Table("campaigns").Where("id=?", id).Take(&cr).Error
 	if err != nil {
 		log.WithFields(logrus.Fields{
 			"campaign_id": id,
@@ -527,7 +527,7 @@ func GetCampaignResults(id int64, uid int64) (CampaignResults, error) {
 		}).Error(err)
 		return cr, err
 	}
-	err = db.Table("results").Where("campaign_id=?", cr.Id).Find(&cr.Results).Error
+	err = db.Table("results").Where("campaign_id=?", cr.Id).Order("id ASC").Find(&cr.Results).Error
 	if err != nil {
 		log.Errorf("%s: results not found for campaign", err)
 		return cr, err
@@ -589,7 +589,7 @@ func PostCampaign(c *Campaign, uid int64) error {
 	totalRecipients := 0
 	for i, g := range c.Groups {
 		c.Groups[i], err = GetGroupByName(g.Name, uid)
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.WithFields(logrus.Fields{
 				"group": g.Name,
 			}).Error("Group does not exist")
@@ -602,7 +602,7 @@ func PostCampaign(c *Campaign, uid int64) error {
 	}
 	// Check to make sure the template exists
 	t, err := GetTemplateByName(c.Template.Name, uid)
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		log.WithFields(logrus.Fields{
 			"template": c.Template.Name,
 		}).Error("Template does not exist")
@@ -615,7 +615,7 @@ func PostCampaign(c *Campaign, uid int64) error {
 	c.TemplateId = t.Id
 	// Check to make sure the page exists
 	p, err := GetPageByName(c.Page.Name, uid)
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		log.WithFields(logrus.Fields{
 			"page": c.Page.Name,
 		}).Error("Page does not exist")
@@ -628,7 +628,7 @@ func PostCampaign(c *Campaign, uid int64) error {
 	c.PageId = p.Id
 	// Check to make sure the sending profile exists
 	s, err := GetSMTPByName(c.SMTP.Name, uid)
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		log.WithFields(logrus.Fields{
 			"smtp": c.SMTP.Name,
 		}).Error("Sending profile does not exist")
@@ -645,6 +645,7 @@ func PostCampaign(c *Campaign, uid int64) error {
 	if tx.Error != nil {
 		return tx.Error
 	}
+	defer tx.Rollback()
 	rollback := func(cause error) error {
 		_ = tx.Rollback().Error
 		return cause

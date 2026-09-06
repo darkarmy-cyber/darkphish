@@ -15,7 +15,7 @@ import (
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/mailer"
 	"github.com/gophish/gomail"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 // Dialer is a wrapper around a standard gomail.Dialer in order
@@ -33,7 +33,7 @@ func (d *Dialer) Dial() (mailer.Sender, error) {
 
 // SMTP contains the attributes needed to handle the sending of campaign emails
 type SMTP struct {
-	Id               int64     `json:"id" gorm:"column:id; primary_key:yes"`
+	Id               int64     `json:"id" gorm:"column:id; primaryKey"`
 	UserId           int64     `json:"-" gorm:"column:user_id"`
 	Interface        string    `json:"interface_type" gorm:"column:interface_type"`
 	Name             string    `json:"name"`
@@ -43,7 +43,7 @@ type SMTP struct {
 	PasswordSet      bool      `json:"password_set" gorm:"-"`
 	FromAddress      string    `json:"from_address"`
 	IgnoreCertErrors bool      `json:"ignore_cert_errors"`
-	Headers          []Header  `json:"headers"`
+	Headers          []Header  `json:"headers" gorm:"-"`
 	ModifiedDate     time.Time `json:"modified_date"`
 }
 
@@ -192,7 +192,7 @@ func GetSMTPs(uid int64) ([]SMTP, error) {
 			return ss, err
 		}
 		err = db.Where("smtp_id=?", ss[i].Id).Find(&ss[i].Headers).Error
-		if err != nil && err != gorm.ErrRecordNotFound {
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Error(err)
 			return ss, err
 		}
@@ -203,7 +203,7 @@ func GetSMTPs(uid int64) ([]SMTP, error) {
 // GetSMTP returns the SMTP, if it exists, specified by the given id and user_id.
 func GetSMTP(id int64, uid int64) (SMTP, error) {
 	s := SMTP{}
-	err := db.Where("user_id=? and id=?", uid, id).Find(&s).Error
+	err := db.Where("user_id=? and id=?", uid, id).Take(&s).Error
 	if err != nil {
 		log.Error(err)
 		return s, err
@@ -212,7 +212,7 @@ func GetSMTP(id int64, uid int64) (SMTP, error) {
 		return s, err
 	}
 	err = db.Where("smtp_id=?", s.Id).Find(&s.Headers).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Error(err)
 		return s, err
 	}
@@ -222,7 +222,7 @@ func GetSMTP(id int64, uid int64) (SMTP, error) {
 // GetSMTPByName returns the SMTP, if it exists, specified by the given name and user_id.
 func GetSMTPByName(n string, uid int64) (SMTP, error) {
 	s := SMTP{}
-	err := db.Where("user_id=? and name=?", uid, n).Find(&s).Error
+	err := db.Where("user_id=? and name=?", uid, n).Take(&s).Error
 	if err != nil {
 		log.Error(err)
 		return s, err
@@ -231,7 +231,7 @@ func GetSMTPByName(n string, uid int64) (SMTP, error) {
 		return s, err
 	}
 	err = db.Where("smtp_id=?", s.Id).Find(&s.Headers).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Error(err)
 	}
 	return s, err
@@ -275,7 +275,7 @@ func PutSMTP(s *SMTP) error {
 	}
 	// Delete all custom headers, and replace with new ones
 	err = db.Where("smtp_id=?", s.Id).Delete(&Header{}).Error
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Error(err)
 		return err
 	}

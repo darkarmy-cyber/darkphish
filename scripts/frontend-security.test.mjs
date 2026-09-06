@@ -26,7 +26,7 @@ test("date ordering parses only strict plaintext dates, without HTML rewriting",
 
 test("spellcheck query names are literal and values retain the bridge's encoded protocol", () => {
   const context = vm.createContext({ window: { location: { search: "?cmd=done&data=a%26b%3Dc+raw==&a[[]]=literal&x.y=dot&xay=other", href: "https://admin.example.test/?cmd=done&data=a%26b%3Dc+raw==&a[[]]=literal&x.y=dot&xay=other#data=wrong" } } })
-  const script = source("vendor/ckeditor/plugins/wsc/dialogs/ciframe.html").match(/<script[^>]*>([\s\S]*?)<\/script>/)[1]
+  const script = source("vendor/ckeditor/plugins/wsc/dialogs/ciframe.html").match(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/i)[1]
   vm.runInContext(script, context)
   assert.equal(context.gup("cmd"), "done")
   assert.equal(context.gup("data"), "a%26b%3Dc+raw==")

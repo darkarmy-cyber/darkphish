@@ -16,6 +16,7 @@ import (
 	"github.com/darkarmy-cyber/darkphish/config"
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	"github.com/darkarmy-cyber/darkphish/internal/persistence"
+	"gorm.io/gorm"
 )
 
 func auditProcessConfig(t *testing.T) *config.Config {
@@ -27,7 +28,7 @@ func auditProcessConfig(t *testing.T) *config.Config {
 	return &config.Config{
 		DBName: backend, DBPath: os.Getenv("DARKPHISH_AUDIT_TEST_DSN"),
 		MigrationsPath: "../db/db_" + backend + "/migrations",
-		Audit:          config.AuditConfig{MultiInstance: true, ActiveSigningKeyID: "test-shared", SigningKeys: map[string]string{"test-shared": base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{73}, 32))}, CheckpointInterval: 7},
+		Audit:          config.AuditConfig{MultiInstance: true, ActiveSigningKeyID: "test-shared", SigningKeys: map[string]string{"test-shared": "base64:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{73}, 32))}, CheckpointInterval: 7},
 	}
 }
 
@@ -39,12 +40,24 @@ func TestAuditProcessHelper(t *testing.T) {
 		t.Skip("subprocess helper")
 	}
 	conf = auditProcessConfig(t)
+	if mode == "wrong-key" {
+		conf.Audit.SigningKeys["test-shared"] = "base64:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{74}, 32))
+	}
+	if mode == "missing-mode" {
+		conf.Audit.MultiInstance = false
+	}
 	var err error
 	db, err = persistence.Open(conf)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer Close()
+	if mode == "wrong-key" || mode == "missing-mode" {
+		if err := configureAuditStore(); err == nil {
+			t.Fatal("incompatible signing configuration accepted")
+		}
+		return
+	}
 	if err := configureAuditStore(); err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +80,9 @@ func TestAuditProcessHelper(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	for i := 0; i < 30; i++ {
+		if err := FlushAuditOutbox(); err != nil {
+			t.Fatal(err)
+		}
 		if worker < 4 {
 			for _, delivery := range []int64{int64(100000 + worker*100 + i), int64(900000 + i)} {
 				if _, err := (databaseAuditStore{}).Append(audit.Event{OutboxID: delivery, Timestamp: time.Date(2026, 1, 1, 0, 0, 0, 123456789, time.UTC), Actor: "audit-process-test", ActorType: "system", Action: "audit.concurrent", Result: "success", Metadata: "{}"}); err != nil {
@@ -117,6 +133,13 @@ func TestAuditMultiProcess(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	for i := 0; i < 12; i++ {
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			return enqueueAuditEvent(tx, audit.Event{Timestamp: time.Now().UTC(), Actor: "durable-outbox-test", ActorType: "system", Action: "audit.outbox.concurrent", Result: "success", Metadata: "{}"})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	directory := t.TempDir()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -163,18 +186,28 @@ func TestAuditMultiProcess(t *testing.T) {
 		return
 	}
 	report, err := VerifyAuditChain()
-	if err != nil || report.RecordCount != 150 {
+	if err != nil || report.RecordCount != 162 {
 		t.Fatalf("chain count=%d err=%v", report.RecordCount, err)
 	}
 	var head auditChainHead
 	if err := db.First(&head).Error; err != nil {
 		t.Fatal(err)
 	}
-	if head.Sequence != 160 || head.RetiredSequence != 10 {
+	if head.Sequence != 172 || head.RetiredSequence != 10 {
 		t.Fatalf("head %+v", head)
 	}
 	if err := initializeAuditChain(); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("PASS %s: six independent OS processes, four writers, two verify/export/checkpoint/retention workers; 240 delivery attempts, 150 unique events, final sequence 160, retained anchor 10, valid hashes and signatures", c.DBName)
+	if err := db.Model(&auditOutboxRow{}).Where("dispatched_at IS NULL").Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("undelivered outbox: %d %v", count, err)
+	}
+	for _, mode := range []string{"wrong-key", "missing-mode"} {
+		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestAuditProcessHelper$")
+		cmd.Env = append(os.Environ(), "DARKPHISH_AUDIT_CHILD="+mode)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("negative signer process: %v %s", err, output)
+		}
+	}
+	t.Logf("PASS %s: six independent OS processes, four writers, two verify/export/checkpoint/retention workers; 240 direct delivery attempts plus 12 concurrently flushed outbox rows, 162 unique events, final sequence 172, retained anchor 10, valid hashes and signatures; wrong/missing shared signing configuration rejected", c.DBName)
 }

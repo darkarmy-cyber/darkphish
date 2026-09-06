@@ -65,20 +65,21 @@ func FlushAuditOutbox() error {
 			if len(message) > 512 {
 				message = message[:512]
 			}
-			_ = db.Model(&auditOutboxRow{}).Where("id=?", row.ID).Updates(map[string]interface{}{"attempts": row.Attempts + 1, "last_error": message}).Error
+			_ = db.Model(&auditOutboxRow{}).Where("id=? AND dispatched_at IS NULL", row.ID).Updates(map[string]interface{}{"attempts": gorm.Expr("attempts + 1"), "last_error": message}).Error
 			continue
 		}
+		event.OutboxID = row.ID
 		if err := audit.AppendEvent(event); err != nil {
 			message := strings.ToValidUTF8(err.Error(), "")
 			if len(message) > 512 {
 				message = message[:512]
 			}
-			_ = db.Model(&auditOutboxRow{}).Where("id=?", row.ID).Updates(map[string]interface{}{"attempts": row.Attempts + 1, "last_error": message}).Error
+			_ = db.Model(&auditOutboxRow{}).Where("id=? AND dispatched_at IS NULL", row.ID).Updates(map[string]interface{}{"attempts": gorm.Expr("attempts + 1"), "last_error": message}).Error
 			return err
 		}
 		now := time.Now().UTC()
 		if err := db.Model(&auditOutboxRow{}).Where("id=? AND dispatched_at IS NULL", row.ID).
-			Updates(map[string]interface{}{"dispatched_at": now, "attempts": row.Attempts + 1, "last_error": ""}).Error; err != nil {
+			Updates(map[string]interface{}{"dispatched_at": now, "attempts": gorm.Expr("attempts + 1"), "last_error": ""}).Error; err != nil {
 			return err
 		}
 	}

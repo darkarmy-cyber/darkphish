@@ -24,8 +24,14 @@ clean results even if its body is edited, its threads resolved or it is dismisse
 Because the preview summary provides no immutable review-run ID, the conservative
 rule requires **both** fresh clean comments after every formal connector result,
 including a late result for an older head. Equal-second timestamps are ambiguous
-and block. Unknown newer connector messages and a summary advertising findings
-also block, even without a review thread. Reactions alone cannot
+and block. Unknown newer connector messages also block. A summary's retained
+historical findings are accepted only as a fully parsed, count-checked list of
+same-PR comment IDs, each independently tied to an authentic formal review and
+its original commit. Every such result and inline comment's latest update must
+predate both fresh clean results, and all threads must be resolved. Unlinked,
+foreign, unknown-format or current findings block, even without a review thread.
+The mutable inline `commit_id` is never used as its original source identity.
+Reactions alone cannot
 clear this condition; obtain fresh review results, normally on the corrected head.
 
 Comment creation identity alone is insufficient because maintainers can edit

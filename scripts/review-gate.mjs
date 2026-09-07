@@ -7,11 +7,43 @@ const cleanMessages = {
   code: "Codex Review: Didn't find any major issues.",
   security: "Security review completed. No security issues were found in this pull request.",
 }
+const connectorActor = user => user?.login === "chatgpt-codex-connector[bot]" && user.id === 199175422 && user.type === "Bot"
+const connectorClaim = user => user?.id === 199175422 || user?.login === "chatgpt-codex-connector[bot]"
 
 export function trustedReviewComment(comment) {
-  return comment?.user?.login === "chatgpt-codex-connector[bot]" && comment.user.id === 199175422 &&
-    comment.user.type === "Bot" && comment.performed_via_github_app?.id === 1144995 &&
+  return connectorActor(comment?.user) && comment.performed_via_github_app?.id === 1144995 &&
     comment.performed_via_github_app.slug === "chatgpt-codex-connector"
+}
+function summaryFindingIDs(repo, number, body) {
+  const heading = /^#{1,6}[ \t]+[^\n]*\bfindings?\b[^\n]*$/gim
+  if (![...body.matchAll(heading)].length) return []
+  // Observed summaries retain historical findings after a clean rerun. Accept
+  // only a fully understood, count-checked list of same-PR immutable comment IDs;
+  // the IDs still need independent result-history and resolved-thread proof.
+  const sections = [...body.matchAll(/^### Security findings\n([\s\S]*?)(?=^<details>)/gm)]
+  requireReview(sections.length === 1, "Unrecognized findings summary")
+  const section = sections[0], outside = body.slice(0, section.index) + body.slice(section.index + section[0].length)
+  requireReview(![...outside.matchAll(heading)].length, "Unrecognized findings summary headings")
+  const ids = [], groups = new Set()
+  let remaining = 0
+  for (const line of section[1].split("\n").map(value => value.trim()).filter(Boolean)) {
+    const group = /^#### (Advisory|Blocking) findings \(([1-9]\d{0,3})\)$/.exec(line)
+    if (group) {
+      requireReview(remaining === 0 && !groups.has(group[1]) && Number(group[2]) <= 2000, "Invalid findings summary count")
+      groups.add(group[1]); remaining = Number(group[2]); continue
+    }
+    const item = /^- \S+ \[[^\]\n]+\]\((https:\/\/github\.com\/[^\s)]+)\) · \*\*(Critical|High|Medium|Low)\*\*$/.exec(line)
+    requireReview(item && remaining > 0, "Unrecognized findings summary item")
+    let url
+    try { url = new URL(item[1]) } catch { throw new ReviewGateError("Invalid findings summary link") }
+    const id = /^#discussion_r([1-9]\d*)$/.exec(url.hash)
+    requireReview(url.origin === "https://github.com" && !url.username && !url.password && !url.search &&
+      url.pathname === `/${repo}/pull/${number}` && id && Number.isSafeInteger(Number(id[1])), "Foreign or malformed findings summary link")
+    requireReview(!ids.includes(Number(id[1])), "Duplicate findings summary identity")
+    ids.push(Number(id[1])); remaining--
+  }
+  requireReview(remaining === 0 && ids.length > 0, "Incomplete findings summary")
+  return ids
 }
 function timestamp(value) {
   requireReview(typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value), "Invalid review timestamp")
@@ -40,7 +72,6 @@ export function reviewEvidence(repo, pr, comments, now = Date.now()) {
   const summaries = trusted.filter(comment => typeof comment.body === "string" && comment.body.startsWith(summaryMarker + "\n"))
   requireReview(summaries.length === 1, "Missing or ambiguous trusted review summary")
   const summary = summaries[0]
-  requireReview(!/^#{1,6}\s+[^\n]*\bfindings?\b/im.test(summary.body), "Latest review summary reports findings")
   const markers = [...summary.body.matchAll(/<!-- codex-security-review:v1 (.*?) -->/g)]
   requireReview(markers.length === 1, "Missing or ambiguous explicit security review marker")
   let security
@@ -77,7 +108,8 @@ export function reviewEvidence(repo, pr, comments, now = Date.now()) {
   }
   const records = [{ id: summary.id, nodeID: summary.node_id, body: summary.body, updatedAt: summary.updated_at }, ...Object.values(clean)]
   requireReview(records.every(record => typeof record.nodeID === "string" && record.nodeID.length > 0 && record.nodeID.length < 128), "Missing review comment node identity")
-  return { head: pr.head.sha, summaryID: summary.id, completed, clean, records }
+  return { head: pr.head.sha, summaryID: summary.id, completed, clean, records,
+    summaryFindings: summaryFindingIDs(repo, pr.number, summary.body) }
 }
 
 async function readPages(get, path) {
@@ -116,9 +148,8 @@ export async function verifyPullRequestReviews(repo, pr, { get, query, now = Dat
     // edited, the review dismissed or all its threads marked resolved. Since
     // the preview API exposes no run ID, conservatively require BOTH fresh clean
     // results after any connector formal review (also a late older-head result).
-    if (review.user.id === 199175422 || review.user.login === "chatgpt-codex-connector[bot]") {
-      requireReview(review.user.id === 199175422 && review.user.type === "Bot" &&
-        review.user.login === "chatgpt-codex-connector[bot]" && /^[a-f0-9]{40}$/.test(review.commit_id || ""), "Malformed connector review identity")
+    if (connectorClaim(review.user)) {
+      requireReview(connectorActor(review.user) && /^[a-f0-9]{40}$/.test(review.commit_id || ""), "Malformed connector review identity")
       const submitted = timestamp(review.submitted_at)
       requireReview(Object.values(evidence.clean).every(item => timestamp(item.createdAt) > submitted),
         "A later connector review supersedes clean results; both fresh clean reviews are required")
@@ -126,6 +157,20 @@ export async function verifyPullRequestReviews(repo, pr, { get, query, now = Dat
     if (["APPROVED", "CHANGES_REQUESTED"].includes(review.state)) opinions.set(review.user.login, review.state)
   }
   requireReview(![...opinions.values()].includes("CHANGES_REQUESTED"), "A reviewer still requests changes")
+  const firstClean = Math.min(...Object.values(evidence.clean).map(item => timestamp(item.createdAt)))
+  const reviewComments = await readPages(get, `repos/${repo}/pulls/${pr.number}/comments`)
+  const historical = new Set()
+  for (const comment of reviewComments.filter(item => connectorClaim(item.user))) {
+    const review = reviews.find(item => item.id === comment.pull_request_review_id)
+    requireReview(connectorActor(comment.user) && review && connectorActor(review.user) &&
+      comment.original_commit_id === review.commit_id, "Unproven connector inline-result identity")
+    // commit_id can move with the diff; original_commit_id and the immutable
+    // parent review identify the source. Edits/replies after clean results block.
+    const created = timestamp(comment.created_at), updated = timestamp(comment.updated_at)
+    requireReview(created <= updated && updated < firstClean, "A later connector inline result supersedes clean reviews")
+    if (comment.in_reply_to_id == null) historical.add(comment.id)
+  }
+  requireReview(evidence.summaryFindings.every(id => historical.has(id)), "Unproven findings summary; fresh clean review history required")
   const [owner, name] = repo.split("/")
   let after = null
   const cursors = new Set()

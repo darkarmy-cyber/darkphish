@@ -1,6 +1,7 @@
 package models
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,39 +11,50 @@ import (
 	"gorm.io/gorm"
 )
 
-func auditEventsAscending(tx *gorm.DB) ([]audit.Event, error) {
-	rows := []auditEventRow{}
-	if err := tx.Where("chain_id=?", audit.DefaultChainID).Order("chain_sequence ASC").Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	values := make([]audit.Event, len(rows))
-	for i := range rows {
-		values[i] = rowEvent(rows[i])
-	}
-	return values, nil
-}
-
 func buildAuditExportTx(tx *gorm.DB, head *auditChainHead, applicationVersion, commit string) ([]byte, audit.ExportManifest, error) {
 	var manifest audit.ExportManifest
 	if _, err := verifyAuditChainTx(tx, head); err != nil {
 		return nil, manifest, err
 	}
-	events, err := auditEventsAscending(tx)
-	if err != nil {
-		return nil, manifest, err
+	// Keep the established byte-for-byte JSON representation without retaining
+	// a second full history as database rows and decoded events. This legacy
+	// []byte API still buffers the final payload; it is not a streaming API.
+	var content bytes.Buffer
+	content.WriteByte('[')
+	rows := auditEventIterator{tx: tx}
+	for {
+		row, ok, err := rows.next()
+		if err != nil {
+			return nil, manifest, err
+		}
+		if !ok {
+			break
+		}
+		encoded, err := json.MarshalIndent(rowEvent(row), "  ", "  ")
+		if err != nil {
+			return nil, manifest, err
+		}
+		if manifest.RecordCount == 0 {
+			manifest.FirstEventID = row.ID
+		} else {
+			content.WriteByte(',')
+		}
+		content.WriteString("\n  ")
+		content.Write(encoded)
+		manifest.RecordCount++
+		manifest.LastEventID = row.ID
 	}
-	content, err := json.MarshalIndent(events, "", "  ")
-	if err != nil {
-		return nil, manifest, err
+	if manifest.RecordCount > 0 {
+		content.WriteByte('\n')
 	}
-	content = append(content, '\n')
+	content.WriteString("]\n")
+	count, first, last := manifest.RecordCount, manifest.FirstEventID, manifest.LastEventID
 	manifest = audit.ExportManifest{
-		FormatVersion: audit.ManifestFormatVersion, GeneratedAt: time.Now().UTC(), RecordCount: len(events),
-		SHA256: audit.FileSHA256(content), ApplicationVersion: applicationVersion, Commit: commit,
+		FormatVersion: audit.ManifestFormatVersion, GeneratedAt: time.Now().UTC(), RecordCount: count,
+		FirstEventID: first, LastEventID: last,
+		SHA256: audit.FileSHA256(content.Bytes()), ApplicationVersion: applicationVersion, Commit: commit,
 	}
-	if len(events) > 0 {
-		manifest.FirstEventID = events[0].ID
-		manifest.LastEventID = events[len(events)-1].ID
+	if count > 0 {
 		checkpoint, checkpointErr := createAuditCheckpointTx(tx, head.Sequence)
 		if checkpointErr != nil {
 			return nil, manifest, checkpointErr
@@ -55,7 +67,7 @@ func buildAuditExportTx(tx *gorm.DB, head *auditChainHead, applicationVersion, c
 	if err := auditSigner.SignManifest(&manifest); err != nil {
 		return nil, manifest, err
 	}
-	return content, manifest, nil
+	return content.Bytes(), manifest, nil
 }
 
 func VerifyAuditExport(content, manifestContent []byte) (audit.ExportManifest, error) {

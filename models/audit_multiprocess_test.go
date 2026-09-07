@@ -17,7 +17,29 @@ import (
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	"github.com/darkarmy-cyber/darkphish/internal/persistence"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+const (
+	auditProcessRetiredEvents  = auditScanBatchSize + 10
+	auditProcessRetainedEvents = auditScanBatchSize + 3
+)
+
+func guardProcessAuditScans(t *testing.T) {
+	t.Helper()
+	const name = "test:process-audit-query-bounds"
+	if err := db.Callback().Query().After("gorm:query").Register(name, func(tx *gorm.DB) {
+		switch tx.Statement.Dest.(type) {
+		case *[]auditEventRow, *[]auditCheckpointRow:
+			limit, ok := tx.Statement.Clauses["LIMIT"].Expression.(clause.Limit)
+			if !ok || limit.Limit == nil || *limit.Limit < 1 || *limit.Limit > auditScanBatchSize || limit.Offset != 0 || tx.RowsAffected > auditScanBatchSize {
+				t.Error("unbounded audit history query")
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func auditProcessConfig(t *testing.T) *config.Config {
 	t.Helper()
@@ -52,6 +74,7 @@ func TestAuditProcessHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer Close()
+	guardProcessAuditScans(t)
 	if mode == "wrong-key" || mode == "missing-mode" {
 		if err := configureAuditStore(); err == nil {
 			t.Fatal("incompatible signing configuration accepted")
@@ -128,11 +151,21 @@ func TestAuditMultiProcess(t *testing.T) {
 	if err := db.Model(&auditEventRow{}).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("requires empty audit database: count=%d err=%v", count, err)
 	}
-	for i := 0; i < 10; i++ {
+	// Both event and checkpoint history exceed a page before concurrent
+	// workers start; the retained history still exceeds a page afterwards.
+	auditCheckpointEvery = 1
+	for i := 0; i < auditProcessRetiredEvents; i++ {
 		if _, err := (databaseAuditStore{}).Append(audit.Event{Timestamp: time.Date(1999, 1, 1, 0, 0, i, 0, time.UTC), Actor: "retention-fixture", Action: "audit.old", Metadata: "{}"}); err != nil {
 			t.Fatal(err)
 		}
 	}
+	for i := 0; i < auditProcessRetainedEvents; i++ {
+		if _, err := (databaseAuditStore{}).Append(audit.Event{Timestamp: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Actor: "page-fixture", Action: "audit.retained", Metadata: "{}"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	auditCheckpointEvery = c.Audit.CheckpointInterval
+	guardProcessAuditScans(t)
 	for i := 0; i < 12; i++ {
 		if err := db.Transaction(func(tx *gorm.DB) error {
 			return enqueueAuditEvent(tx, audit.Event{Timestamp: time.Now().UTC(), Actor: "durable-outbox-test", ActorType: "system", Action: "audit.outbox.concurrent", Result: "success", Metadata: "{}"})
@@ -186,14 +219,14 @@ func TestAuditMultiProcess(t *testing.T) {
 		return
 	}
 	report, err := VerifyAuditChain()
-	if err != nil || report.RecordCount != 162 {
+	if err != nil || report.RecordCount != 162+auditProcessRetainedEvents {
 		t.Fatalf("chain count=%d err=%v", report.RecordCount, err)
 	}
 	var head auditChainHead
 	if err := db.First(&head).Error; err != nil {
 		t.Fatal(err)
 	}
-	if head.Sequence != 172 || head.RetiredSequence != 10 {
+	if head.Sequence != 162+auditProcessRetainedEvents+auditProcessRetiredEvents || head.RetiredSequence != auditProcessRetiredEvents {
 		t.Fatalf("head %+v", head)
 	}
 	if err := initializeAuditChain(); err != nil {
@@ -209,5 +242,5 @@ func TestAuditMultiProcess(t *testing.T) {
 			t.Fatalf("negative signer process: %v %s", err, output)
 		}
 	}
-	t.Logf("PASS %s: six independent OS processes, four writers, two verify/export/checkpoint/retention workers; 240 direct delivery attempts plus 12 concurrently flushed outbox rows, 162 unique events, final sequence 172, retained anchor 10, valid hashes and signatures; wrong/missing shared signing configuration rejected", c.DBName)
+	t.Logf("PASS %s: six independent OS processes, four writers, two verify/export/checkpoint/retention workers; 240 direct delivery attempts plus 12 concurrently flushed outbox rows; %d unique retained events, final sequence %d, retained anchor %d; bounded queries across event/checkpoint pages, valid hashes and signatures; wrong/missing shared signing configuration rejected", c.DBName, report.RecordCount, head.Sequence, head.RetiredSequence)
 }

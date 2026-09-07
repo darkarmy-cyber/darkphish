@@ -17,6 +17,17 @@ resolve through GitHub to the complete expected SHA; ref-name shadowing and
 ambiguous resolution block the operation. A reaction or a user-posted copy of a
 bot message is not review evidence.
 
+The newest clean result for each kind must match; the adapter never searches
+backward past a stale result. Connector findings arrive as formal PR reviews,
+not clean issue comments. Any later formal connector review invalidates earlier
+clean results even if its body is edited, its threads resolved or it is dismissed.
+Because the preview summary provides no immutable review-run ID, the conservative
+rule requires **both** fresh clean comments after every formal connector result,
+including a late result for an older head. Equal-second timestamps are ambiguous
+and block. Unknown newer connector messages and a summary advertising findings
+also block, even without a review thread. Reactions alone cannot
+clear this condition; obtain fresh review results, normally on the corrected head.
+
 Comment creation identity alone is insufficient because maintainers can edit
 comments. A final GraphQL read checks the current author/editor identities and
 compares the exact content and timestamps of all three evidence comments. All

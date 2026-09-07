@@ -32,7 +32,7 @@ function fixture() {
     lastEditedAt: c.id === 1 ? c.updated_at : null, author: bot, editor: c.id === 1 ? bot : null }))
   f.query = async body => {
     assert.ok(!body.query.includes("mutation"))
-    if (body.query.includes("nodes(ids:")) return { data: { nodes: f.nodes() } }
+    if (body.query.includes("nodes(ids:")) return { data: { nodes: f.nodes().filter(node => body.variables.ids.includes(`node-${node.databaseId}`)) } }
     return { data: { repository: { pullRequest: { headRefOid: f.threadSHA || sha,
       reviewThreads: { nodes: f.threads, pageInfo: { hasNextPage: false, endCursor: null } } } } } }
   }
@@ -146,6 +146,60 @@ test("pagination includes later comments and later unresolved threads; malformed
   await assert.rejects(f.verify(), /Unresolved/)
   f.get = async () => ({ invalid: "page" })
   await assert.rejects(f.verify(), /Invalid review evidence page/)
+})
+
+test("later findings invalidate historical clean results even on the same head with resolved threads", async () => {
+  for (const kind of ["Code", "Security", "unrecognized edited format"]) {
+    for (const state of ["COMMENTED", "DISMISSED"]) {
+      const f = fixture()
+      f.reviews = [{ id: 4, user: { ...f.comments[0].user }, state, commit_id: sha,
+        submitted_at: at(9), body: `Codex ${kind} Review: findings` }]
+      f.threads = [{ isResolved: true }]
+      await assert.rejects(f.verify(), /later connector review supersedes/)
+      assert.equal(await f.merge(), false)
+      assert.deepEqual(f.writes, [])
+    }
+  }
+  const f = fixture()
+  // Fresh clean results may supersede an earlier finding; equality at the API's
+  // one-second timestamp precision is ambiguous and must not pass.
+  f.reviews = [{ id: 4, user: { ...f.comments[0].user }, state: "COMMENTED", commit_id: sha, submitted_at: at(3) }]
+  assert.equal((await f.verify()).head, sha)
+  f.reviews[0].submitted_at = at(4)
+  await assert.rejects(f.verify(), /supersedes/)
+  f.reviews[0].commit_id = "d".repeat(40)
+  await assert.rejects(f.verify(), /supersedes/)
+  f.reviews[0].submitted_at = "malformed"
+  await assert.rejects(f.verify(), /timestamp/)
+})
+
+test("the latest result cannot fall back to an older clean comment or ignore an unknown later result", async () => {
+  for (const index of [1, 2]) {
+    const f = fixture(), later = structuredClone(f.comments[index])
+    later.id = 4; later.node_id = "node-4"
+    later.body = later.body.replace(sha.slice(0, 10), "d".repeat(10))
+    f.comments.push(later)
+    await assert.rejects(f.verify(), /Latest clean .* stale/)
+  }
+  const f = fixture(), unknown = structuredClone(f.comments[1])
+  unknown.id = 4; unknown.node_id = "node-4"; unknown.body = "New connector result format: finding"
+  unknown.created_at = at(9); unknown.updated_at = at(9)
+  f.comments.push(unknown)
+  await assert.rejects(f.verify(), /later unrecognized connector result/)
+  unknown.created_at = at(3); unknown.updated_at = at(3)
+  assert.equal((await f.verify()).head, sha)
+})
+
+test("a latest summary reporting findings blocks even without any review thread", async () => {
+  for (const heading of ["### Security findings", "### Code Review Findings", "#### Advisory findings (1)"]) {
+    const f = fixture()
+    f.comments[0].body += `\n${heading}\nA later result reports an issue.`
+    assert.deepEqual(f.threads, [])
+    assert.deepEqual(f.reviews, [])
+    await assert.rejects(f.verify(), /Latest review summary reports findings/)
+    assert.equal(await f.merge(), false)
+    assert.deepEqual(f.writes, [])
+  }
 })
 
 test("one synchronous protected merge uses all gates and never creates auto-merge", async () => {

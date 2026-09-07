@@ -40,6 +40,7 @@ export function reviewEvidence(repo, pr, comments, now = Date.now()) {
   const summaries = trusted.filter(comment => typeof comment.body === "string" && comment.body.startsWith(summaryMarker + "\n"))
   requireReview(summaries.length === 1, "Missing or ambiguous trusted review summary")
   const summary = summaries[0]
+  requireReview(!/^#{1,6}\s+[^\n]*\bfindings?\b/im.test(summary.body), "Latest review summary reports findings")
   const markers = [...summary.body.matchAll(/<!-- codex-security-review:v1 (.*?) -->/g)]
   requireReview(markers.length === 1, "Missing or ambiguous explicit security review marker")
   let security
@@ -57,14 +58,22 @@ export function reviewEvidence(repo, pr, comments, now = Date.now()) {
   for (const [kind, message] of Object.entries(cleanMessages)) {
     const candidates = trusted.filter(comment => typeof comment.body === "string" && comment.body.startsWith(message))
       .sort((a, b) => b.id - a.id)
-    for (const comment of candidates) {
+    // Never fall back to a historical clean result when the newest one is for
+    // another head or is malformed. Formal reviews with findings are checked
+    // separately below; a clean issue comment is not the entire result history.
+    const comment = candidates[0]
+    if (comment) {
       const matches = [...comment.body.matchAll(/^\*\*Reviewed commit:\*\* `([a-f0-9]{10,40})`$/gm)]
-      if (matches.length !== 1 || !pr.head.sha.startsWith(matches[0][1])) continue
+      requireReview(matches.length === 1 && pr.head.sha.startsWith(matches[0][1]), `Latest clean ${kind} result is malformed or stale`)
       requireReview(timestamp(comment.created_at) <= completed[kind] && timestamp(comment.updated_at) <= latest, "Clean review evidence is newer than its completion")
-      clean[kind] = { id: comment.id, nodeID: comment.node_id, body: comment.body, updatedAt: comment.updated_at, prefix: matches[0][1] }
-      break
+      clean[kind] = { id: comment.id, nodeID: comment.node_id, body: comment.body, createdAt: comment.created_at, updatedAt: comment.updated_at, prefix: matches[0][1] }
     }
     requireReview(clean[kind], `Missing clean ${kind} review for this head`)
+  }
+  const firstClean = Math.min(...Object.values(clean).map(item => timestamp(item.createdAt)))
+  for (const comment of trusted) {
+    if (comment.id === summary.id || Object.values(cleanMessages).some(message => comment.body?.startsWith(message))) continue
+    requireReview(timestamp(comment.created_at) < firstClean, "A later unrecognized connector result supersedes clean review evidence")
   }
   const records = [{ id: summary.id, nodeID: summary.node_id, body: summary.body, updatedAt: summary.updated_at }, ...Object.values(clean)]
   requireReview(records.every(record => typeof record.nodeID === "string" && record.nodeID.length > 0 && record.nodeID.length < 128), "Missing review comment node identity")
@@ -102,6 +111,18 @@ export async function verifyPullRequestReviews(repo, pr, { get, query, now = Dat
   for (const review of reviews.sort((a, b) => a.id - b.id)) {
     requireReview(typeof review.user?.login === "string" && ["APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED", "PENDING"].includes(review.state), "Malformed GitHub review")
     requireReview(review.state !== "PENDING", "A GitHub review is still pending")
+    // Connector findings are formal PR reviews, not clean issue comments.
+    // Immutable submission identity/time remains a barrier even if the body is
+    // edited, the review dismissed or all its threads marked resolved. Since
+    // the preview API exposes no run ID, conservatively require BOTH fresh clean
+    // results after any connector formal review (also a late older-head result).
+    if (review.user.id === 199175422 || review.user.login === "chatgpt-codex-connector[bot]") {
+      requireReview(review.user.id === 199175422 && review.user.type === "Bot" &&
+        review.user.login === "chatgpt-codex-connector[bot]" && /^[a-f0-9]{40}$/.test(review.commit_id || ""), "Malformed connector review identity")
+      const submitted = timestamp(review.submitted_at)
+      requireReview(Object.values(evidence.clean).every(item => timestamp(item.createdAt) > submitted),
+        "A later connector review supersedes clean results; both fresh clean reviews are required")
+    }
     if (["APPROVED", "CHANGES_REQUESTED"].includes(review.state)) opinions.set(review.user.login, review.state)
   }
   requireReview(![...opinions.values()].includes("CHANGES_REQUESTED"), "A reviewer still requests changes")

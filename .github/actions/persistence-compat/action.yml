@@ -1,5 +1,5 @@
-name: Verify v0.4 persistence compatibility
-description: Seed a disposable database with the immutable v0.4 runtime, then open it with the candidate without export/import.
+name: Verify released persistence compatibility
+description: Seed a disposable database with an immutable released runtime, then open it with the candidate without export/import.
 inputs:
   fixture:
     description: Isolated fixture directory name
@@ -7,6 +7,9 @@ inputs:
   baseline:
     description: Immutable released source SHA for the seed runtime
     default: ae36e9c10ef23c1b20438bd219a3d51c9d9b47cc
+  coordination:
+    description: Include complete 0.6 coordination schema and metadata in unchanged-startup checks (1 or 0)
+    default: '0'
   backend:
     description: Fixed supported database backend
     required: true
@@ -29,6 +32,7 @@ runs:
         DARKPHISH_COMPAT_DSN: ${{ inputs.dsn }}
         DARKPHISH_COMPAT_PHASE: seed
         BASELINE_SHA: ${{ inputs.baseline }}
+        DARKPHISH_COMPAT_COORDINATION: ${{ inputs.coordination }}
       run: |
         case "$DARKPHISH_COMPAT_BACKEND" in sqlite3|mysql|postgres) ;; *) exit 1 ;; esac
         export DARKPHISH_COMPAT_DIRECTORY="$RUNNER_TEMP/$FIXTURE_NAME-$DARKPHISH_COMPAT_BACKEND"
@@ -46,6 +50,7 @@ runs:
         DARKPHISH_COMPAT_BACKEND: ${{ inputs.backend }}
         DARKPHISH_COMPAT_DSN: ${{ inputs.dsn }}
         DARKPHISH_COMPAT_PHASE: check
+        DARKPHISH_COMPAT_COORDINATION: ${{ inputs.coordination }}
       run: |
         case "$DARKPHISH_COMPAT_BACKEND" in sqlite3|mysql|postgres) ;; *) exit 1 ;; esac
         export DARKPHISH_COMPAT_DIRECTORY="$RUNNER_TEMP/$FIXTURE_NAME-$DARKPHISH_COMPAT_BACKEND"

@@ -55,6 +55,9 @@ of legacy hash and receipt backfill. Existing tamper/retention/security tests st
 in force. MySQL/PostgreSQL six-process tests start with 266 retireable and 259
 retained events/checkpoints, then run the original 240 delivery attempts and 12
 outbox rows: 421 retained events, head sequence 687, retention anchor 266.
+Native prepublication and downloaded-release smoke also cross a page boundary
+with 270 denied loopback requests across three server processes, then restart,
+verify the chain/export, and match every request ID to exactly one durable event.
 
 There is no new Goose migration. Back up database and signing keys and perform a
 coordinated upgrade; existing pre-0.6 migration and signing-key requirements still

@@ -75,10 +75,13 @@ async function stopAll() {
   }))
 }
 const expected = new Set()
+// Cross the runtime's 256-row history page boundary in the actual packaged
+// executable, not just in tests compiled directly from the source tree.
+const requestsPerServer = 90
 try {
   await Promise.all(configs.map(start))
   await Promise.all(configs.map(async config => {
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < requestsPerServer; i++) {
       const response = await fetch(`${config.base}/api/campaigns/`, {signal: AbortSignal.timeout(30000)})
       assert.equal(response.status, 401, 'unauthenticated request must remain denied')
       const requestID = response.headers.get('x-request-id')
@@ -101,7 +104,8 @@ try {
   const observed = events.filter(event => expected.has(event.request_id))
   assert.equal(observed.length, expected.size, 'every request must have exactly one durable audit event')
   assert.equal(new Set(observed.map(event => event.request_id)).size, expected.size)
-  console.log(`PASS ${backend} native binary ${expectedSHA}: 3 independent servers, 60 concurrent denied requests, exact durable event coverage, restart, valid chain, signed export verification`)
+  assert.equal(expected.size, configs.length * requestsPerServer)
+  console.log(`PASS ${backend} native binary ${expectedSHA}: 3 independent servers, ${expected.size} concurrent denied requests across multiple audit pages, exact durable event coverage, restart, valid chain, signed export verification`)
 } finally {
   await stopAll()
 }

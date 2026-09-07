@@ -2,6 +2,7 @@ import { appendFileSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { api, assetDisposition, assertReleaseState, generatedPath, git, greenCommit, pages, protectedMain, repository, verifyChecksums, versionTag } from "./release-lib.mjs"
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
+import { verifyPullRequestReviews } from "./review-gate.mjs"
 
 async function source() {
   const repo = repository()
@@ -13,6 +14,9 @@ async function source() {
   const prs = await pages(`repos/${repo}/commits/${sha}/pulls`)
   const pr = prs.find((item) => item.merged_at && item.merge_commit_sha === sha && item.base.ref === "main" && item.head.ref === `release/${tag}` && item.title === `release: Darkphish ${version}`)
   if (!pr) return null
+  await verifyPullRequestReviews(repo, await api(`repos/${repo}/pulls/${pr.number}`), {
+    get: api, query: body => api("graphql", { method: "POST", body }),
+  })
   await verifyCodeQLBaseline(repo, sha)
   const files = await pages(`repos/${repo}/pulls/${pr.number}/files`)
   if (!files.length || files.some((file) => !generatedPath(file.filename))) throw new Error("release PR includes application changes")
@@ -77,6 +81,13 @@ async function run() {
   }
   await protectedMain(repo, sha)
   await verifyCodeQLBaseline(repo, sha)
+  // Recheck review evidence before exposing the draft, not just before building.
+  const finalSource = await source()
+  if (!finalSource || finalSource.sha !== sha || finalSource.tag !== tag) throw new Error("release source or review readiness changed before publication")
+  if (finalSource.state === "published") {
+    console.log("Release was already published; leaving it immutable.")
+    return
+  }
   await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, make_latest: "true" } })
   console.log(`Published https://github.com/${repo}/releases/tag/${tag}`)
 }

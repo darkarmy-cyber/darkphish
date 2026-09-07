@@ -1,30 +1,50 @@
-name: Protected native auto-merge
+name: Protected reviewed merge
 
 on:
-  pull_request:
-    types: [labeled, synchronize, reopened, ready_for_review]
+  pull_request_target:
+    types: [labeled, unlabeled, synchronize, reopened, ready_for_review, converted_to_draft]
+  schedule:
+    - cron: '2,17,32,47 * * * *'
+  workflow_dispatch:
+    inputs:
+      number:
+        description: Internal engineering PR number (empty reconciles opted-in PRs)
+        required: false
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+
+concurrency:
+  group: reviewed-engineering-merge
+  cancel-in-progress: false
 
 jobs:
   enable:
     if: >-
-      github.event.pull_request.draft == false &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'pull_request_target' || (
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(github.event.pull_request.labels.*.name, 'codex-automerge') &&
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)))
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+      checks: read
+      security-events: read
     steps:
-      - name: Enable squash auto-merge after protected checks pass
+      # Privileged metadata operation only. Never check out a head/merge ref,
+      # install PR dependencies, restore PR caches or execute PR artifacts.
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.19.0
+      - name: Reconcile exact-head reviews and perform one protected merge
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          test "$(gh api "repos/$GH_REPO/branches/main" --jq '.protected')" = true
-          test "$(gh api "repos/$GH_REPO" --jq '.allow_auto_merge')" = true
-          pr_sha="$(gh pr view "$PR_URL" --json headRefOid --jq '.headRefOid')"
-          gh pr merge "$PR_URL" --auto --squash --match-head-commit "$pr_sha"
+          TARGET_PR_NUMBER: ${{ github.event.pull_request.number || inputs.number || '' }}
+        run: node scripts/automerge.mjs

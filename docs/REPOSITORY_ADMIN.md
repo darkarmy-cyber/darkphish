@@ -24,14 +24,17 @@ integration with failure injection. CodeQL runs Go and JavaScript/TypeScript.
 
 Enable Settings → General → Pull Requests → Allow auto-merge and Automatically
 delete head branches. Label eligible internal PRs `codex-automerge`. GitHub native
-squash auto-merge remains subject to all protections. Workflows never submit
+squash merging remains subject to all protections. Workflows never submit
 review approvals, impersonate reviewers, or use administrator merge bypasses.
 
-The supported GitHub CLI merge-when-ready operation handles both pending checks
-and already-green PRs. It is restricted to internal ready PRs targeting protected
-main, requires repository auto-merge to remain enabled, and matches the expected
-head SHA. It never uses an administrator override. GitHub's queue-only GraphQL
-mutation rejects already-clean PRs, which otherwise breaks safe release retries.
+Starting with 0.8, the reviewed merge interlock waits for completed code and
+explicit security reviews of the exact head, resolved threads, all ten checks
+and zero open CodeQL alerts. It uses one synchronous protected squash merge
+matching the full head SHA, without queuing permission for a later push. Existing
+native queues are revoked before reevaluation. Remove `codex-automerge` or mark
+the PR draft to pause merging; generated-release recovery does not restore a
+removed label. See [REVIEW_INTERLOCK.md](REVIEW_INTERLOCK.md) for evidence trust,
+workflow isolation, recovery, publication checks and the first-rollout procedure.
 
 ### Read-only bot-release approval preflight
 

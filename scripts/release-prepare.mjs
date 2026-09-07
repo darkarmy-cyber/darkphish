@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process"
 import { copyFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { api, assertGeneratedCommits, dispatchChecks, enableAutoMerge, git, greenCommit, pages, protectedMain, repository, versionTag } from "./release-lib.mjs"
+import { api, assertGeneratedCommits, dispatchChecks, mergeReviewedPullRequest, git, greenCommit, pages, protectedMain, repository, versionTag } from "./release-lib.mjs"
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 
 async function prepare() {
@@ -74,17 +74,20 @@ async function prepare() {
     git("push", "origin", `${releaseSHA}:refs/heads/${branch}`)
   }
   let pr = prs[0]
+  let created = false
   if (!pr) {
     try {
       pr = await api(`repos/${repo}/pulls`, { method: "POST", body: { base: "main", head: branch, title: `release: Darkphish ${version}`, body: `Prepare Darkphish ${version} from protected main after all required checks.\n\nThis PR contains only generated changelog aggregation and consumed-fragment removal. Native publication starts only after this PR passes the same required checks and merges through repository protection.` } })
+      created = true
     } catch (error) {
       throw new Error(`${error.message}. Enable Settings > Actions > General > Workflow permissions > Allow GitHub Actions to create and approve pull requests. The generated branch is safe to reuse; no review approval is fabricated.`)
     }
   }
-  await api(`repos/${repo}/issues/${pr.number}/labels`, { method: "POST", body: { labels: ["codex-automerge"] } })
+  // Removing this label is a durable merge pause; recovery must not restore it.
+  if (created) await api(`repos/${repo}/issues/${pr.number}/labels`, { method: "POST", body: { labels: ["codex-automerge"] } })
   await dispatchChecks(repo, branch)
-  await enableAutoMerge(repo, await api(`repos/${repo}/pulls/${pr.number}`))
-  console.log(`Prepared ${pr.html_url} at ${releaseSHA}; native auto-merge respects all branch rules.`)
+  await mergeReviewedPullRequest(repo, await api(`repos/${repo}/pulls/${pr.number}`))
+  console.log(`Prepared ${pr.html_url} at ${releaseSHA}; recovery requires exact-head code and explicit security review before protected merge.`)
 }
 
 prepare().catch((error) => { console.error(error.message); process.exitCode = 1 })

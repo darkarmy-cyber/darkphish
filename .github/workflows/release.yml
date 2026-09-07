@@ -26,6 +26,7 @@ jobs:
       actions: read
       checks: read
       pull-requests: read
+      issues: read
       security-events: read
     if: >-
       github.ref == 'refs/heads/main' &&
@@ -204,6 +205,7 @@ jobs:
       actions: read
       checks: read
       pull-requests: read
+      issues: read
       id-token: write
       attestations: write
       security-events: read

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
-import { assetDisposition, assertGeneratedCommits, assertReleaseState, checksPassed, generatedPath, protectedMergeArguments, verifyChecksums, versionTag } from "./release-lib.mjs"
+import { assetDisposition, assertGeneratedCommits, assertReleaseState, checksPassed, generatedPath, protectedMergeRequest, verifyChecksums, versionTag } from "./release-lib.mjs"
 
 test("require every latest trusted check to succeed", () => {
   const check = { id: 1, name: "Go", app: { slug: "github-actions" }, status: "completed", conclusion: "success" }
@@ -60,16 +60,18 @@ test("preparation cannot replace a pending publication run", () => {
   assert.match(publish, /github\.event_name != 'workflow_run'/)
 })
 
-test("merge-when-ready pins a safe internal head and never requests bypass", () => {
+test("protected synchronous merge pins a safe internal head without a queue or bypass", () => {
   const repo = "owner/repository"
-  const pr = { number: 42, draft: false, base: { ref: "main" }, head: { sha: "a".repeat(40), repo: { full_name: repo } } }
+  const pr = { number: 42, state: "open", draft: false, base: { ref: "main" }, head: { sha: "a".repeat(40), repo: { full_name: repo } } }
   for (const mergeable_state of ["clean", "blocked", "unstable"]) {
-    const args = protectedMergeArguments(repo, { ...pr, mergeable_state })
-    assert.deepEqual(args, ["pr", "merge", "42", "--repo", repo, "--auto", "--squash", "--match-head-commit", pr.head.sha])
-    assert.equal(args.includes("--admin"), false)
+    assert.deepEqual(protectedMergeRequest(repo, { ...pr, mergeable_state }), {
+      path: `repos/${repo}/pulls/42/merge`, method: "PUT", body: { sha: pr.head.sha, merge_method: "squash" },
+    })
   }
-  assert.throws(() => protectedMergeArguments(repo, { ...pr, draft: true }))
-  assert.throws(() => protectedMergeArguments(repo, { ...pr, base: { ref: "unprotected" } }))
-  assert.throws(() => protectedMergeArguments(repo, { ...pr, head: { ...pr.head, sha: "--admin" } }))
-  assert.throws(() => protectedMergeArguments(repo, { ...pr, head: { ...pr.head, repo: { full_name: "outside/fork" } } }))
+  assert.throws(() => protectedMergeRequest(repo, { ...pr, draft: true }))
+  assert.throws(() => protectedMergeRequest(repo, { ...pr, state: "closed" }))
+  assert.throws(() => protectedMergeRequest(repo, { ...pr, base: { ref: "unprotected" } }))
+  assert.throws(() => protectedMergeRequest(repo, { ...pr, head: { ...pr.head, sha: "--admin" } }))
+  assert.throws(() => protectedMergeRequest(repo, { ...pr, head: { ...pr.head, repo: { full_name: "outside/fork" } } }))
+  assert.throws(() => protectedMergeRequest("../repository", pr))
 })

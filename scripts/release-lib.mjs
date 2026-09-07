@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process"
 import { readFileSync } from "node:fs"
+import { ReviewGateError, verifyPullRequestReviews } from "./review-gate.mjs"
 
 export const requiredChecks = JSON.parse(readFileSync(new URL("../.github/required-checks.json", import.meta.url), "utf8"))
 export const generatedPath = (path) => path === "VERSION" || path === "CHANGELOG.md" || /^changes\/[a-z0-9][a-z0-9-]*\.md$/.test(path)
@@ -32,10 +33,13 @@ export function assetDisposition(existing, digest, size) {
   if (existing.digest !== `sha256:${digest}` || existing.size !== size) throw new Error("existing release asset differs; refusing to replace a released binary")
   return "reuse"
 }
-export function protectedMergeArguments(repo, pr) {
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || !Number.isSafeInteger(pr.number) || pr.number < 1 || !/^[a-f0-9]{40}$/.test(pr.head?.sha || "")) throw new Error("invalid protected merge target")
-  if (pr.draft || pr.base?.ref !== "main" || pr.head.repo?.full_name !== repo) throw new Error("only internal ready main pull requests are eligible")
-  return ["pr", "merge", String(pr.number), "--repo", repo, "--auto", "--squash", "--match-head-commit", pr.head.sha]
+export function protectedMergeRequest(repo, pr) {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || repo.split("/").some(part => part === "." || part === "..") ||
+      !Number.isSafeInteger(pr.number) || pr.number < 1 || !/^[a-f0-9]{40}$/.test(pr.head?.sha || "")) throw new Error("invalid protected merge target")
+  if (pr.draft !== false || pr.state !== "open" || pr.base?.ref !== "main" || pr.head.repo?.full_name !== repo) throw new Error("only internal ready main pull requests are eligible")
+  // Synchronous REST merge: protections still apply, and the full head SHA is
+  // a compare-and-swap condition. No queued permission can survive a later push.
+  return { path: `repos/${repo}/pulls/${pr.number}/merge`, method: "PUT", body: { sha: pr.head.sha, merge_method: "squash" } }
 }
 export function verifyChecksums(manifest, hashes) {
   const seen = new Set()
@@ -57,7 +61,7 @@ export function repository() {
 }
 export async function api(path, { method = "GET", body, missing = false } = {}) {
   const response = await fetch(`https://api.github.com/${path}`, {
-    method,
+    method, redirect: "error", signal: AbortSignal.timeout(15000),
     headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${process.env.GH_TOKEN || process.env.GITHUB_TOKEN}`, "X-GitHub-Api-Version": "2022-11-28" },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
@@ -69,14 +73,16 @@ export async function api(path, { method = "GET", body, missing = false } = {}) 
   }
   return response.status === 204 ? null : response.json()
 }
-export async function pages(path, key) {
+export async function pages(path, key, request = api) {
   const all = []
-  for (let page = 1; ; page++) {
-    const value = await api(`${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${page}`)
+  for (let page = 1; page <= 100; page++) {
+    const value = await request(`${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${page}`)
     const rows = key ? value[key] : value
+    if (!Array.isArray(rows) || rows.length > 100) throw new Error("invalid GitHub API page")
     all.push(...rows)
     if (rows.length < 100) return all
   }
+  throw new Error("GitHub pagination limit reached; manual investigation required")
 }
 export async function protectedMain(repo, sha) {
   const metadata = await api(`repos/${repo}`)
@@ -96,14 +102,50 @@ export async function dispatchChecks(repo, branch) {
     await api(`repos/${repo}/actions/workflows/${workflow}/dispatches`, { method: "POST", body: { ref: branch } })
   }
 }
-export async function enableAutoMerge(repo, pr) {
-  const args = protectedMergeArguments(repo, pr)
-  const metadata = await api(`repos/${repo}`)
-  const base = await api(`repos/${repo}/branches/${pr.base.ref}`)
-  if (!metadata.allow_auto_merge || !base.protected) throw new Error("native auto-merge requires enabled repository auto-merge and a protected base branch")
-  if (pr.draft || pr.head.repo?.full_name !== repo) throw new Error("only internal ready pull requests are eligible")
-  if (pr.auto_merge) return
-  // The supported CLI handles both pending checks and an already-clean PR.
-  // No admin bypass: GitHub enforces every rule against this exact head.
-  execFileSync("gh", args, { stdio: "inherit" })
+export async function mergeReviewedPullRequest(repo, expected, {
+  request = api, verifyReviews = verifyPullRequestReviews,
+  cancelQueued = args => execFileSync("gh", args, { stdio: "inherit" }), log = console.log,
+} = {}) {
+  // Validate identity before constructing paths or invoking a subprocess.
+  protectedMergeRequest(repo, { ...expected, state: "open", draft: false })
+  const path = `repos/${repo}/pulls/${expected.number}`
+  const pr = await request(path)
+  if (pr?.number !== expected.number) throw new Error("GitHub returned an inconsistent PR identity")
+  const wait = reason => { log(`PR #${expected.number}: ${reason}; no merge queued.`); return false }
+  if (pr.state !== "open") return wait("already closed")
+  if (pr.head?.repo?.full_name !== repo || pr.base?.ref !== "main") return wait("target changed")
+  const metadata = await request(`repos/${repo}`), base = await request(`repos/${repo}/branches/main`)
+  if (metadata.full_name !== repo || metadata.default_branch !== "main" || metadata.private !== true || metadata.fork !== false ||
+      metadata.allow_auto_merge !== true || base.protected !== true) throw new Error("reviewed merging requires the protected standalone private main repository")
+  if (pr.auto_merge) {
+    await cancelQueued(["pr", "merge", String(pr.number), "--repo", repo, "--disable-auto"])
+    log(`PR #${pr.number}: revoked legacy queued auto-merge before evaluating current reviews.`)
+  }
+  if (pr.head.sha !== expected.head.sha) return wait("head changed")
+  if (!/^[a-f0-9]{40}$/.test(base.commit?.sha || "") || pr.base.sha !== base.commit.sha) return wait("base snapshot changed")
+  const optedIn = value => value.draft === false && value.labels?.some(label => label.name === "codex-automerge")
+  if (!optedIn(pr)) return wait("draft or auto-merge label absent")
+  const green = async () => checksPassed(await pages(`repos/${repo}/commits/${pr.head.sha}/check-runs?filter=latest`, "check_runs", request))
+  if (!await green()) return wait("required checks pending or unsuccessful")
+  if ((await pages(`repos/${repo}/code-scanning/alerts?tool_name=CodeQL&state=open`, undefined, request)).length) return wait("open CodeQL alerts")
+  try {
+    await verifyReviews(repo, pr, { get: request, query: body => request("graphql", { method: "POST", body }) })
+  } catch (error) {
+    if (!(error instanceof ReviewGateError)) throw error
+    return wait(error.message)
+  }
+  const finalPR = await request(path), finalBase = await request(`repos/${repo}/branches/main`)
+  if (finalPR.number === pr.number && finalPR.auto_merge && finalPR.head?.repo?.full_name === repo && finalPR.base?.ref === "main") {
+    await cancelQueued(["pr", "merge", String(pr.number), "--repo", repo, "--disable-auto"])
+    return wait("revoked a concurrent native auto-merge queue")
+  }
+  if (finalPR.number !== pr.number || finalPR.state !== "open" || finalPR.head?.sha !== pr.head.sha || finalPR.head.repo?.full_name !== repo ||
+      finalPR.base?.ref !== "main" || finalPR.base.sha !== pr.base.sha || finalBase.commit?.sha !== base.commit?.sha ||
+      finalBase.protected !== true || !optedIn(finalPR) || finalPR.mergeable !== true || finalPR.mergeable_state !== "clean") return wait("PR or protected base is not stably ready")
+  if (!await green()) return wait("checks changed during review verification")
+  const merge = protectedMergeRequest(repo, finalPR)
+  const result = await request(merge.path, { method: merge.method, body: merge.body })
+  if (result?.merged !== true || !/^[a-f0-9]{40}$/.test(result.sha || "")) throw new Error("GitHub did not confirm the protected merge; inspect current PR state before retrying")
+  log(`PR #${pr.number}: protected reviewed squash merge ${result.sha}, expected head ${pr.head.sha}.`)
+  return true
 }

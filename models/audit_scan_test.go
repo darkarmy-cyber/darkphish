@@ -112,7 +112,7 @@ func (s *ModelsSuite) TestAuditScanFailureAndRetryDoNotPublishPartialExport(c *c
 	appendIntegrityEvents(c, auditScanBatchSize+1)
 	const name = "test:audit-page-failure"
 	injected := errors.New("injected second audit page failure")
-	var failure error = injected
+	failure := injected
 	remaining := 1
 	c.Assert(db.Callback().Query().After("gorm:query").Register(name, func(tx *gorm.DB) {
 		if _, ok := tx.Statement.Dest.(*[]auditEventRow); ok && strings.Contains(tx.Statement.SQL.String(), "chain_sequence >") && remaining > 0 {

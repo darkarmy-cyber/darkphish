@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -27,8 +27,8 @@ test("release recovery aggregates additional 0.3 fragments without losing histor
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-test("release metadata uses validated fragment targets before aggregation", () => {
-  for (const [current, target] of [["0.3.0", "0.4.0"], ["0.3.1", "0.3.1"], ["0.3.0", "0.3.0"]]) {
+test("release metadata accepts current, next patch, and next minor targets", () => {
+  for (const [current, target] of [["0.3.0", "0.4.0"], ["0.3.0", "0.3.1"], ["0.3.1", "0.3.2"], ["0.3.1", "0.3.1"], ["0.3.0", "0.3.0"]]) {
     const root = mkdtempSync(join(tmpdir(), "darkphish-target-test-"))
     try {
       mkdirSync(join(root, "scripts"))
@@ -42,6 +42,23 @@ test("release metadata uses validated fragment targets before aggregation", () =
       assert.equal(readFileSync(join(root, "VERSION"), "utf8"), `${current}\n`)
       execFileSync(process.execPath, [join(root, "scripts/changelog.mjs"), "prepare"])
       assert.equal(readFileSync(join(root, "VERSION"), "utf8"), `${target}\n`)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  }
+})
+
+test("release metadata rejects skipped patch and other unsupported targets", () => {
+  for (const target of ["0.3.2", "0.5.0", "1.0.0"]) {
+    const root = mkdtempSync(join(tmpdir(), "darkphish-invalid-target-test-"))
+    try {
+      mkdirSync(join(root, "scripts"))
+      mkdirSync(join(root, "changes"))
+      copyFileSync(new URL("changelog.mjs", import.meta.url), join(root, "scripts/changelog.mjs"))
+      writeFileSync(join(root, "VERSION"), "0.3.0\n")
+      writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n")
+      writeFileSync(join(root, "changes/fix.md"), `---\ncategory: Fixed\nversion: ${target}\n---\n- invalid release target\n`)
+      const result = spawnSync(process.execPath, [join(root, "scripts/changelog.mjs"), "validate"], { encoding: "utf8" })
+      assert.notEqual(result.status, 0)
+      assert.match(result.stderr, /expected 0\.3\.0, next patch 0\.3\.1, or next minor 0\.4\.0/)
     } finally { rmSync(root, { recursive: true, force: true }) }
   }
 })

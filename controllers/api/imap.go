@@ -56,9 +56,24 @@ func (as *Server) IMAPServer(w http.ResponseWriter, r *http.Request) {
 			JSONResponse(w, models.Response{Success: false, Message: "Invalid data. Please check your IMAP settings."}, http.StatusBadRequest)
 			return
 		}
+		uid := ctx.Get(r, "user_id").(int64)
+		// Passwords are write-only and are never returned by GET. An empty password
+		// on an update therefore means "keep the existing protected password", not
+		// "replace it with an empty password". A first-time configuration still
+		// reaches model validation and requires an explicit password.
+		if im.Password == "" {
+			existing, getErr := models.GetIMAP(uid)
+			if getErr != nil {
+				JSONResponse(w, models.Response{Success: false, Message: getErr.Error()}, http.StatusInternalServerError)
+				return
+			}
+			if len(existing) > 0 {
+				im.Password = existing[0].Password
+			}
+		}
 		im.ModifiedDate = time.Now().UTC()
-		im.UserId = ctx.Get(r, "user_id").(int64)
-		err = models.PostIMAP(&im, ctx.Get(r, "user_id").(int64))
+		im.UserId = uid
+		err = models.PostIMAP(&im, uid)
 		if err != nil {
 			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusInternalServerError)
 			return

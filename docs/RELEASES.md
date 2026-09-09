@@ -11,13 +11,17 @@ for exceptional fixes to an already released minor. The project never derives
 its next number from historical Gophish versions.
 
 Every runtime pull request adds a structured file under `changes/`. It may
-target the current unreleased version or exactly the next minor. CI validates
-the fragment and requires one for runtime changes. After merge to a protected
-main branch and successful CI, release preparation aggregates fragments into
-`CHANGELOG.md`, removes consumed files, and opens one `release/vX.Y.0` pull
-request. Recovery fragments extend the existing unreleased section without
-duplicating entries. Darkphish 0.3 recovery does not advance VERSION.
-Required checks and repository approval policy remain authoritative.
+target the current unreleased version, exactly the next minor, or the next patch
+of the current released minor when the change is an exceptional production
+hotfix. Patch hotfixes must remain narrowly scoped to regression, security,
+data-integrity, or production-blocking fixes and must not introduce unrelated
+features. CI validates the fragment and requires one for runtime changes. After
+merge to a protected main branch and successful CI, release preparation
+aggregates fragments into `CHANGELOG.md`, removes consumed files, and opens the
+corresponding release pull request. Recovery fragments extend the existing
+unreleased section without duplicating entries. Required checks and repository
+approval policy remain authoritative for patch releases exactly as for normal
+minor releases.
 
 After the release pull request merges, the native release workflow reruns tests,
 builds the supported OS/architecture archives with embedded build metadata,
@@ -30,7 +34,7 @@ required stage fails, and container publication is not part of this process.
 
 Feature/fix branch → PR → CI → trusted `codex-automerge` eligibility → protected
 merge → green main → release preparation → release PR → the same required checks
-→ protected release merge → native binaries → draft verification → `vX.Y.0`.
+→ protected release merge → native binaries → draft verification → `vX.Y.Z`.
 
 The single-maintainer policy requires PRs and checks, resolved conversations and
 up-to-date branches, with zero outside approvals. No workflow fabricates a review.
@@ -65,4 +69,4 @@ different archive bytes, investigate the draft instead of overwriting them.
 The embedded UTC build timestamp comes from the protected release commit's
 committer timestamp and stays stable across retries. Binaries include version
 and SHA and use `-trimpath`. Tags are immutable; GitHub removes merged release
-branches. Recovery never automatically bumps to 0.4.
+branches. Recovery never automatically bumps to the next minor.

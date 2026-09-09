@@ -18,6 +18,11 @@ function version() {
   return value
 }
 
+function nextPatch(value) {
+  const [major, minor, patch] = value.split(".").map(Number)
+  return `${major}.${minor}.${patch + 1}`
+}
+
 function nextMinor(value) {
   const [major, minor] = value.split(".").map(Number)
   return `${major}.${minor + 1}.0`
@@ -45,12 +50,13 @@ function changedFiles(base) {
 function validate(requirePRFragment = false, base = "") {
   const current = version()
   const values = fragments()
-	const targets = new Set(values.map((fragment) => fragment.version))
-	if (targets.size > 1) throw new Error("all changelog fragments must target the same release")
+  const targets = new Set(values.map((fragment) => fragment.version))
+  if (targets.size > 1) throw new Error("all changelog fragments must target the same release")
+  const allowedTargets = new Set([current, nextPatch(current), nextMinor(current)])
   for (const fragment of values) {
-		if (fragment.version !== current && fragment.version !== nextMinor(current)) {
-			throw new Error(`${fragment.name} targets ${fragment.version}; expected ${current} or next minor ${nextMinor(current)}`)
-		}
+    if (!allowedTargets.has(fragment.version)) {
+      throw new Error(`${fragment.name} targets ${fragment.version}; expected ${current}, next patch ${nextPatch(current)}, or next minor ${nextMinor(current)}`)
+    }
   }
   if (requirePRFragment) {
     const files = changedFiles(base)
@@ -64,8 +70,8 @@ function validate(requirePRFragment = false, base = "") {
 function aggregate() {
   const values = validate()
   if (values.length === 0) throw new Error("no changelog fragments to aggregate")
-	const current = values[0].version
-	if (version() !== current) writeFileSync(versionPath, `${current}\n`)
+  const current = values[0].version
+  if (version() !== current) writeFileSync(versionPath, `${current}\n`)
   let changelog = readFileSync(changelogPath, "utf8").replace(/\r\n/g, "\n")
   const heading = `## ${current}`
   if (!changelog.includes(heading)) {

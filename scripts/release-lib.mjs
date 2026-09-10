@@ -115,8 +115,8 @@ export async function mergeReviewedPullRequest(repo, expected, {
   if (pr.state !== "open") return wait("already closed")
   if (pr.head?.repo?.full_name !== repo || pr.base?.ref !== "main") return wait("target changed")
   const metadata = await request(`repos/${repo}`), base = await request(`repos/${repo}/branches/main`)
-  if (metadata.full_name !== repo || metadata.default_branch !== "main" || metadata.private !== true || metadata.fork !== false ||
-      metadata.allow_auto_merge !== true || base.protected !== true) throw new Error("reviewed merging requires the protected standalone private main repository")
+  if (metadata.full_name !== repo || metadata.default_branch !== "main" || metadata.private !== false || metadata.fork !== false ||
+      metadata.allow_auto_merge !== true || base.protected !== true) throw new Error("reviewed merging requires the protected standalone public main repository")
   if (pr.auto_merge) {
     await cancelQueued(["pr", "merge", String(pr.number), "--repo", repo, "--disable-auto"])
     log(`PR #${pr.number}: revoked legacy queued auto-merge before evaluating current reviews.`)

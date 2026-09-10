@@ -28,15 +28,6 @@ function nextMinor(value) {
   return `${major}.${minor + 1}.0`
 }
 
-function compareVersions(a, b) {
-  const left = a.split(".").map(Number)
-  const right = b.split(".").map(Number)
-  for (let i = 0; i < 3; i += 1) {
-    if (left[i] !== right[i]) return left[i] - right[i]
-  }
-  return 0
-}
-
 function fragments() {
   return readdirSync(changesPath, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name !== "README.md" && entry.name.endsWith(".md"))
@@ -61,10 +52,10 @@ function allowedTargets(current) {
 }
 
 function selectedTarget(values, current) {
-  const targets = [...new Set(values.map((fragment) => fragment.version))].sort(compareVersions)
+  const targets = [...new Set(values.map((fragment) => fragment.version))]
   if (targets.length === 0) return current
-  if (targets.length > 1 && targets.includes(current)) {
-    throw new Error(`current-version fragments cannot be mixed with future release targets; consume ${current} fragments before preparing another release`)
+  if (targets.length !== 1) {
+    throw new Error(`changelog fragments must target exactly one release; found ${targets.sort().join(", ")}`)
   }
   return targets[0]
 }

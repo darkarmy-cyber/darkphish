@@ -66,7 +66,7 @@ Raw personal access tokens are displayed once and never stored. Legacy permanent
 
 The repository is public for transparency, auditing, evaluation and authorized deployment. Darkphish-original material is licensed under the [Darkphish Source Available License 1.0](LICENSE). That license does not grant permission to modify, redistribute, commercialize or provide Darkphish-original material as a third-party service without prior written permission.
 
-Some portions of the codebase originate from or depend on third-party open-source projects. Those portions remain subject to their original licenses and are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). A public GitHub repository can also be forked using GitHub platform functionality; repository visibility alone is therefore not a technical anti-fork control.
+Some portions of the codebase originate from or depend on third-party open-source projects. Those portions remain subject to their original licenses and are documented in [NOTICE.md](NOTICE.md). A public GitHub repository can also be forked using GitHub platform functionality; repository visibility alone is therefore not a technical anti-fork control.
 
 ## Contributions
 
@@ -88,4 +88,4 @@ Contributions are accepted only under the terms described in [CONTRIBUTING.md](C
 
 ## License
 
-Darkphish-original material is distributed under the [Darkphish Source Available License 1.0](LICENSE). Third-party and inherited material remains governed by its original license; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Darkphish-original material is distributed under the [Darkphish Source Available License 1.0](LICENSE). Third-party and inherited material remains governed by its original license; see [NOTICE.md](NOTICE.md).

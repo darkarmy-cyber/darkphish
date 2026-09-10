@@ -145,6 +145,19 @@ func GetIMAP(uid int64) ([]IMAP, error) {
 	return im, nil
 }
 
+func sameIMAPSettings(a, b *IMAP) bool {
+	return a.Enabled == b.Enabled &&
+		a.Host == b.Host &&
+		a.Port == b.Port &&
+		a.Username == b.Username &&
+		a.TLS == b.TLS &&
+		a.IgnoreCertErrors == b.IgnoreCertErrors &&
+		a.Folder == b.Folder &&
+		a.RestrictDomain == b.RestrictDomain &&
+		a.DeleteReportedCampaignEmail == b.DeleteReportedCampaignEmail &&
+		a.IMAPFreq == b.IMAPFreq
+}
+
 // updateIMAPWithoutPassword updates only non-secret settings. The password
 // column is deliberately excluded so an empty write-only password means
 // "preserve the currently stored secret" without a read/decrypt/write race.
@@ -168,21 +181,53 @@ func updateIMAPWithoutPassword(im *IMAP, uid int64) error {
 		"imap_freq":                      im.IMAPFreq,
 	}
 	err := withSecurityTransaction(func(tx *gorm.DB) error {
-		var count int64
-		if err := tx.Model(&IMAP{}).Where("user_id = ? AND password <> ''", uid).Count(&count).Error; err != nil {
+		apply := func() (*gorm.DB, error) {
+			result := tx.Model(&IMAP{}).Where("user_id = ? AND password <> ''", uid).Updates(updates)
+			return result, result.Error
+		}
+
+		result, err := apply()
+		if err != nil {
 			return err
 		}
-		if count == 0 {
-			return ErrIMAPPasswordNotSpecified
+		if result.RowsAffected == 1 {
+			return nil
 		}
-		result := tx.Model(&IMAP{}).Where("user_id = ?", uid).Updates(updates)
-		if result.Error != nil {
-			return result.Error
+
+		// MySQL reports changed rows, not matched rows, so an idempotent update can
+		// legitimately report zero. Re-read the password-bearing row and accept the
+		// request only when the persisted non-secret settings already match.
+		var current IMAP
+		if err := tx.Where("user_id = ? AND password <> ''", uid).Take(&current).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrIMAPPasswordNotSpecified
+			}
+			return err
 		}
-		if result.RowsAffected != 1 {
-			return ErrIMAPConcurrentUpdate
+		if sameIMAPSettings(&current, im) {
+			return nil
 		}
-		return nil
+
+		// A concurrent replacement may have committed between the first update and
+		// the re-read. Retry once against the fresh row while still excluding the
+		// password column. If it still cannot be proven applied, fail closed.
+		result, err = apply()
+		if err != nil {
+			return err
+		}
+		if result.RowsAffected == 1 {
+			return nil
+		}
+		if err := tx.Where("user_id = ? AND password <> ''", uid).Take(&current).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrIMAPPasswordNotSpecified
+			}
+			return err
+		}
+		if sameIMAPSettings(&current, im) {
+			return nil
+		}
+		return ErrIMAPConcurrentUpdate
 	})
 	im.PasswordSet = err == nil
 	if err != nil {

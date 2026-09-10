@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { execFileSync, spawnSync } from "node:child_process"
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -46,7 +46,7 @@ test("release metadata accepts current, next patch, and next minor targets", () 
   }
 })
 
-test("release metadata permits concurrent patch and next-minor fragments and consumes only the selected patch", () => {
+test("release metadata rejects mixed patch and next-minor targets", () => {
   const root = mkdtempSync(join(tmpdir(), "darkphish-mixed-target-test-"))
   try {
     mkdirSync(join(root, "scripts"))
@@ -57,16 +57,12 @@ test("release metadata permits concurrent patch and next-minor fragments and con
     writeFileSync(join(root, "changes/hotfix.md"), "---\ncategory: Fixed\nversion: 0.7.1\n---\n- patch fix\n")
     writeFileSync(join(root, "changes/future.md"), "---\ncategory: Security\nversion: 0.8.0\n---\n- future security change\n")
 
-    execFileSync(process.execPath, [join(root, "scripts/changelog.mjs"), "validate"])
-    const selected = execFileSync(process.execPath, [join(root, "scripts/changelog.mjs"), "target"], { encoding: "utf8" }).trim()
-    assert.equal(selected, "0.7.1")
-
-    execFileSync(process.execPath, [join(root, "scripts/changelog.mjs"), "prepare"])
-    assert.equal(readFileSync(join(root, "VERSION"), "utf8"), "0.7.1\n")
-    const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8")
-    assert.match(changelog, /## 0\.7\.1[^\n]*\n\n### Fixed\n\n- patch fix/)
-    assert.doesNotMatch(changelog, /future security change/)
-    assert.deepEqual(readdirSync(join(root, "changes")).sort(), ["future.md"])
+    for (const command of ["validate", "target", "prepare"]) {
+      const result = spawnSync(process.execPath, [join(root, "scripts/changelog.mjs"), command], { encoding: "utf8" })
+      assert.notEqual(result.status, 0)
+      assert.match(result.stderr, /must target exactly one release/)
+    }
+    assert.equal(readFileSync(join(root, "VERSION"), "utf8"), "0.7.0\n")
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 

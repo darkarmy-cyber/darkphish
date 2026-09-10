@@ -86,7 +86,7 @@ export async function pages(path, key, request = api) {
 }
 export async function protectedMain(repo, sha) {
   const metadata = await api(`repos/${repo}`)
-  if (metadata.default_branch !== "main" || !metadata.private || metadata.fork) throw new Error("expected standalone private repository with default main")
+  if (metadata.default_branch !== "main" || metadata.private || metadata.fork) throw new Error("expected standalone public repository with default main")
   const branch = await api(`repos/${repo}/branches/main`)
   if (!branch.protected || branch.commit.sha !== sha) throw new Error("release source must be the current protected main commit")
   return metadata

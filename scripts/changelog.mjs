@@ -62,7 +62,11 @@ function allowedTargets(current) {
 
 function selectedTarget(values, current) {
   const targets = [...new Set(values.map((fragment) => fragment.version))].sort(compareVersions)
-  return targets[0] || current
+  if (targets.length === 0) return current
+  if (targets.length > 1 && targets.includes(current)) {
+    throw new Error(`current-version fragments cannot be mixed with future release targets; consume ${current} fragments before preparing another release`)
+  }
+  return targets[0]
 }
 
 function validate(requirePRFragment = false, base = "") {
@@ -74,6 +78,7 @@ function validate(requirePRFragment = false, base = "") {
       throw new Error(`${fragment.name} targets ${fragment.version}; expected ${current}, next patch ${nextPatch(current)}, or next minor ${nextMinor(current)}`)
     }
   }
+  selectedTarget(values, current)
   if (requirePRFragment) {
     const files = changedFiles(base)
     const runtimeChange = files.some((file) => !file.startsWith("changes/") && !file.startsWith("docs/") && !file.endsWith(".md") && !file.startsWith(".github/"))

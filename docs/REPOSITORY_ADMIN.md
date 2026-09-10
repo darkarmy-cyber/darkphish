@@ -4,7 +4,9 @@ Darkphish is the public, standalone `darkarmy-cyber/darkphish` repository with d
 
 ## Protection and merge policy
 
-Protect `main` with pull-request requirements, all status checks from `.github/required-checks.json`, an up-to-date branch, resolved conversations, administrator enforcement, disabled force pushes, and disabled branch deletion. The project uses a zero-outside-approval single-maintainer policy; workflows must never fabricate approvals or bypass protection.
+Protect `main` with pull-request requirements, all status checks from `.github/required-checks.json`, an up-to-date branch, resolved conversations, administrator enforcement, disabled force pushes, and disabled branch deletion. Bind every required status-check context to the GitHub Actions application (app id 15368), not merely to its check name, so an identically named check from another integration cannot satisfy protection. Compare configured names and app/source bindings with the actual emitted check runs whenever protection is restored. The project uses a zero-outside-approval single-maintainer policy; workflows must never fabricate approvals or bypass protection.
+
+For the zero-approval policy, `require_extra_approval_for_unattributed_changes` must remain **off** on the effective pull-request rule protecting `main`. Generated release PRs are authored by `github-actions[bot]` with author association `NONE`; enabling that extra-approval flag would make those release PRs require an approval the automation intentionally never supplies. Verify this setting read-only before preparing a bot-authored release; do not weaken any other protection to make a release pass.
 
 Enable repository auto-merge support only as a platform capability. Darkphish automation itself uses the `codex-automerge` label as an explicit opt-in and performs a synchronous protected squash merge pinned to the complete reviewed head SHA. A queued native auto-merge, if encountered, is revoked before reevaluation.
 

@@ -1,21 +1,78 @@
-The MIT License (MIT)
+Darkphish Source Available License 1.0
 
-Copyright (c) 2013-2020 Jordan Wright
-Copyright (c) 2026 DarkArmy contributors (Darkphish modifications)
+Copyright (c) 2026 DarkArmy contributors. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software ("Gophish Community Edition") and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
+1. Scope
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This license applies only to Darkphish-original material for which the DarkArmy
+contributors hold the applicable copyright or have authority to license it.
+Third-party material and material previously distributed under another license
+are excluded from this license and remain governed by their original terms. See
+NOTICE.md.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+2. Limited permission
+
+Subject to this license, permission is granted to access and read the Darkphish
+source code and to run unmodified copies solely for internal evaluation and for
+explicitly authorized security-awareness, defensive security, and security-testing
+purposes.
+
+3. Restrictions
+
+Except with prior written permission from the applicable Darkphish rightsholder,
+you may not:
+
+- modify Darkphish-original material or create derivative works from it;
+- redistribute, publish, sublicense, sell, lease, transfer, or otherwise provide
+  Darkphish-original material or derivatives to another party;
+- provide Darkphish-original material as a hosted, managed, service-bureau, SaaS,
+  or other third-party service;
+- use Darkphish-original material for commercial resale or to create a competing
+  product or service;
+- remove or alter copyright, licensing, trademark, or other proprietary notices;
+- use Darkphish names, logos, marks, or branding except to identify an unmodified
+  authorized copy of the software.
+
+4. GitHub platform rights
+
+A public repository on GitHub may be viewed and forked through functionality
+provided by GitHub under GitHub's own Terms of Service. Nothing in this license
+purports to withdraw rights granted directly by GitHub for use of its service.
+Those platform rights do not grant any additional permission under this license
+to modify, redistribute, commercialize, or provide Darkphish-original material
+outside the permissions expressly stated above.
+
+5. Previously granted rights
+
+This license does not revoke or reduce rights that were validly granted under a
+prior license for an earlier Darkphish release, commit, copy, or third-party
+component. Those rights continue according to the license that accompanied the
+applicable material.
+
+6. Third-party material
+
+Darkphish contains or depends on third-party material. Each third-party component
+remains subject to its own license. Where required, applicable copyright and
+license notices are preserved in NOTICE.md, dependency metadata, or the component
+itself. This license grants no rights that the Darkphish rightsholders do not
+possess.
+
+7. Termination
+
+Any permission granted by this license terminates automatically if you violate
+its terms. Upon termination, you must cease exercising permissions granted only
+by this license. Rights that arise independently under an applicable third-party
+license are unaffected.
+
+8. No warranty
+
+THE DARKPHISH-ORIGINAL MATERIAL IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE COPYRIGHT HOLDERS SHALL NOT BE LIABLE
+FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM OR RELATED TO THE
+SOFTWARE OR ITS USE.
+
+For commercial licensing or permissions beyond this license, contact the
+Darkphish project maintainers through the official darkarmy-cyber/darkphish
+repository.

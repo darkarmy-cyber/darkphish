@@ -4,6 +4,32 @@ import { api, assetDisposition, assertReleaseState, generatedPath, git, greenCom
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 import { verifyPullRequestReviews } from "./review-gate.mjs"
 
+function parseFragmentVersion(path) {
+  const body = readFileSync(path, "utf8").replace(/\r\n/g, "\n")
+  const match = body.match(/^---\ncategory: [A-Za-z]+\nversion: (\d+\.\d+\.\d+)\n---\n/)
+  if (!match) throw new Error(`invalid changelog fragment schema: ${path}`)
+  return match[1]
+}
+
+function compareVersions(a, b) {
+  const left = a.split(".").map(Number)
+  const right = b.split(".").map(Number)
+  for (let i = 0; i < 3; i += 1) {
+    if (left[i] !== right[i]) return left[i] - right[i]
+  }
+  return 0
+}
+
+function verifyRetainedFragments(releaseVersion) {
+  for (const name of readdirSync("changes")) {
+    if (!name.endsWith(".md") || name === "README.md") continue
+    const fragmentVersion = parseFragmentVersion(`changes/${name}`)
+    if (compareVersions(fragmentVersion, releaseVersion) <= 0) {
+      throw new Error(`release source contains unconsumed fragment ${name} targeting ${fragmentVersion}`)
+    }
+  }
+}
+
 async function source() {
   const repo = repository()
   const sha = git("rev-parse", "HEAD")
@@ -20,7 +46,9 @@ async function source() {
   await verifyCodeQLBaseline(repo, sha)
   const files = await pages(`repos/${repo}/pulls/${pr.number}/files`)
   if (!files.length || files.some((file) => !generatedPath(file.filename))) throw new Error("release PR includes application changes")
-  if (readdirSync("changes").some((name) => name.endsWith(".md") && name !== "README.md")) throw new Error("release source contains unconsumed fragments")
+  // A patch release may intentionally leave fragments for a later minor release.
+  // Only fragments targeting versions strictly newer than the release are allowed.
+  verifyRetainedFragments(version)
   const changelog = readFileSync("CHANGELOG.md", "utf8")
   const start = changelog.indexOf(`## ${version} - `)
   if (start < 0) throw new Error("release changelog is missing")
@@ -59,7 +87,7 @@ async function run() {
   if (!release) {
     release = await api(`repos/${repo}/releases`, { method: "POST", body: {
       tag_name: tag, target_commitish: sha, name: `Darkphish ${version.split(".").slice(0, 2).join(".")}`,
-      draft: true, body: `${current.notes}\n\nSource commit: ${sha}\n\n<!-- darkphish-release-source:${sha} -->\n\nNative binaries, SHA-256 checksums and SPDX SBOM are attached. Artifact attestations require GitHub Enterprise Cloud for this private repository; see docs/REPOSITORY_ADMIN.md.`,
+      draft: true, body: `${current.notes}\n\nSource commit: ${sha}\n\n<!-- darkphish-release-source:${sha} -->\n\nNative binaries, SHA-256 checksums and SPDX SBOM are attached.`,
     } })
   }
   const assets = await pages(`repos/${repo}/releases/${release.id}/assets`)

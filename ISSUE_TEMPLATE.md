@@ -1,31 +1,32 @@
-**Thanks for reaching out! We're happy to help resolve issues as quickly as possible.**
+**Thanks for reaching out.**
 
-**Please use this template when creating a new issue. If you do not follow this template format, your issue may be closed without comment.**
+Before filing a new issue, search the existing issues and review the repository documentation linked from [README.md](README.md).
 
-Before filing a new issue, please use the search bar at the top of the browser to search for similar issues. Also, please make sure you have read our [documentation](https://getdarkphish.com/documentation/), which covers how to use Darkphish.
+Do not use public issues for suspected vulnerabilities. Report security issues privately through:
+https://github.com/darkarmy-cyber/darkphish/security/advisories/new
+
+Never include credentials, tokens, DSNs, customer data, captured passwords or other sensitive information.
 
 What version of Darkphish are you using?:
 
 Brief description of the issue:
 
-What are you expecting to see happen? :
+What are you expecting to see happen?:
 
-What are you seeing happen?
+What are you seeing happen?:
 
-If this question is related to email templates or landing pages not working as expected, please provide your template or landing page below:
+If this question is related to email templates or landing pages not working as expected, please provide only synthetic/example content below:
 
 ```html
-Insert code here
+Insert synthetic example here
 ```
 
-Please provide any terminal output that may be relevant below:
+Please provide any relevant terminal output below after removing sensitive values:
 
 ```
-Insert output here
+Insert sanitized output here
 ```
 
-Please provide as many steps as you can to reproduce the problem:
- * Step 1 - 
- * Step 2 - 
- 
- 
+Please provide reproducible steps:
+- Step 1
+- Step 2

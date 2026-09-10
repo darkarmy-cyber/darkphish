@@ -41,7 +41,7 @@ Pull requests should:
 
 ## Licensing
 
-Darkphish-original material is governed by the [Darkphish Source Available License 1.0](LICENSE). Third-party and inherited material remains subject to its original license; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Darkphish-original material is governed by the [Darkphish Source Available License 1.0](LICENSE). Third-party and inherited material remains subject to its original license; see [NOTICE.md](NOTICE.md).
 
 ## Getting started
 

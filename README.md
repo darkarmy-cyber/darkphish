@@ -5,9 +5,9 @@
 [![CI](https://github.com/darkarmy-cyber/darkphish/actions/workflows/ci.yml/badge.svg)](https://github.com/darkarmy-cyber/darkphish/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/darkarmy-cyber/darkphish/actions/workflows/codeql.yml/badge.svg)](https://github.com/darkarmy-cyber/darkphish/actions/workflows/codeql.yml)
 
-Darkphish Community is the public, open-source edition of Darkphish: a platform for authorized phishing simulations, security-awareness training, internal security testing and defensive research. It is derived from Gophish and keeps the straightforward single-binary deployment model while establishing a secure, actively maintained foundation.
+Darkphish Community is the public source-available edition of Darkphish: a platform for authorized phishing simulations, security-awareness training, internal security testing and defensive research.
 
-Darkphish is maintained by DarkArmy contributors as an open-source security project associated with fsociety. Commercial Professional, Enterprise and MSP capabilities may be developed separately; this public repository remains the Community codebase.
+Darkphish is maintained by DarkArmy contributors as a security project associated with fsociety. Commercial Professional, Enterprise and MSP capabilities may be developed separately from this public repository.
 
 Use Darkphish only where you have explicit authorization. It is not intended for credential theft, malware delivery, security-control evasion or targeting third parties.
 
@@ -45,7 +45,7 @@ before exposing an instance to a network.
 
 ## Deployment
 
-Native binaries are the supported release artifacts. Historical container files remain optional community tooling, but container builds and publishing are not required CI or release gates. See [deployment](docs/DEPLOYMENT.md) for key generation, persistence, TLS, database and health-check guidance.
+Native binaries are the supported release artifacts. See [deployment](docs/DEPLOYMENT.md) for key generation, persistence, TLS, database and health-check guidance.
 
 ## Security baseline
 
@@ -62,9 +62,15 @@ Native binaries are the supported release artifacts. Historical container files 
 
 Raw personal access tokens are displayed once and never stored. Legacy permanent API keys no longer authenticate.
 
-## Community and contributions
+## Public repository policy
 
-Issues and pull requests are welcome for the public Community codebase. Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing. Security vulnerabilities must be reported privately through [GitHub Security Advisories](https://github.com/darkarmy-cyber/darkphish/security/advisories/new), not through public issues.
+The repository is public for transparency, auditing, evaluation and authorized deployment. Darkphish-original material is licensed under the [Darkphish Source Available License 1.0](LICENSE). That license does not grant permission to modify, redistribute, commercialize or provide Darkphish-original material as a third-party service without prior written permission.
+
+Some portions of the codebase originate from or depend on third-party open-source projects. Those portions remain subject to their original licenses and are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). A public GitHub repository can also be forked using GitHub platform functionality; repository visibility alone is therefore not a technical anti-fork control.
+
+## Contributions
+
+Contributions are accepted only under the terms described in [CONTRIBUTING.md](CONTRIBUTING.md). Security vulnerabilities must be reported privately through [GitHub Security Advisories](https://github.com/darkarmy-cyber/darkphish/security/advisories/new), not through public issues.
 
 ## Documentation
 
@@ -80,6 +86,6 @@ Issues and pull requests are welcome for the public Community codebase. Read [CO
 - [Security policy](SECURITY.md)
 - [Changelog](CHANGELOG.md)
 
-## License and origin
+## License
 
-Darkphish Community is MIT licensed. The original copyright and permission notice are preserved in [LICENSE](LICENSE). See [NOTICE.md](NOTICE.md) for derivation and attribution details.
+Darkphish-original material is distributed under the [Darkphish Source Available License 1.0](LICENSE). Third-party and inherited material remains governed by its original license; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

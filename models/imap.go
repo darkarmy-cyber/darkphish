@@ -60,11 +60,9 @@ func (im *IMAP) openPassword() error {
 }
 
 // ErrIMAPHostNotSpecified is thrown when there is no Host specified
-// in the IMAP configuration
 var ErrIMAPHostNotSpecified = errors.New("No IMAP Host specified")
 
 // ErrIMAPPortNotSpecified is thrown when there is no Port specified
-// in the IMAP configuration
 var ErrIMAPPortNotSpecified = errors.New("No IMAP Port specified")
 
 // ErrInvalidIMAPHost indicates that the IMAP server string is invalid
@@ -74,11 +72,9 @@ var ErrInvalidIMAPHost = errors.New("Invalid IMAP server address")
 var ErrInvalidIMAPPort = errors.New("Invalid IMAP Port")
 
 // ErrIMAPUsernameNotSpecified is thrown when there is no Username specified
-// in the IMAP configuration
 var ErrIMAPUsernameNotSpecified = errors.New("No Username specified")
 
 // ErrIMAPPasswordNotSpecified is thrown when there is no Password specified
-// in the IMAP configuration
 var ErrIMAPPasswordNotSpecified = errors.New("No Password specified")
 
 // ErrInvalidIMAPFreq is thrown when the frequency for polling the
@@ -90,8 +86,7 @@ func (im IMAP) TableName() string {
 	return "imap"
 }
 
-// Validate ensures that IMAP configs/connections are valid
-func (im *IMAP) Validate() error {
+func (im *IMAP) validate(requirePassword bool) error {
 	switch {
 	case im.Host == "":
 		return ErrIMAPHostNotSpecified
@@ -99,7 +94,7 @@ func (im *IMAP) Validate() error {
 		return ErrIMAPPortNotSpecified
 	case im.Username == "":
 		return ErrIMAPUsernameNotSpecified
-	case im.Password == "":
+	case requirePassword && im.Password == "":
 		return ErrIMAPPasswordNotSpecified
 	}
 
@@ -124,6 +119,11 @@ func (im *IMAP) Validate() error {
 	return nil
 }
 
+// Validate ensures that IMAP configs/connections are valid.
+func (im *IMAP) Validate() error {
+	return im.validate(true)
+}
+
 // GetIMAP returns the IMAP server owned by the given user.
 func GetIMAP(uid int64) ([]IMAP, error) {
 	im := []IMAP{}
@@ -141,13 +141,54 @@ func GetIMAP(uid int64) ([]IMAP, error) {
 	return im, nil
 }
 
+// updateIMAPWithoutPassword updates only non-secret settings. The password
+// column is deliberately excluded so an empty write-only password means
+// "preserve the currently stored secret" without a read/decrypt/write race.
+func updateIMAPWithoutPassword(im *IMAP, uid int64) error {
+	if err := im.validate(false); err != nil {
+		log.Error(err)
+		return err
+	}
+	im.UserId = uid
+	updates := map[string]interface{}{
+		"enabled":                        im.Enabled,
+		"host":                           im.Host,
+		"port":                           im.Port,
+		"username":                       im.Username,
+		"tls":                            im.TLS,
+		"ignore_cert_errors":             im.IgnoreCertErrors,
+		"folder":                         im.Folder,
+		"restrict_domain":                im.RestrictDomain,
+		"delete_reported_campaign_email": im.DeleteReportedCampaignEmail,
+		"modified_date":                  im.ModifiedDate,
+		"imap_freq":                      im.IMAPFreq,
+	}
+	err := withSecurityTransaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&IMAP{}).Where("user_id = ? AND password <> ''", uid).Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return ErrIMAPPasswordNotSpecified
+		}
+		return tx.Model(&IMAP{}).Where("user_id = ?", uid).Updates(updates).Error
+	})
+	im.PasswordSet = err == nil
+	if err != nil {
+		log.Error("Unable to save to database: ", err.Error())
+	}
+	return err
+}
+
 // PostIMAP updates IMAP settings for a user in the database.
 func PostIMAP(im *IMAP, uid int64) error {
 	if im.ModifiedDate.IsZero() {
 		im.ModifiedDate = time.Now().UTC()
 	}
-	err := im.Validate()
-	if err != nil {
+	if im.Password == "" {
+		return updateIMAPWithoutPassword(im, uid)
+	}
+	if err := im.Validate(); err != nil {
 		log.Error(err)
 		return err
 	}
@@ -161,7 +202,7 @@ func PostIMAP(im *IMAP, uid int64) error {
 	}
 	im.Password = protected
 	im.UserId = uid
-	err = withSecurityTransaction(func(tx *gorm.DB) error {
+	err := withSecurityTransaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id=?", uid).Delete(&IMAP{}).Error; err != nil {
 			return err
 		}

@@ -8,7 +8,7 @@ This license applies only to Darkphish-original material for which the DarkArmy
 contributors hold the applicable copyright or have authority to license it.
 Third-party material and material previously distributed under another license
 are excluded from this license and remain governed by their original terms. See
-THIRD_PARTY_NOTICES.md.
+NOTICE.md.
 
 2. Limited permission
 
@@ -53,9 +53,9 @@ applicable material.
 
 Darkphish contains or depends on third-party material. Each third-party component
 remains subject to its own license. Where required, applicable copyright and
-license notices are preserved in THIRD_PARTY_NOTICES.md, dependency metadata,
-or the component itself. This license grants no rights that the Darkphish
-rightsholders do not possess.
+license notices are preserved in NOTICE.md, dependency metadata, or the component
+itself. This license grants no rights that the Darkphish rightsholders do not
+possess.
 
 7. Termination
 

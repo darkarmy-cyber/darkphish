@@ -1,18 +1,38 @@
 # Darkphish notices
 
-Darkphish is derived from the Gophish open-source project originally created by
-Jordan Wright. The upstream baseline used for this maintained fork is commit
-`95618469799295e2c0fec980805a2dfbb818816b` (upstream change titled “Update
-workflow actions and Go versions (#3245)”, dated 2024-09-22).
+Darkphish-original material is Copyright (c) 2026 DarkArmy contributors. The
+project also includes and is derived in part from third-party open-source
+software. Third-party material remains governed by its original license; the
+Darkphish Source Available License does not replace or restrict those rights.
 
-The original project copyright remains:
+## Gophish upstream material
 
-> Copyright (c) 2013-2020 Jordan Wright
+Portions of this repository are derived from the Gophish project.
 
-Darkphish-specific modifications are Copyright (c) 2026 DarkArmy contributors.
-No claim is made that DarkArmy authored the upstream work. The complete MIT
-permission notice is preserved in `LICENSE` and applies to this distribution.
+Copyright (c) 2013-2020 Jordan Wright
 
-“Gophish” is used in source history, compatibility identifiers, dependency
-names, and migration rollback text only where attribution or compatibility
-requires it. Darkphish is not represented as an official upstream release.
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+## Dependencies
+
+Third-party Go and JavaScript dependencies are identified in `go.mod`, `go.sum`,
+`package.json`, and `pnpm-lock.yaml`. Their licenses apply independently. Release
+SBOMs provide an additional machine-readable inventory of packaged components.

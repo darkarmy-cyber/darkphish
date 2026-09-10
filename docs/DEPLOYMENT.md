@@ -1,9 +1,6 @@
 # Production deployment
 
-Native binaries are the supported Darkphish 0.3 release artifacts. Each release
-contains SHA-256 checksums and an SPDX SBOM; attestations are included when the
-private-repository plan supports them. Historical Docker files
-remain optional and receive no required CI or publishing guarantee.
+Native binaries are the supported Darkphish release artifacts. Each release contains SHA-256 checksums and an SPDX SBOM.
 
 ## Required production keys
 
@@ -102,9 +99,9 @@ separate trusted client requires them. Use `/healthz` for process liveness and
 
 SQLite needs exclusive, filesystem-consistent backups of the configured DB file.
 MySQL and PostgreSQL need transactionally consistent backups and protected
-replication/WAL data. Test
-restoration before upgrades. Apply the configured audit retention and campaign
-credential retention to replicas, snapshots, and off-site backups as well.
+replication/WAL data. Test restoration before upgrades. Apply the configured
+audit retention and campaign credential retention to replicas, snapshots, and
+off-site backups as well.
 
 A database backup containing encrypted values cannot be restored usefully without
 the local envelope keys or access to the same external-provider key references.

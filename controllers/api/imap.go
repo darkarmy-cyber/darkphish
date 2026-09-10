@@ -57,20 +57,9 @@ func (as *Server) IMAPServer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		uid := ctx.Get(r, "user_id").(int64)
-		// Passwords are write-only and are never returned by GET. An empty password
-		// on an update therefore means "keep the existing protected password", not
-		// "replace it with an empty password". A first-time configuration still
-		// reaches model validation and requires an explicit password.
-		if im.Password == "" {
-			existing, getErr := models.GetIMAP(uid)
-			if getErr != nil {
-				JSONResponse(w, models.Response{Success: false, Message: getErr.Error()}, http.StatusInternalServerError)
-				return
-			}
-			if len(existing) > 0 {
-				im.Password = existing[0].Password
-			}
-		}
+		// Passwords are write-only and never returned by GET. PostIMAP handles
+		// empty passwords as preserve-existing-secret updates atomically; first-time
+		// configuration without a password is still rejected by the model.
 		im.ModifiedDate = time.Now().UTC()
 		im.UserId = uid
 		err = models.PostIMAP(&im, uid)

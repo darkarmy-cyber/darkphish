@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing to Darkphish.
 
-Darkphish Community is the public, free and open-source edition of the project. It is maintained as a genuinely useful platform for authorized phishing simulations, security-awareness work and defensive research. Commercial Professional, Enterprise and MSP capabilities, if offered, are developed separately and do not change the open-source status of this repository.
+Darkphish Community is the public source-available edition of the project. It is maintained as a platform for authorized phishing simulations, security-awareness work and defensive research. Commercial Professional, Enterprise and MSP capabilities, if offered, are developed separately.
 
 ## Before contributing
 
@@ -11,12 +11,11 @@ Darkphish Community is the public, free and open-source edition of the project. 
 - Never include real credentials, tokens, customer data, production configuration, DSNs or personal information in issues, pull requests, tests or logs.
 - Keep changes focused, reviewable and covered by appropriate tests.
 
-## Contributor license agreement
+## Contribution terms
 
-By submitting code as an individual you agree to the
-[individual contributor license agreement](doc/individual_contributor_license_agreement.md).
-By submitting code as an entity you agree to the
-[corporate contributor license agreement](doc/corporate_contributor_license_agreement.md).
+By submitting a contribution, you represent that you have the right to submit it and that you agree the contribution may be incorporated into Darkphish under the project's then-current licensing model. Contributions that contain third-party material must identify its source and applicable license or restriction.
+
+The project maintainers may require an additional contributor agreement before accepting substantial contributions. No contribution changes the license of pre-existing third-party material.
 
 ## Security vulnerability disclosure
 
@@ -37,7 +36,12 @@ Pull requests should:
 - preserve backwards compatibility unless a breaking change is explicitly justified;
 - include tests for behavior changes where practical;
 - pass the repository's required CI and security checks;
-- follow the security and release policies documented in this repository.
+- follow the security and release policies documented in this repository;
+- acknowledge that acceptance into the repository does not grant contributors any right to relicense third-party material.
+
+## Licensing
+
+Darkphish-original material is governed by the [Darkphish Source Available License 1.0](LICENSE). Third-party and inherited material remains subject to its original license; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Getting started
 

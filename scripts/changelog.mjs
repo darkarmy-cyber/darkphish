@@ -28,6 +28,15 @@ function nextMinor(value) {
   return `${major}.${minor + 1}.0`
 }
 
+function compareVersions(a, b) {
+  const left = a.split(".").map(Number)
+  const right = b.split(".").map(Number)
+  for (let i = 0; i < 3; i += 1) {
+    if (left[i] !== right[i]) return left[i] - right[i]
+  }
+  return 0
+}
+
 function fragments() {
   return readdirSync(changesPath, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name !== "README.md" && entry.name.endsWith(".md"))
@@ -47,14 +56,21 @@ function changedFiles(base) {
     .split(/\r?\n/).filter(Boolean)
 }
 
+function allowedTargets(current) {
+  return new Set([current, nextPatch(current), nextMinor(current)])
+}
+
+function selectedTarget(values, current) {
+  const targets = [...new Set(values.map((fragment) => fragment.version))].sort(compareVersions)
+  return targets[0] || current
+}
+
 function validate(requirePRFragment = false, base = "") {
   const current = version()
   const values = fragments()
-  const targets = new Set(values.map((fragment) => fragment.version))
-  if (targets.size > 1) throw new Error("all changelog fragments must target the same release")
-  const allowedTargets = new Set([current, nextPatch(current), nextMinor(current)])
+  const allowed = allowedTargets(current)
   for (const fragment of values) {
-    if (!allowedTargets.has(fragment.version)) {
+    if (!allowed.has(fragment.version)) {
       throw new Error(`${fragment.name} targets ${fragment.version}; expected ${current}, next patch ${nextPatch(current)}, or next minor ${nextMinor(current)}`)
     }
   }
@@ -70,14 +86,16 @@ function validate(requirePRFragment = false, base = "") {
 function aggregate() {
   const values = validate()
   if (values.length === 0) throw new Error("no changelog fragments to aggregate")
-  const current = values[0].version
-  if (version() !== current) writeFileSync(versionPath, `${current}\n`)
+  const currentVersion = version()
+  const current = selectedTarget(values, currentVersion)
+  const releaseValues = values.filter((item) => item.version === current)
+  if (currentVersion !== current) writeFileSync(versionPath, `${current}\n`)
   let changelog = readFileSync(changelogPath, "utf8").replace(/\r\n/g, "\n")
   const heading = `## ${current}`
   if (!changelog.includes(heading)) {
     const insertion = [`${heading} - ${new Date().toISOString().slice(0, 10)}`, ""]
     for (const category of categories) {
-      const bullets = values.filter((item) => item.category === category).flatMap((item) => item.bullets)
+      const bullets = releaseValues.filter((item) => item.category === category).flatMap((item) => item.bullets)
       if (bullets.length) insertion.push(`### ${category}`, "", ...bullets, "")
     }
     const titleEnd = changelog.indexOf("\n\n", changelog.indexOf("# Changelog"))
@@ -88,7 +106,7 @@ function aggregate() {
     const end = next < 0 ? changelog.length : next
     let section = changelog.slice(start, end).trimEnd()
     for (const category of categories) {
-      const bullets = values.filter((item) => item.category === category).flatMap((item) => item.bullets)
+      const bullets = releaseValues.filter((item) => item.category === category).flatMap((item) => item.bullets)
         .filter((bullet) => !section.split("\n").includes(bullet))
       if (!bullets.length) continue
       const categoryHeading = `### ${category}\n`
@@ -103,14 +121,14 @@ function aggregate() {
     changelog = changelog.slice(0, start) + section + "\n" + (next < 0 ? "" : "\n" + changelog.slice(next + 1))
   }
   writeFileSync(changelogPath, changelog)
-  for (const item of values) unlinkSync(join(changesPath, item.name))
+  for (const item of releaseValues) unlinkSync(join(changesPath, item.name))
 }
 
 const command = process.argv[2] || "validate"
 try {
   if (command === "target") {
     const values = validate()
-    process.stdout.write(`${values[0]?.version || version()}\n`)
+    process.stdout.write(`${selectedTarget(values, version())}\n`)
   } else if (command === "validate") {
     const baseIndex = process.argv.indexOf("--base")
     validate(baseIndex !== -1, baseIndex !== -1 ? process.argv[baseIndex + 1] : "")

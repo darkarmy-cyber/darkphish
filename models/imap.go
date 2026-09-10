@@ -77,6 +77,10 @@ var ErrIMAPUsernameNotSpecified = errors.New("No Username specified")
 // ErrIMAPPasswordNotSpecified is thrown when there is no Password specified
 var ErrIMAPPasswordNotSpecified = errors.New("No Password specified")
 
+// ErrIMAPConcurrentUpdate is returned when a password-preserving update loses a
+// race with a concurrent replacement. The caller must retry from fresh state.
+var ErrIMAPConcurrentUpdate = errors.New("IMAP settings changed concurrently; retry the update")
+
 // ErrInvalidIMAPFreq is thrown when the frequency for polling the
 // IMAP server is invalid
 var ErrInvalidIMAPFreq = errors.New("Invalid polling frequency")
@@ -171,7 +175,14 @@ func updateIMAPWithoutPassword(im *IMAP, uid int64) error {
 		if count == 0 {
 			return ErrIMAPPasswordNotSpecified
 		}
-		return tx.Model(&IMAP{}).Where("user_id = ?", uid).Updates(updates).Error
+		result := tx.Model(&IMAP{}).Where("user_id = ?", uid).Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrIMAPConcurrentUpdate
+		}
+		return nil
 	})
 	im.PasswordSet = err == nil
 	if err != nil {

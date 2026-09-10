@@ -2,4 +2,4 @@
 category: Changed
 version: 0.8.0
 ---
-- Prepare the public Community repository for long-term open-source maintenance by clarifying Community positioning, contribution and security-reporting guidance, license wording, and maintained in-app documentation links.
+- Finalize the public Community repository as a source-available Darkphish baseline with maintained contribution and security-reporting guidance, a restrictive license for Darkphish-original material, centralized third-party notices, native deployment documentation, and removal of obsolete container, Ansible, legacy issue-template, and contributor-agreement artifacts.

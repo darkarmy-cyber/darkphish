@@ -15,8 +15,8 @@
     "type": "git",
     "url": "git+https://github.com/darkarmy-cyber/darkphish.git"
   },
-  "author": "DarkArmy contributors (derived from work by Jordan Wright)",
-  "license": "MIT",
+  "author": "DarkArmy contributors",
+  "license": "SEE LICENSE IN LICENSE",
   "bugs": {
     "url": "https://github.com/darkarmy-cyber/darkphish/issues"
   },

@@ -8,6 +8,19 @@ export const versionTag = (value) => {
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value)) throw new Error("release VERSION must be stable SemVer")
   return `v${value}`
 }
+export function nextPatchVersion(value) {
+  versionTag(value)
+  const [major, minor, patch] = value.split(".").map(Number)
+  return `${major}.${minor}.${patch + 1}`
+}
+export function assertPublishedVersion(release, version) {
+  const tag = versionTag(version)
+  if (release?.tag_name !== tag || release.draft !== false || release.prerelease !== false ||
+      typeof release.published_at !== "string" || !Number.isFinite(Date.parse(release.published_at))) {
+    throw new Error(`patch release requires published current version ${tag}`)
+  }
+  return release
+}
 export function checksPassed(checks, names = requiredChecks) {
   return names.every((name) => {
     const latest = checks.filter((check) => check.name === name && check.app?.slug === "github-actions")

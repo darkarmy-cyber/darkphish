@@ -15,8 +15,11 @@ async function prepare() {
   await protectedMain(repo, sha)
   const currentVersion = readFileSync("VERSION", "utf8").trim()
   if (version === nextPatchVersion(currentVersion)) {
-    const currentRelease = await api(`repos/${repo}/releases/tags/${versionTag(currentVersion)}`, { missing: true })
-    assertPublishedVersion(currentRelease, currentVersion)
+    const currentTag = versionTag(currentVersion)
+    let currentRef = await api(`repos/${repo}/git/ref/tags/${currentTag}`, { missing: true })
+    if (currentRef?.object.type === "tag") currentRef = await api(`repos/${repo}/git/tags/${currentRef.object.sha}`)
+    const currentRelease = await api(`repos/${repo}/releases/tags/${currentTag}`, { missing: true })
+    assertPublishedVersion(currentRef?.object.sha, currentRelease, currentVersion)
   }
   if (await api(`repos/${repo}/git/ref/tags/${tag}`, { missing: true }) || await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })) {
     console.log("Release tag or release already exists; preparation leaves it unchanged.")

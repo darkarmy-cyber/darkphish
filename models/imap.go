@@ -81,6 +81,11 @@ var ErrIMAPPasswordNotSpecified = errors.New("No Password specified")
 // race with a concurrent replacement. The caller must retry from fresh state.
 var ErrIMAPConcurrentUpdate = errors.New("IMAP settings changed concurrently; retry the update")
 
+// ErrIMAPAmbiguousState is returned when legacy data contains more than one
+// password-bearing IMAP row for a user. Password-preserving updates must not
+// guess which secret is authoritative; an administrator must repair the rows.
+var ErrIMAPAmbiguousState = errors.New("IMAP settings are ambiguous; administrative repair is required")
+
 // ErrInvalidIMAPFreq is thrown when the frequency for polling the
 // IMAP server is invalid
 var ErrInvalidIMAPFreq = errors.New("Invalid polling frequency")
@@ -158,6 +163,24 @@ func sameIMAPSettings(a, b *IMAP) bool {
 		a.IMAPFreq == b.IMAPFreq
 }
 
+// uniquePasswordBearingIMAP returns the one row whose encrypted password may be
+// preserved. LIMIT 2 deliberately bounds the read while detecting legacy
+// duplicate rows deterministically.
+func uniquePasswordBearingIMAP(tx *gorm.DB, uid int64) (*IMAP, error) {
+	var rows []IMAP
+	if err := tx.Where("user_id = ? AND password <> ''", uid).Limit(2).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	switch len(rows) {
+	case 0:
+		return nil, ErrIMAPPasswordNotSpecified
+	case 1:
+		return &rows[0], nil
+	default:
+		return nil, ErrIMAPAmbiguousState
+	}
+}
+
 // updateIMAPWithoutPassword updates only non-secret settings. The password
 // column is deliberately excluded so an empty write-only password means
 // "preserve the currently stored secret" without a read/decrypt/write race.
@@ -181,6 +204,11 @@ func updateIMAPWithoutPassword(im *IMAP, uid int64) error {
 		"imap_freq":                      im.IMAPFreq,
 	}
 	err := withSecurityTransaction(func(tx *gorm.DB) error {
+		// Prove uniqueness before writing. This prevents one UPDATE from changing
+		// several legacy rows and then arbitrarily validating only one of them.
+		if _, err := uniquePasswordBearingIMAP(tx, uid); err != nil {
+			return err
+		}
 		apply := func() (*gorm.DB, error) {
 			result := tx.Model(&IMAP{}).Where("user_id = ? AND password <> ''", uid).Updates(updates)
 			return result, result.Error
@@ -190,41 +218,39 @@ func updateIMAPWithoutPassword(im *IMAP, uid int64) error {
 		if err != nil {
 			return err
 		}
-		if result.RowsAffected == 1 {
+		if result.RowsAffected > 1 {
+			return ErrIMAPAmbiguousState
+		}
+		current, err := uniquePasswordBearingIMAP(tx, uid)
+		if err != nil {
+			return err
+		}
+		if result.RowsAffected == 1 && sameIMAPSettings(current, im) {
 			return nil
 		}
 
-		// MySQL reports changed rows, not matched rows, so an idempotent update can
-		// legitimately report zero. Re-read the password-bearing row and accept the
-		// request only when the persisted non-secret settings already match.
-		var current IMAP
-		if err := tx.Where("user_id = ? AND password <> ''", uid).Take(&current).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrIMAPPasswordNotSpecified
-			}
-			return err
-		}
-		if sameIMAPSettings(&current, im) {
+		// MySQL can report zero changed rows for an idempotent update. Accept it
+		// only after proving there is exactly one password-bearing row and its
+		// persisted non-secret settings already match.
+		if result.RowsAffected == 0 && sameIMAPSettings(current, im) {
 			return nil
 		}
 
 		// A concurrent replacement may have committed between the first update and
-		// the re-read. Retry once against the fresh row while still excluding the
-		// password column. If it still cannot be proven applied, fail closed.
+		// the re-read. Retry once, but every read/write must continue to prove that
+		// exactly one password-bearing row exists.
 		result, err = apply()
 		if err != nil {
 			return err
 		}
-		if result.RowsAffected == 1 {
-			return nil
+		if result.RowsAffected > 1 {
+			return ErrIMAPAmbiguousState
 		}
-		if err := tx.Where("user_id = ? AND password <> ''", uid).Take(&current).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrIMAPPasswordNotSpecified
-			}
+		current, err = uniquePasswordBearingIMAP(tx, uid)
+		if err != nil {
 			return err
 		}
-		if sameIMAPSettings(&current, im) {
+		if result.RowsAffected <= 1 && sameIMAPSettings(current, im) {
 			return nil
 		}
 		return ErrIMAPConcurrentUpdate

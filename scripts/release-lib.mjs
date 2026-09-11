@@ -13,11 +13,16 @@ export function nextPatchVersion(value) {
   const [major, minor, patch] = value.split(".").map(Number)
   return `${major}.${minor}.${patch + 1}`
 }
-export function assertPublishedVersion(release, version) {
+export function assertPublishedVersion(tagSHA, release, version) {
   const tag = versionTag(version)
+  const source = release?.target_commitish
   if (release?.tag_name !== tag || release.draft !== false || release.prerelease !== false ||
-      typeof release.published_at !== "string" || !Number.isFinite(Date.parse(release.published_at))) {
-    throw new Error(`patch release requires published current version ${tag}`)
+      typeof release.published_at !== "string" || !Number.isFinite(Date.parse(release.published_at)) ||
+      !/^[a-f0-9]{40}$/.test(source || "")) {
+    throw new Error(`patch release requires trusted published current version ${tag}`)
+  }
+  if (assertReleaseState(tagSHA, release, source) !== "published") {
+    throw new Error(`patch release requires trusted published current version ${tag}`)
   }
   return release
 }

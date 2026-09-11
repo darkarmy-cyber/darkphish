@@ -13,16 +13,44 @@ export function nextPatchVersion(value) {
   const [major, minor, patch] = value.split(".").map(Number)
   return `${major}.${minor}.${patch + 1}`
 }
+export function expectedReleaseAssetNames(version) {
+  const tag = versionTag(version)
+  return [
+    `darkphish-${tag}-darwin-amd64.tar.gz`,
+    `darkphish-${tag}-darwin-arm64.tar.gz`,
+    `darkphish-${tag}-linux-amd64.tar.gz`,
+    `darkphish-${tag}-linux-arm64.tar.gz`,
+    `darkphish-${tag}-windows-amd64.zip`,
+    `darkphish-${tag}.spdx.json`,
+    "SHA256SUMS",
+  ].sort()
+}
 export function assertPublishedVersion(tagSHA, release, version) {
   const tag = versionTag(version)
   const source = release?.target_commitish
   if (release?.tag_name !== tag || release.draft !== false || release.prerelease !== false ||
       typeof release.published_at !== "string" || !Number.isFinite(Date.parse(release.published_at)) ||
-      !/^[a-f0-9]{40}$/.test(source || "")) {
+      !/^[a-f0-9]{40}$/.test(source || "") || release?.author?.login !== "github-actions[bot]" ||
+      release?.author?.type !== "Bot") {
     throw new Error(`patch release requires trusted published current version ${tag}`)
   }
   if (assertReleaseState(tagSHA, release, source) !== "published") {
     throw new Error(`patch release requires trusted published current version ${tag}`)
+  }
+
+  const assets = release.assets
+  if (!Array.isArray(assets) || assets.length !== 7) {
+    throw new Error(`patch release requires complete trusted artifact set for ${tag}`)
+  }
+  const names = assets.map((asset) => asset?.name)
+  if (new Set(names).size !== names.length || names.slice().sort().join("\n") !== expectedReleaseAssetNames(version).join("\n")) {
+    throw new Error(`patch release requires exact trusted artifact set for ${tag}`)
+  }
+  for (const asset of assets) {
+    if (asset?.state !== "uploaded" || asset?.uploader?.login !== "github-actions[bot]" || asset?.uploader?.type !== "Bot" ||
+        !/^sha256:[a-f0-9]{64}$/.test(asset?.digest || "") || !Number.isSafeInteger(asset?.size) || asset.size <= 0) {
+      throw new Error(`patch release requires trusted uploaded artifacts for ${tag}`)
+    }
   }
   return release
 }

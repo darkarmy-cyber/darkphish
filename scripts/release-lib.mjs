@@ -25,13 +25,31 @@ export function expectedReleaseAssetNames(version) {
     "SHA256SUMS",
   ].sort()
 }
+const githubActionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
+const githubPublishedAt = (value) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value) && Number.isFinite(Date.parse(value))
+export async function peelTagToCommit(ref, fetchTag, maxDepth = 8) {
+  if (!Number.isSafeInteger(maxDepth) || maxDepth < 1 || maxDepth > 32) throw new Error("invalid tag peel depth")
+  let object = ref?.object
+  const seen = new Set()
+  for (let depth = 0; depth <= maxDepth; depth++) {
+    if (!object || !/^[a-f0-9]{40}$/.test(object.sha || "") || !["commit", "tag", "tree", "blob"].includes(object.type)) {
+      throw new Error("release tag has malformed Git object metadata")
+    }
+    if (object.type === "commit") return object.sha
+    if (object.type !== "tag") throw new Error("release tag must resolve to a commit")
+    if (seen.has(object.sha)) throw new Error("release tag contains a cycle")
+    if (depth === maxDepth) throw new Error("release tag exceeds maximum peel depth")
+    seen.add(object.sha)
+    const tag = await fetchTag(object.sha)
+    object = tag?.object
+  }
+  throw new Error("release tag does not resolve to a commit")
+}
 export function assertPublishedVersion(tagSHA, release, version) {
   const tag = versionTag(version)
   const source = release?.target_commitish
   if (release?.tag_name !== tag || release.draft !== false || release.prerelease !== false ||
-      typeof release.published_at !== "string" || !Number.isFinite(Date.parse(release.published_at)) ||
-      !/^[a-f0-9]{40}$/.test(source || "") || release?.author?.login !== "github-actions[bot]" ||
-      release?.author?.type !== "Bot") {
+      !githubPublishedAt(release?.published_at) || !/^[a-f0-9]{40}$/.test(source || "") || !githubActionsBot(release?.author)) {
     throw new Error(`patch release requires trusted published current version ${tag}`)
   }
   if (assertReleaseState(tagSHA, release, source) !== "published") {
@@ -47,7 +65,7 @@ export function assertPublishedVersion(tagSHA, release, version) {
     throw new Error(`patch release requires exact trusted artifact set for ${tag}`)
   }
   for (const asset of assets) {
-    if (asset?.state !== "uploaded" || asset?.uploader?.login !== "github-actions[bot]" || asset?.uploader?.type !== "Bot" ||
+    if (asset?.state !== "uploaded" || !githubActionsBot(asset?.uploader) ||
         !/^sha256:[a-f0-9]{64}$/.test(asset?.digest || "") || !Number.isSafeInteger(asset?.size) || asset.size <= 0) {
       throw new Error(`patch release requires trusted uploaded artifacts for ${tag}`)
     }

@@ -22,18 +22,26 @@ test("generated recovery refuses unknown commits and application files", () => {
   assert.equal(versionTag("0.3.1"), "v0.3.1")
   assert.throws(() => versionTag("00.3.0"))
 })
-test("patch preparation requires a completed published current release", () => {
-  const published = { tag_name: "v0.7.0", draft: false, prerelease: false, published_at: "2026-09-07T12:00:00Z" }
+test("patch preparation requires a trusted completed publication of the current version", () => {
+  const source = "a".repeat(40)
+  const marker = `<!-- darkphish-release-source:${source} -->`
+  const published = {
+    tag_name: "v0.7.0", target_commitish: source, body: marker,
+    draft: false, prerelease: false, published_at: "2026-09-07T12:00:00Z",
+  }
   assert.equal(nextPatchVersion("0.7.0"), "0.7.1")
-  assert.equal(assertPublishedVersion(published, "0.7.0"), published)
-  for (const invalid of [
-    null,
-    { ...published, tag_name: "v0.6.0" },
-    { ...published, draft: true },
-    { ...published, prerelease: true },
-    { ...published, published_at: null },
-    { ...published, published_at: "not-a-date" },
-  ]) assert.throws(() => assertPublishedVersion(invalid, "0.7.0"), /requires published current version v0\.7\.0/)
+  assert.equal(assertPublishedVersion(source, published, "0.7.0"), published)
+  for (const [tagSHA, invalid] of [
+    [null, null],
+    [source, { ...published, tag_name: "v0.6.0" }],
+    [source, { ...published, draft: true }],
+    [source, { ...published, prerelease: true }],
+    [source, { ...published, published_at: null }],
+    [source, { ...published, published_at: "not-a-date" }],
+    [source, { ...published, target_commitish: "main" }],
+    [source, { ...published, body: "missing provenance" }],
+    ["b".repeat(40), published],
+  ]) assert.throws(() => assertPublishedVersion(tagSHA, invalid, "0.7.0"))
 })
 
 test("release recovery never moves a tag or adopts unknown publication", () => {

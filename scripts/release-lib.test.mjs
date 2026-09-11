@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
-import { assetDisposition, assertGeneratedCommits, assertPublishedVersion, assertReleaseState, checksPassed, generatedPath, nextPatchVersion, protectedMergeRequest, verifyChecksums, versionTag } from "./release-lib.mjs"
+import { assetDisposition, assertGeneratedCommits, assertPublishedVersion, assertReleaseState, checksPassed, generatedPath, nextPatchVersion, peelTagToCommit, protectedMergeRequest, verifyChecksums, versionTag } from "./release-lib.mjs"
 
 test("require every latest trusted check to succeed", () => {
   const check = { id: 1, name: "Go", app: { slug: "github-actions" }, status: "completed", conclusion: "success" }
@@ -25,7 +25,7 @@ test("generated recovery refuses unknown commits and application files", () => {
 test("patch preparation requires trusted publisher and exact completed artifact set", () => {
   const source = "a".repeat(40)
   const marker = `<!-- darkphish-release-source:${source} -->`
-  const bot = { login: "github-actions[bot]", type: "Bot" }
+  const bot = { login: "github-actions[bot]", type: "Bot", id: 41898282 }
   const digest = `sha256:${"b".repeat(64)}`
   const names = [
     "darkphish-v0.7.0-darwin-amd64.tar.gz",
@@ -45,21 +45,48 @@ test("patch preparation requires trusted publisher and exact completed artifact 
   assert.equal(assertPublishedVersion(source, published, "0.7.0"), published)
   for (const [tagSHA, invalid] of [
     [null, null],
-    [source, { ...published, author: { login: "maintainer", type: "User" } }],
+    [source, { ...published, author: { login: "github-actions[bot]", type: "Bot" } }],
+    [source, { ...published, author: { ...bot, id: 1 } }],
+    [source, { ...published, author: { login: "maintainer", type: "User", id: 41898282 } }],
     [source, { ...published, tag_name: "v0.6.0" }],
     [source, { ...published, draft: true }],
     [source, { ...published, prerelease: true }],
     [source, { ...published, published_at: null }],
     [source, { ...published, published_at: "not-a-date" }],
+    [source, { ...published, published_at: "0" }],
+    [source, { ...published, published_at: "2026-09-07" }],
+    [source, { ...published, published_at: "09/07/2026 12:00:00" }],
+    [source, { ...published, published_at: "2026-09-07T12:00:00+00:00" }],
     [source, { ...published, target_commitish: "main" }],
     [source, { ...published, body: "missing provenance" }],
     [source, { ...published, assets: assets.slice(0, 6) }],
     [source, { ...published, assets: [...assets.slice(0, 6), { ...assets[6], name: "unexpected.bin" }] }],
     [source, { ...published, assets: [...assets.slice(0, 6), assets[0]] }],
-    [source, { ...published, assets: assets.map((asset, index) => index ? asset : { ...asset, uploader: { login: "maintainer", type: "User" } }) }],
+    [source, { ...published, assets: assets.map((asset, index) => index ? asset : { ...asset, uploader: { login: "github-actions[bot]", type: "Bot" } }) }],
+    [source, { ...published, assets: assets.map((asset, index) => index ? asset : { ...asset, uploader: { ...bot, id: 1 } }) }],
     [source, { ...published, assets: assets.map((asset, index) => index ? asset : { ...asset, digest: null }) }],
     ["b".repeat(40), published],
   ]) assert.throws(() => assertPublishedVersion(tagSHA, invalid, "0.7.0"))
+})
+
+test("release tag peeling accepts only a bounded chain ending in a commit", async () => {
+  const commit = "a".repeat(40), tag1 = "b".repeat(40), tag2 = "c".repeat(40), tree = "d".repeat(40)
+  const objects = new Map([
+    [tag1, { object: { type: "commit", sha: commit } }],
+    [tag2, { object: { type: "tag", sha: tag1 } }],
+  ])
+  const fetchTag = async sha => objects.get(sha)
+  assert.equal(await peelTagToCommit({ object: { type: "commit", sha: commit } }, fetchTag), commit)
+  assert.equal(await peelTagToCommit({ object: { type: "tag", sha: tag1 } }, fetchTag), commit)
+  assert.equal(await peelTagToCommit({ object: { type: "tag", sha: tag2 } }, fetchTag), commit)
+  await assert.rejects(peelTagToCommit({ object: { type: "tree", sha: tree } }, fetchTag))
+  await assert.rejects(peelTagToCommit({ object: { type: "blob", sha: tree } }, fetchTag))
+  await assert.rejects(peelTagToCommit({ object: { type: "tag", sha: "e".repeat(40) } }, fetchTag))
+  const cyclic = async sha => ({ object: { type: "tag", sha } })
+  await assert.rejects(peelTagToCommit({ object: { type: "tag", sha: tag1 } }, cyclic))
+  const deep = new Map()
+  for (let i = 0; i < 10; i++) deep.set(String(i).padStart(40, "0"), { object: { type: "tag", sha: String(i + 1).padStart(40, "0") } })
+  await assert.rejects(peelTagToCommit({ object: { type: "tag", sha: String(0).padStart(40, "0") } }, async sha => deep.get(sha), 2))
 })
 
 test("release recovery never moves a tag or adopts unknown publication", () => {

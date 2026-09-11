@@ -22,17 +22,30 @@ test("generated recovery refuses unknown commits and application files", () => {
   assert.equal(versionTag("0.3.1"), "v0.3.1")
   assert.throws(() => versionTag("00.3.0"))
 })
-test("patch preparation requires a trusted completed publication of the current version", () => {
+test("patch preparation requires trusted publisher and exact completed artifact set", () => {
   const source = "a".repeat(40)
   const marker = `<!-- darkphish-release-source:${source} -->`
+  const bot = { login: "github-actions[bot]", type: "Bot" }
+  const digest = `sha256:${"b".repeat(64)}`
+  const names = [
+    "darkphish-v0.7.0-darwin-amd64.tar.gz",
+    "darkphish-v0.7.0-darwin-arm64.tar.gz",
+    "darkphish-v0.7.0-linux-amd64.tar.gz",
+    "darkphish-v0.7.0-linux-arm64.tar.gz",
+    "darkphish-v0.7.0-windows-amd64.zip",
+    "darkphish-v0.7.0.spdx.json",
+    "SHA256SUMS",
+  ]
+  const assets = names.map((name, index) => ({ name, state: "uploaded", digest, size: index + 1, uploader: bot }))
   const published = {
-    tag_name: "v0.7.0", target_commitish: source, body: marker,
+    tag_name: "v0.7.0", target_commitish: source, body: marker, author: bot, assets,
     draft: false, prerelease: false, published_at: "2026-09-07T12:00:00Z",
   }
   assert.equal(nextPatchVersion("0.7.0"), "0.7.1")
   assert.equal(assertPublishedVersion(source, published, "0.7.0"), published)
   for (const [tagSHA, invalid] of [
     [null, null],
+    [source, { ...published, author: { login: "maintainer", type: "User" } }],
     [source, { ...published, tag_name: "v0.6.0" }],
     [source, { ...published, draft: true }],
     [source, { ...published, prerelease: true }],
@@ -40,6 +53,11 @@ test("patch preparation requires a trusted completed publication of the current 
     [source, { ...published, published_at: "not-a-date" }],
     [source, { ...published, target_commitish: "main" }],
     [source, { ...published, body: "missing provenance" }],
+    [source, { ...published, assets: assets.slice(0, 6) }],
+    [source, { ...published, assets: [...assets.slice(0, 6), { ...assets[6], name: "unexpected.bin" }] }],
+    [source, { ...published, assets: [...assets.slice(0, 6), assets[0]] }],
+    [source, { ...published, assets: assets.map((asset, index) => index ? asset : { ...asset, uploader: { login: "maintainer", type: "User" } }) }],
+    [source, { ...published, assets: assets.map((asset, index) => index ? asset : { ...asset, digest: null }) }],
     ["b".repeat(40), published],
   ]) assert.throws(() => assertPublishedVersion(tagSHA, invalid, "0.7.0"))
 })

@@ -26,7 +26,17 @@ export function expectedReleaseAssetNames(version) {
   ].sort()
 }
 const githubActionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
-const githubPublishedAt = (value) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value) && Number.isFinite(Date.parse(value))
+const githubPublishedAt = (value) => {
+  if (typeof value !== "string") return false
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/)
+  if (!match) return false
+  const [, ys, mos, ds, hs, mis, ss] = match
+  const year = Number(ys), month = Number(mos), day = Number(ds), hour = Number(hs), minute = Number(mis), second = Number(ss)
+  if (month < 1 || month > 12 || day < 1 || hour > 23 || minute > 59 || second > 59) return false
+  const instant = new Date(Date.UTC(year, month - 1, day, hour, minute, second))
+  return instant.getUTCFullYear() === year && instant.getUTCMonth() === month - 1 && instant.getUTCDate() === day &&
+    instant.getUTCHours() === hour && instant.getUTCMinutes() === minute && instant.getUTCSeconds() === second
+}
 export async function peelTagToCommit(ref, fetchTag, maxDepth = 8) {
   if (!Number.isSafeInteger(maxDepth) || maxDepth < 1 || maxDepth > 32) throw new Error("invalid tag peel depth")
   let object = ref?.object
@@ -101,8 +111,6 @@ export function protectedMergeRequest(repo, pr) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || repo.split("/").some(part => part === "." || part === "..") ||
       !Number.isSafeInteger(pr.number) || pr.number < 1 || !/^[a-f0-9]{40}$/.test(pr.head?.sha || "")) throw new Error("invalid protected merge target")
   if (pr.draft !== false || pr.state !== "open" || pr.base?.ref !== "main" || pr.head.repo?.full_name !== repo) throw new Error("only internal ready main pull requests are eligible")
-  // Synchronous REST merge: protections still apply, and the full head SHA is
-  // a compare-and-swap condition. No queued permission can survive a later push.
   return { path: `repos/${repo}/pulls/${pr.number}/merge`, method: "PUT", body: { sha: pr.head.sha, merge_method: "squash" } }
 }
 export function verifyChecksums(manifest, hashes) {
@@ -170,7 +178,6 @@ export async function mergeReviewedPullRequest(repo, expected, {
   request = api, verifyReviews = verifyPullRequestReviews,
   cancelQueued = args => execFileSync("gh", args, { stdio: "inherit" }), log = console.log,
 } = {}) {
-  // Validate identity before constructing paths or invoking a subprocess.
   protectedMergeRequest(repo, { ...expected, state: "open", draft: false })
   const path = `repos/${repo}/pulls/${expected.number}`
   const pr = await request(path)

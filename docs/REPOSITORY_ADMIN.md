@@ -32,6 +32,8 @@ Never store GitHub credentials, signing keys, production secrets, customer data 
 
 ## Release administration
 
+At both the organization and repository levels, enable **Settings -> Actions -> General -> Workflow permissions -> Allow GitHub Actions to create and approve pull requests**. The organization policy must permit the repository setting. Before release preparation, verify that the effective repository permissions report `can_approve_pull_request_reviews: true`; a missing or false value is a blocking configuration error. This setting allows the ephemeral workflow token to create the generated release PR. Darkphish workflows still must not submit approval reviews.
+
 Release preparation and publication execute code from protected `main`, validate exact source identity, and fail closed on missing checks, stale reviews, unresolved threads, unexpected tags/releases or inconsistent generated branches. Release PRs use the same exact-head review interlock as engineering PRs. Native artifacts, SHA-256 checksums, SPDX SBOMs and immutable release tags remain mandatory.
 
 The release workflows may create pull requests, dispatch checks and publish verified release assets using ephemeral GitHub tokens. They must not obtain administrator bypass, ruleset-write permission or long-lived personal access tokens as a workaround for policy failures.

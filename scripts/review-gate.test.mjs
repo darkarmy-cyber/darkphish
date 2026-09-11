@@ -314,9 +314,11 @@ test("failed checks, reviews, alerts, changed base and mergeability prevent ever
     assert.equal(await f.merge(), false)
     assert.deepEqual(f.writes, [])
   }
-  const f = fixture(); f.metadata.private = true
-  await assert.rejects(f.merge(), /protected standalone/)
-  assert.deepEqual(f.writes, [])
+  for (const visibility of [true, null, undefined, 0]) {
+    const f = fixture(); f.metadata.private = visibility
+    await assert.rejects(f.merge(), /protected standalone/)
+    assert.deepEqual(f.writes, [])
+  }
 })
 
 test("metadata reconciliation never opts in forks, dependency bots or bot release PRs", () => {

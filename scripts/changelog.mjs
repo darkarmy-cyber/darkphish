@@ -47,6 +47,18 @@ function changedFiles(base) {
     .split(/\r?\n/).filter(Boolean)
 }
 
+function releaseTagExists(value) {
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", `refs/tags/v${value}^{commit}`], {
+      cwd: root,
+      stdio: "ignore",
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 function allowedTargets(current) {
   return new Set([current, nextPatch(current), nextMinor(current)])
 }
@@ -69,7 +81,10 @@ function validate(requirePRFragment = false, base = "") {
       throw new Error(`${fragment.name} targets ${fragment.version}; expected ${current}, next patch ${nextPatch(current)}, or next minor ${nextMinor(current)}`)
     }
   }
-  selectedTarget(values, current)
+  const target = selectedTarget(values, current)
+  if (target === nextPatch(current) && !releaseTagExists(current)) {
+    throw new Error(`patch release ${target} requires published current version v${current}`)
+  }
   if (requirePRFragment) {
     const files = changedFiles(base)
     const runtimeChange = files.some((file) => !file.startsWith("changes/") && !file.startsWith("docs/") && !file.endsWith(".md") && !file.startsWith(".github/"))

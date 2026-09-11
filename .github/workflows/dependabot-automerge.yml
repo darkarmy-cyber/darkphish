@@ -3,7 +3,6 @@ name: Conservative Dependabot auto-merge
 on:
   schedule:
     - cron: "23 5 * * 1-5"
-  workflow_dispatch:
 
 permissions:
   contents: write

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
-import { assetDisposition, assertGeneratedCommits, assertReleaseState, checksPassed, generatedPath, protectedMergeRequest, verifyChecksums, versionTag } from "./release-lib.mjs"
+import { assetDisposition, assertGeneratedCommits, assertPublishedVersion, assertReleaseState, checksPassed, generatedPath, nextPatchVersion, protectedMergeRequest, verifyChecksums, versionTag } from "./release-lib.mjs"
 
 test("require every latest trusted check to succeed", () => {
   const check = { id: 1, name: "Go", app: { slug: "github-actions" }, status: "completed", conclusion: "success" }
@@ -22,6 +22,20 @@ test("generated recovery refuses unknown commits and application files", () => {
   assert.equal(versionTag("0.3.1"), "v0.3.1")
   assert.throws(() => versionTag("00.3.0"))
 })
+test("patch preparation requires a completed published current release", () => {
+  const published = { tag_name: "v0.7.0", draft: false, prerelease: false, published_at: "2026-09-07T12:00:00Z" }
+  assert.equal(nextPatchVersion("0.7.0"), "0.7.1")
+  assert.equal(assertPublishedVersion(published, "0.7.0"), published)
+  for (const invalid of [
+    null,
+    { ...published, tag_name: "v0.6.0" },
+    { ...published, draft: true },
+    { ...published, prerelease: true },
+    { ...published, published_at: null },
+    { ...published, published_at: "not-a-date" },
+  ]) assert.throws(() => assertPublishedVersion(invalid, "0.7.0"), /requires published current version v0\.7\.0/)
+})
+
 test("release recovery never moves a tag or adopts unknown publication", () => {
   assert.equal(assertReleaseState(null, null, "abc"), "new")
   const release = { draft: true, body: "<!-- darkphish-release-source:abc -->" }

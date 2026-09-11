@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process"
 import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { api, assertGeneratedCommits, assertPublishedVersion, dispatchChecks, mergeReviewedPullRequest, git, greenCommit, nextPatchVersion, pages, protectedMain, repository, versionTag } from "./release-lib.mjs"
+import { api, assertGeneratedCommits, assertPublishedVersion, dispatchChecks, mergeReviewedPullRequest, git, greenCommit, nextPatchVersion, pages, peelTagToCommit, protectedMain, repository, versionTag } from "./release-lib.mjs"
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 
 async function prepare() {
@@ -16,10 +16,10 @@ async function prepare() {
   const currentVersion = readFileSync("VERSION", "utf8").trim()
   if (version === nextPatchVersion(currentVersion)) {
     const currentTag = versionTag(currentVersion)
-    let currentRef = await api(`repos/${repo}/git/ref/tags/${currentTag}`, { missing: true })
-    if (currentRef?.object.type === "tag") currentRef = await api(`repos/${repo}/git/tags/${currentRef.object.sha}`)
+    const currentRef = await api(`repos/${repo}/git/ref/tags/${currentTag}`, { missing: true })
+    const currentTagSHA = currentRef ? await peelTagToCommit(currentRef, tagSHA => api(`repos/${repo}/git/tags/${tagSHA}`)) : null
     const currentRelease = await api(`repos/${repo}/releases/tags/${currentTag}`, { missing: true })
-    assertPublishedVersion(currentRef?.object.sha, currentRelease, currentVersion)
+    assertPublishedVersion(currentTagSHA, currentRelease, currentVersion)
   }
   if (await api(`repos/${repo}/git/ref/tags/${tag}`, { missing: true }) || await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })) {
     console.log("Release tag or release already exists; preparation leaves it unchanged.")

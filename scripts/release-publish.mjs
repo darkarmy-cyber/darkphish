@@ -19,6 +19,18 @@ function assertTrustedPublishedRelease(release, sha) {
 function assertTrustedReleaseAsset(asset) {
   if (asset?.state !== "uploaded" || !trustedActionsActor(asset?.uploader)) throw new Error("release contains an asset not uploaded by the immutable GitHub Actions actor")
 }
+function assertExactAssetSet(assets, names, hashes, bytes, receiptName, receiptHash, receiptLength) {
+  const expectedNames = [...names, receiptName].sort()
+  if (!Array.isArray(assets) || assets.length !== expectedNames.length) throw new Error("final release asset set is incomplete or unexpected")
+  const actualNames = assets.map((asset) => asset?.name)
+  if (new Set(actualNames).size !== actualNames.length || actualNames.slice().sort().join("\n") !== expectedNames.join("\n")) throw new Error("final release asset names changed after verification")
+  for (const asset of assets) {
+    assertTrustedReleaseAsset(asset)
+    if (asset.name === receiptName) assetDisposition(asset, receiptHash, receiptLength)
+    else assetDisposition(asset, hashes.get(asset.name), bytes.get(asset.name)?.length)
+  }
+  return true
+}
 function parseFragmentVersion(path) {
   const body = readFileSync(path, "utf8").replace(/\r\n/g, "\n")
   const match = body.match(/^---\ncategory: [A-Za-z]+\nversion: (\d+\.\d+\.\d+)\n---\n/)
@@ -122,9 +134,6 @@ async function run() {
     assetDisposition(asset, hashes.get(name), bytes.get(name).length)
   }
 
-  // The receipt is intentionally minted only after every final security/source gate.
-  // A concurrently published draft observed before this point cannot later become a
-  // trusted serialization boundary because the workflow refuses to mint the receipt.
   await protectedMain(repo, sha)
   await verifyCodeQLBaseline(repo, sha)
   const beforePublish = await api(`repos/${repo}/releases/${release.id}`)
@@ -144,19 +153,21 @@ async function run() {
   let receiptAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
   const existingReceipt = receiptAssets.find((asset) => asset.name === receiptName)
   if (assetDisposition(existingReceipt, receiptHash, receipt.length) === "upload") await uploadAsset(release, receiptName, receipt)
+
   receiptAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
-  const receiptAsset = receiptAssets.find((asset) => asset.name === receiptName)
-  if (!receiptAsset) throw new Error("post-gate publication receipt is missing")
-  assertTrustedReleaseAsset(receiptAsset)
-  assetDisposition(receiptAsset, receiptHash, receipt.length)
-  if (receiptAssets.length !== names.length + 1) throw new Error("final draft release asset set is incomplete or unexpected")
+  assertExactAssetSet(receiptAssets, names, hashes, bytes, receiptName, receiptHash, receipt.length)
 
   const finalDraft = await api(`repos/${repo}/releases/${release.id}`)
   assertTrustedDraftRelease(finalDraft, sha)
+  const finalAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
+  assertExactAssetSet(finalAssets, names, hashes, bytes, receiptName, receiptHash, receipt.length)
+
   const published = await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, prerelease: false, make_latest: "true" } })
   assertTrustedPublishedRelease(published, sha)
   const verified = await api(`repos/${repo}/releases/${release.id}`)
   assertTrustedPublishedRelease(verified, sha)
+  const publishedAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
+  assertExactAssetSet(publishedAssets, names, hashes, bytes, receiptName, receiptHash, receipt.length)
   console.log(`Published and verified https://github.com/${repo}/releases/tag/${tag}`)
 }
 run().catch((error) => { console.error(error.message); process.exitCode = 1 })

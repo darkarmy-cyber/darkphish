@@ -119,17 +119,29 @@ jobs:
             }
           }
           if (!files.length) throw new Error("CodeQL produced no SARIF output")
-          let findings = 0
+          const findings = []
           for (const path of files) {
             const sarif = JSON.parse(readFileSync(path, "utf8"))
             if (sarif?.version !== "2.1.0" || !Array.isArray(sarif.runs)) throw new Error("CodeQL produced malformed SARIF")
             for (const run of sarif.runs) {
               const results = run?.results ?? []
               if (!Array.isArray(results)) throw new Error("CodeQL SARIF results are malformed")
-              findings += results.length
+              for (const result of results) {
+                const location = result?.locations?.[0]?.physicalLocation
+                findings.push({
+                  ruleId: typeof result?.ruleId === "string" ? result.ruleId : "<missing-ruleId>",
+                  uri: typeof location?.artifactLocation?.uri === "string" ? location.artifactLocation.uri : "<missing-uri>",
+                  startLine: Number.isInteger(location?.region?.startLine) ? location.region.startLine : null,
+                  level: typeof result?.level === "string" ? result.level : null,
+                })
+              }
             }
           }
-          if (findings !== 0) throw new Error(`CodeQL found ${findings} local result(s); exact head remains blocked`)
+          if (findings.length !== 0) {
+            console.error(`CodeQL found ${findings.length} local result(s); exact head remains blocked`)
+            for (const finding of findings) console.error(JSON.stringify(finding))
+            throw new Error(`CodeQL found ${findings.length} local result(s); exact head remains blocked`)
+          }
           console.log("Trusted generated-release CodeQL SARIF contains zero findings.")
           EOF
       - name: Close exact-head required check

@@ -23,6 +23,16 @@ test("generated-release CodeQL runs only from protected default-branch workflow 
   assert.match(validator, /files\.some\(\(file\) => !generatedPath/)
 })
 
+test("generated-release CodeQL reports result identities without weakening fail-closed behavior", () => {
+  const workflow = read("../.github/workflows/codeql-ondemand.yml")
+  assert.match(workflow, /ruleId:/)
+  assert.match(workflow, /artifactLocation\?\.uri/)
+  assert.match(workflow, /region\?\.startLine/)
+  assert.match(workflow, /if \(findings\.length !== 0\)/)
+  assert.match(workflow, /throw new Error\(`CodeQL found \$\{findings\.length\} local result\(s\); exact head remains blocked`\)/)
+  assert.doesNotMatch(workflow, /filter\([^\n]*(?:diagnostic|warning|note|security)/i)
+})
+
 test("legacy engineering auto-merge is revoked before the publication freeze can return", () => {
   const lib = read("./release-lib.mjs")
   const cancel = lib.indexOf("if (pr.auto_merge)")

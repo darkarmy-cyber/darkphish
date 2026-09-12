@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24.19.0
       - name: Validate fragments
@@ -99,7 +99,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24.19.0
       - uses: actions/setup-go@v7
@@ -163,7 +163,7 @@ jobs:
           dsn: "root:root@tcp(127.0.0.1:3306)/darkphish_audit_v06_test?charset=utf8mb4&parseTime=true&multiStatements=true"
           fixture: audit-v06
           coordination: '1'
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24.19.0
       - name: Verify native audit processes
@@ -242,7 +242,7 @@ jobs:
           dsn: "postgres://darkphish:darkphish-test-only@127.0.0.1:5432/darkphish_audit_v06_test?sslmode=disable"
           fixture: audit-v06
           coordination: '1'
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24.19.0
       - name: Verify native audit processes
@@ -264,7 +264,7 @@ jobs:
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 11.19.0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24.19.0
           cache: pnpm

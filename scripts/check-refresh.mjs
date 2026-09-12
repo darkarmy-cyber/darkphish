@@ -2,6 +2,10 @@ import { api } from "./release-lib.mjs"
 
 const shaPattern = /^[a-f0-9]{40}$/
 const releaseBranchPattern = /^release\/v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+const releaseHeadConvergenceAttempts = 6
+const releaseHeadConvergenceDelayMs = 1000
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function workflowRuns(repo, workflow, branch, request) {
   const result = await request(`repos/${repo}/actions/workflows/${workflow}/runs?branch=${encodeURIComponent(branch)}&per_page=20`)
@@ -11,6 +15,21 @@ async function workflowRuns(repo, workflow, branch, request) {
 
 async function hasExactRun(repo, workflow, branch, sha, request) {
   return (await workflowRuns(repo, workflow, branch, request)).some((run) => run?.head_sha === sha)
+}
+
+async function trustedReleasePull(repo, branch, sha, request) {
+  const owner = repo.split("/")[0]
+  for (let attempt = 1; attempt <= releaseHeadConvergenceAttempts; attempt += 1) {
+    const pulls = await request(`repos/${repo}/pulls?state=open&base=main&head=${encodeURIComponent(`${owner}:${branch}`)}&per_page=10`)
+    if (!Array.isArray(pulls) || pulls.length !== 1) throw new Error("generated release check refresh requires exactly one open release PR")
+    const pr = pulls[0]
+    if (pr?.draft !== false || pr?.base?.ref !== "main" || pr?.head?.ref !== branch || pr?.head?.repo?.full_name !== repo || pr?.title !== `release: Darkphish ${branch.slice("release/v".length)}`) {
+      throw new Error("generated release check refresh target does not match the trusted release PR shape")
+    }
+    if (pr?.head?.sha === sha) return pr
+    if (attempt < releaseHeadConvergenceAttempts) await sleep(releaseHeadConvergenceDelayMs)
+  }
+  throw new Error("generated release PR head did not converge to the exact branch SHA")
 }
 
 async function validateTarget(repo, branch, request) {
@@ -28,13 +47,7 @@ async function validateTarget(repo, branch, request) {
     return sha
   }
 
-  const owner = repo.split("/")[0]
-  const pulls = await request(`repos/${repo}/pulls?state=open&base=main&head=${encodeURIComponent(`${owner}:${branch}`)}&per_page=10`)
-  if (!Array.isArray(pulls) || pulls.length !== 1) throw new Error("generated release check refresh requires exactly one open release PR")
-  const pr = pulls[0]
-  if (pr?.draft !== false || pr?.base?.ref !== "main" || pr?.head?.ref !== branch || pr?.head?.sha !== sha || pr?.head?.repo?.full_name !== repo || pr?.title !== `release: Darkphish ${branch.slice("release/v".length)}`) {
-    throw new Error("generated release check refresh target does not match the trusted release PR shape")
-  }
+  await trustedReleasePull(repo, branch, sha, request)
   return sha
 }
 

@@ -8,13 +8,22 @@ export const versionTag = (value) => {
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value)) throw new Error("release VERSION must be stable SemVer")
   return `v${value}`
 }
+const versionAtLeast = (value, floor) => {
+  versionTag(value); versionTag(floor)
+  const a = value.split(".").map(Number), b = floor.split(".").map(Number)
+  for (let i = 0; i < 3; i += 1) if (a[i] !== b[i]) return a[i] > b[i]
+  return true
+}
 export function nextPatchVersion(value) {
   versionTag(value)
   const [major, minor, patch] = value.split(".").map(Number)
   return `${major}.${minor}.${patch + 1}`
 }
+export function publicationReceiptName(version) {
+  return versionAtLeast(version, "0.7.1") ? `darkphish-v${version}.release.json` : null
+}
 export function expectedReleaseAssetNames(version) {
-  const tag = versionTag(version)
+  const tag = versionTag(version), receipt = publicationReceiptName(version)
   return [
     `darkphish-${tag}-darwin-amd64.tar.gz`,
     `darkphish-${tag}-darwin-arm64.tar.gz`,
@@ -23,6 +32,7 @@ export function expectedReleaseAssetNames(version) {
     `darkphish-${tag}-windows-amd64.zip`,
     `darkphish-${tag}.spdx.json`,
     "SHA256SUMS",
+    ...(receipt ? [receipt] : []),
   ].sort()
 }
 const githubActionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
@@ -53,28 +63,31 @@ export async function peelTagToCommit(ref, fetchTag, maxDepth = 8) {
   throw new Error("release tag does not resolve to a commit")
 }
 export function assertPublishedVersion(tagSHA, release, version) {
-  const tag = versionTag(version)
+  const tag = versionTag(version), expectedNames = expectedReleaseAssetNames(version)
   const source = release?.target_commitish
   if (release?.tag_name !== tag || release.draft !== false || release.prerelease !== false || !githubPublishedAt(release?.published_at) || !/^[a-f0-9]{40}$/.test(source || "") || !githubActionsBot(release?.author)) throw new Error(`patch release requires trusted published current version ${tag}`)
   if (assertReleaseState(tagSHA, release, source) !== "published") throw new Error(`patch release requires trusted published current version ${tag}`)
   const assets = release.assets
-  if (!Array.isArray(assets) || assets.length !== 7) throw new Error(`patch release requires complete trusted artifact set for ${tag}`)
+  if (!Array.isArray(assets) || assets.length !== expectedNames.length) throw new Error(`patch release requires complete trusted artifact set for ${tag}`)
   const names = assets.map((asset) => asset?.name)
-  if (new Set(names).size !== names.length || names.slice().sort().join("\n") !== expectedReleaseAssetNames(version).join("\n")) throw new Error(`patch release requires exact trusted artifact set for ${tag}`)
+  if (new Set(names).size !== names.length || names.slice().sort().join("\n") !== expectedNames.join("\n")) throw new Error(`patch release requires exact trusted artifact set for ${tag}`)
   for (const asset of assets) {
     if (asset?.state !== "uploaded" || !githubActionsBot(asset?.uploader) || !/^sha256:[a-f0-9]{64}$/.test(asset?.digest || "") || !Number.isSafeInteger(asset?.size) || asset.size <= 0) throw new Error(`patch release requires trusted uploaded artifacts for ${tag}`)
   }
   return release
 }
+async function downloadReleaseAsset(asset, suffix, download) {
+  if (!asset || typeof asset.browser_download_url !== "string") throw new Error(`published release ${suffix} is unavailable`)
+  const url = new URL(asset.browser_download_url)
+  if (url.protocol !== "https:" || url.hostname !== "github.com" || !url.pathname.endsWith(`/${asset.name}`)) throw new Error(`published release ${suffix} has an unexpected download URL`)
+  const response = await download(url, { method: "GET", redirect: "follow", signal: AbortSignal.timeout(15000) })
+  if (!response.ok) throw new Error(`published release ${suffix} download failed with HTTP ${response.status}`)
+  return response.text()
+}
 export async function verifyPublishedAssetManifest(release, { download = fetch } = {}) {
   const assets = release?.assets
   const manifest = Array.isArray(assets) ? assets.find((asset) => asset?.name === "SHA256SUMS") : null
-  if (!manifest || typeof manifest.browser_download_url !== "string") throw new Error("published release checksum manifest is unavailable")
-  const url = new URL(manifest.browser_download_url)
-  if (url.protocol !== "https:" || url.hostname !== "github.com" || !url.pathname.endsWith("/SHA256SUMS")) throw new Error("published release checksum manifest has an unexpected download URL")
-  const response = await download(url, { method: "GET", redirect: "follow", signal: AbortSignal.timeout(15000) })
-  if (!response.ok) throw new Error(`published release checksum manifest download failed with HTTP ${response.status}`)
-  const text = await response.text()
+  const text = await downloadReleaseAsset(manifest, "checksum manifest", download)
   if (text.length > 65536) throw new Error("published release checksum manifest is unexpectedly large")
   const expected = new Map()
   for (const line of text.trim().split(/\r?\n/)) {
@@ -82,9 +95,27 @@ export async function verifyPublishedAssetManifest(release, { download = fetch }
     if (!match || expected.has(match[2])) throw new Error("published release checksum manifest is malformed")
     expected.set(match[2], match[1])
   }
-  const payloads = assets.filter((asset) => asset.name !== "SHA256SUMS")
+  const payloads = assets.filter((asset) => asset.name !== "SHA256SUMS" && !asset.name.endsWith(".release.json"))
   if (expected.size !== payloads.length) throw new Error("published release checksum manifest is incomplete")
   for (const asset of payloads) if (expected.get(asset.name) !== asset.digest?.replace(/^sha256:/, "")) throw new Error("published release asset name is not cryptographically bound to its digest")
+  return true
+}
+export async function verifyPublicationReceipt(release, version, { download = fetch } = {}) {
+  const name = publicationReceiptName(version)
+  if (!name) return true
+  const receiptAsset = release?.assets?.find((asset) => asset?.name === name)
+  const text = await downloadReleaseAsset(receiptAsset, "publication receipt", download)
+  if (text.length > 4096) throw new Error("published release publication receipt is unexpectedly large")
+  let receipt
+  try { receipt = JSON.parse(text) } catch { throw new Error("published release publication receipt is malformed") }
+  const manifest = release.assets.find((asset) => asset?.name === "SHA256SUMS")
+  const expected = {
+    schema: "darkphish-release-publication-receipt/v1",
+    tag: versionTag(version),
+    source_sha: release.target_commitish,
+    checksums_sha256: manifest?.digest?.replace(/^sha256:/, ""),
+  }
+  if (Object.keys(receipt).sort().join("\n") !== Object.keys(expected).sort().join("\n") || Object.entries(expected).some(([key, value]) => receipt[key] !== value) || !/^[a-f0-9]{64}$/.test(expected.checksums_sha256 || "")) throw new Error("published release publication receipt does not prove the final gated artifact set")
   return true
 }
 export async function assertCurrentVersionPublished(repo, { request = api, version = readFileSync("VERSION", "utf8").trim(), verifyManifest = true } = {}) {
@@ -93,7 +124,10 @@ export async function assertCurrentVersionPublished(repo, { request = api, versi
   const tagSHA = ref ? await peelTagToCommit(ref, (sha) => request(`repos/${repo}/git/tags/${sha}`)) : null
   const release = await request(`repos/${repo}/releases/tags/${tag}`, { missing: true })
   assertPublishedVersion(tagSHA, release, version)
-  if (verifyManifest) await verifyPublishedAssetManifest(release)
+  if (verifyManifest) {
+    await verifyPublishedAssetManifest(release)
+    await verifyPublicationReceipt(release, version)
+  }
   return release
 }
 export function checksPassed(checks, names = requiredChecks) {
@@ -178,9 +212,6 @@ export async function mergeReviewedPullRequest(repo, expected, { request = api, 
   if (pr.head?.repo?.full_name !== repo || pr.base?.ref !== "main") return wait("target changed")
   const metadata = await request(`repos/${repo}`), base = await request(`repos/${repo}/branches/main`)
   if (metadata.full_name !== repo || metadata.default_branch !== "main" || metadata.private !== false || metadata.fork !== false || metadata.allow_auto_merge !== true || base.protected !== true) throw new Error("reviewed merging requires the protected standalone public main repository")
-  // Custom request transports are used only by deterministic unit fixtures. Every
-  // production caller uses this module's authenticated api transport, where the
-  // pending-release interlock is mandatory both before and immediately before merge.
   const enforceReleaseBoundary = !releaseMerge && request === api
   if (enforceReleaseBoundary) {
     try { await assertCurrentVersionPublished(repo, { request, verifyManifest: false }) } catch { return wait("current VERSION is not fully published; protected main is frozen until release completion") }

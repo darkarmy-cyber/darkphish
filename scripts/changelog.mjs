@@ -18,6 +18,11 @@ function version() {
   return value
 }
 
+function nextPatch(value) {
+  const [major, minor, patch] = value.split(".").map(Number)
+  return `${major}.${minor}.${patch + 1}`
+}
+
 function nextMinor(value) {
   const [major, minor] = value.split(".").map(Number)
   return `${major}.${minor + 1}.0`
@@ -42,15 +47,43 @@ function changedFiles(base) {
     .split(/\r?\n/).filter(Boolean)
 }
 
+function releaseTagExists(value) {
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", `refs/tags/v${value}^{commit}`], {
+      cwd: root,
+      stdio: "ignore",
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function allowedTargets(current) {
+  return new Set([current, nextPatch(current), nextMinor(current)])
+}
+
+function selectedTarget(values, current) {
+  const targets = [...new Set(values.map((fragment) => fragment.version))]
+  if (targets.length === 0) return current
+  if (targets.length !== 1) {
+    throw new Error(`changelog fragments must target exactly one release; found ${targets.sort().join(", ")}`)
+  }
+  return targets[0]
+}
+
 function validate(requirePRFragment = false, base = "") {
   const current = version()
   const values = fragments()
-	const targets = new Set(values.map((fragment) => fragment.version))
-	if (targets.size > 1) throw new Error("all changelog fragments must target the same release")
+  const allowed = allowedTargets(current)
   for (const fragment of values) {
-		if (fragment.version !== current && fragment.version !== nextMinor(current)) {
-			throw new Error(`${fragment.name} targets ${fragment.version}; expected ${current} or next minor ${nextMinor(current)}`)
-		}
+    if (!allowed.has(fragment.version)) {
+      throw new Error(`${fragment.name} targets ${fragment.version}; expected ${current}, next patch ${nextPatch(current)}, or next minor ${nextMinor(current)}`)
+    }
+  }
+  const target = selectedTarget(values, current)
+  if (target === nextPatch(current) && !releaseTagExists(current)) {
+    throw new Error(`patch release ${target} requires published current version v${current}`)
   }
   if (requirePRFragment) {
     const files = changedFiles(base)
@@ -64,14 +97,16 @@ function validate(requirePRFragment = false, base = "") {
 function aggregate() {
   const values = validate()
   if (values.length === 0) throw new Error("no changelog fragments to aggregate")
-	const current = values[0].version
-	if (version() !== current) writeFileSync(versionPath, `${current}\n`)
+  const currentVersion = version()
+  const current = selectedTarget(values, currentVersion)
+  const releaseValues = values.filter((item) => item.version === current)
+  if (currentVersion !== current) writeFileSync(versionPath, `${current}\n`)
   let changelog = readFileSync(changelogPath, "utf8").replace(/\r\n/g, "\n")
   const heading = `## ${current}`
   if (!changelog.includes(heading)) {
     const insertion = [`${heading} - ${new Date().toISOString().slice(0, 10)}`, ""]
     for (const category of categories) {
-      const bullets = values.filter((item) => item.category === category).flatMap((item) => item.bullets)
+      const bullets = releaseValues.filter((item) => item.category === category).flatMap((item) => item.bullets)
       if (bullets.length) insertion.push(`### ${category}`, "", ...bullets, "")
     }
     const titleEnd = changelog.indexOf("\n\n", changelog.indexOf("# Changelog"))
@@ -82,7 +117,7 @@ function aggregate() {
     const end = next < 0 ? changelog.length : next
     let section = changelog.slice(start, end).trimEnd()
     for (const category of categories) {
-      const bullets = values.filter((item) => item.category === category).flatMap((item) => item.bullets)
+      const bullets = releaseValues.filter((item) => item.category === category).flatMap((item) => item.bullets)
         .filter((bullet) => !section.split("\n").includes(bullet))
       if (!bullets.length) continue
       const categoryHeading = `### ${category}\n`
@@ -97,14 +132,14 @@ function aggregate() {
     changelog = changelog.slice(0, start) + section + "\n" + (next < 0 ? "" : "\n" + changelog.slice(next + 1))
   }
   writeFileSync(changelogPath, changelog)
-  for (const item of values) unlinkSync(join(changesPath, item.name))
+  for (const item of releaseValues) unlinkSync(join(changesPath, item.name))
 }
 
 const command = process.argv[2] || "validate"
 try {
   if (command === "target") {
     const values = validate()
-    process.stdout.write(`${values[0]?.version || version()}\n`)
+    process.stdout.write(`${selectedTarget(values, version())}\n`)
   } else if (command === "validate") {
     const baseIndex = process.argv.indexOf("--base")
     validate(baseIndex !== -1, baseIndex !== -1 ? process.argv[baseIndex + 1] : "")

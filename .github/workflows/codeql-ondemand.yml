@@ -1,0 +1,165 @@
+name: CodeQL on-demand
+
+on:
+  repository_dispatch:
+    types: [generated-release-codeql]
+
+permissions:
+  contents: read
+  actions: read
+  checks: write
+  pull-requests: read
+
+concurrency:
+  group: codeql-ondemand-${{ github.event.client_payload.sha }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      target_sha: ${{ steps.target.outputs.target_sha }}
+      target_branch: ${{ steps.target.outputs.target_branch }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.19.0
+      - name: Validate generated release target from protected-main code
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: ${{ github.event.client_payload.branch }}
+          TARGET_SHA: ${{ github.event.client_payload.sha }}
+        run: node scripts/release-codeql-target.mjs
+
+  analyze:
+    needs: validate
+    name: Trusted release CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      checks: write
+      pull-requests: read
+      security-events: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [go, javascript-typescript]
+    steps:
+      - name: Open exact-head required check
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ needs.validate.outputs.target_sha }}
+          LANGUAGE: ${{ matrix.language }}
+        shell: bash
+        run: |
+          node --input-type=module <<'EOF'
+          import { appendFileSync } from "node:fs"
+          const repo = process.env.GITHUB_REPOSITORY
+          const response = await fetch(`https://api.github.com/repos/${repo}/check-runs`, {
+            method: "POST",
+            headers: {
+              Accept: "application/vnd.github+json",
+              Authorization: `Bearer ${process.env.GH_TOKEN}`,
+              "X-GitHub-Api-Version": "2022-11-28",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              name: `CodeQL (${process.env.LANGUAGE})`,
+              head_sha: process.env.TARGET_SHA,
+              status: "in_progress",
+              output: { title: "Trusted generated-release CodeQL", summary: "Analysis is running from the protected default-branch workflow definition." },
+            }),
+          })
+          if (!response.ok) throw new Error(`check-run creation failed with HTTP ${response.status}`)
+          const check = await response.json()
+          appendFileSync(process.env.GITHUB_OUTPUT, `check_id=${check.id}\n`)
+          EOF
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.target_sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        if: matrix.language == 'go'
+        with:
+          go-version: 1.27.1
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/autobuild@v4
+      - uses: github/codeql-action/analyze@v4
+        with:
+          upload: never
+          output: ${{ runner.temp }}/codeql-results
+          upload-database: false
+      - name: Fail closed on local CodeQL findings
+        env:
+          CODEQL_RESULTS: ${{ runner.temp }}/codeql-results
+        shell: bash
+        run: |
+          node --input-type=module <<'EOF'
+          import { readdirSync, readFileSync, statSync } from "node:fs"
+          import { join } from "node:path"
+          const root = process.env.CODEQL_RESULTS
+          if (!root) throw new Error("CODEQL_RESULTS is required")
+          const pending = [root], files = []
+          while (pending.length) {
+            const current = pending.pop()
+            for (const name of readdirSync(current)) {
+              const path = join(current, name)
+              if (statSync(path).isDirectory()) pending.push(path)
+              else if (name.endsWith(".sarif")) files.push(path)
+            }
+          }
+          if (!files.length) throw new Error("CodeQL produced no SARIF output")
+          let findings = 0
+          for (const path of files) {
+            const sarif = JSON.parse(readFileSync(path, "utf8"))
+            if (sarif?.version !== "2.1.0" || !Array.isArray(sarif.runs)) throw new Error("CodeQL produced malformed SARIF")
+            for (const run of sarif.runs) {
+              const results = run?.results ?? []
+              if (!Array.isArray(results)) throw new Error("CodeQL SARIF results are malformed")
+              findings += results.length
+            }
+          }
+          if (findings !== 0) throw new Error(`CodeQL found ${findings} local result(s); exact head remains blocked`)
+          console.log("Trusted generated-release CodeQL SARIF contains zero findings.")
+          EOF
+      - name: Close exact-head required check
+        if: always() && steps.check.outputs.check_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECK_ID: ${{ steps.check.outputs.check_id }}
+          JOB_STATUS: ${{ job.status }}
+          LANGUAGE: ${{ matrix.language }}
+        shell: bash
+        run: |
+          node --input-type=module <<'EOF'
+          const repo = process.env.GITHUB_REPOSITORY
+          const success = process.env.JOB_STATUS === "success"
+          const response = await fetch(`https://api.github.com/repos/${repo}/check-runs/${process.env.CHECK_ID}`, {
+            method: "PATCH",
+            headers: {
+              Accept: "application/vnd.github+json",
+              Authorization: `Bearer ${process.env.GH_TOKEN}`,
+              "X-GitHub-Api-Version": "2022-11-28",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              status: "completed",
+              conclusion: success ? "success" : "failure",
+              output: {
+                title: success ? "Trusted generated-release CodeQL passed" : "Trusted generated-release CodeQL failed",
+                summary: success ? "Protected default-branch workflow found zero local CodeQL results." : "The exact-head analysis did not complete cleanly; release merge remains blocked.",
+              },
+            }),
+          })
+          if (!response.ok) throw new Error(`check-run completion failed with HTTP ${response.status}`)
+          EOF

@@ -25,7 +25,7 @@ function fixture() {
   const bot = { __typename: "Bot", databaseId: 199175422 }
   const f = { pr, comments, reviews: [], reviewComments: [], threads: [], now: Date.parse(at(11)), calls: [], writes: [], canceled: [],
     checks: requiredChecks.map((name, id) => ({ id: id + 1, name, status: "completed", conclusion: "success", app: { slug: "github-actions" } })),
-    alerts: [], metadata: { full_name: repo, default_branch: "main", private: true, fork: false, allow_auto_merge: true },
+    alerts: [], metadata: { full_name: repo, default_branch: "main", private: false, fork: false, allow_auto_merge: true },
     branch: { protected: true, commit: { sha: base } },
   }
   f.nodes = () => f.comments.map(c => ({ databaseId: c.id, body: c.body, updatedAt: c.updated_at,
@@ -314,9 +314,11 @@ test("failed checks, reviews, alerts, changed base and mergeability prevent ever
     assert.equal(await f.merge(), false)
     assert.deepEqual(f.writes, [])
   }
-  const f = fixture(); f.metadata.private = false
-  await assert.rejects(f.merge(), /protected standalone/)
-  assert.deepEqual(f.writes, [])
+  for (const visibility of [true, null, undefined, 0]) {
+    const f = fixture(); f.metadata.private = visibility
+    await assert.rejects(f.merge(), /protected standalone/)
+    assert.deepEqual(f.writes, [])
+  }
 })
 
 test("metadata reconciliation never opts in forks, dependency bots or bot release PRs", () => {

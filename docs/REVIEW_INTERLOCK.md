@@ -1,105 +1,31 @@
 # Reviewed merge and release interlock
 
-Starting with 0.8, automation performs a single protected squash merge only after
-all ten required checks succeed, CodeQL has no open alerts, and both review
-passes certify the current PR head. It never grants a native queued auto-merge
-permission which a later push could inherit. This changes release governance,
-not application behavior, database schema, audit formats or runtime dependencies.
+Darkphish automation performs a single protected squash merge only after all required checks succeed, CodeQL gates pass, and both trusted review passes certify the current PR head. It never treats a queued merge permission as durable approval for later code.
 
 ## Evidence and trust boundary
 
-`scripts/review-gate.mjs` recognizes the observed Codex connector summary and
-explicit clean code/security result comments. It requires the fixed connector
-bot identity and GitHub App identity, the correct repository/PR and complete
-security-review head SHA, completed status for both rows, a manually requested
-security review, and clean results for the same head. Short result SHAs must
-resolve through GitHub to the complete expected SHA; ref-name shadowing and
-ambiguous resolution block the operation. A reaction or a user-posted copy of a
-bot message is not review evidence.
+`scripts/review-gate.mjs` recognizes the observed Codex connector summary and explicit clean code/security result comments. It verifies the connector bot and GitHub App identities, the repository and pull request, the complete security-review head SHA, completed state for both review types, an explicit manual security-review request, and clean results for the same current head.
 
-The newest clean result for each kind must match; the adapter never searches
-backward past a stale result. Connector findings arrive as formal PR reviews,
-not clean issue comments. Any later formal connector review invalidates earlier
-clean results even if its body is edited, its threads resolved or it is dismissed.
-Because the preview summary provides no immutable review-run ID, the conservative
-rule requires **both** fresh clean comments after every formal connector result,
-including a late result for an older head. Equal-second timestamps are ambiguous
-and block. Unknown newer connector messages also block. A summary's retained
-historical findings are accepted only as a fully parsed, count-checked list of
-same-PR comment IDs, each independently tied to an authentic formal review and
-its original commit. Every such result and inline comment's latest update must
-predate both fresh clean results, and all threads must be resolved. Unlinked,
-foreign, unknown-format or current findings block, even without a review thread.
-The mutable inline `commit_id` is never used as its original source identity.
-Reactions alone cannot
-clear this condition; obtain fresh review results, normally on the corrected head.
+Short display SHAs must resolve to the complete expected commit. Ref shadowing, ambiguous resolution, edited or forged evidence, API failures, malformed pagination, unresolved threads, pending reviews, changes-requested decisions, stale results, or later superseding connector results fail closed. Reactions and maintainer-authored copies of bot messages are never review evidence.
 
-Comment creation identity alone is insufficient because maintainers can edit
-comments. A final GraphQL read checks the current author/editor identities and
-compares the exact content and timestamps of all three evidence comments. All
-review-thread pages must be resolved, including outdated threads. Outstanding
-GitHub changes-requested decisions and pending reviews block merging. Permission,
-API, pagination, malformed-data or provenance failures stop the operation.
-Unchanged pending evidence is reported as waiting, not as a successful review.
+Historical findings may be retained in a connector summary only when the adapter can map them unambiguously to authentic earlier review evidence and every corresponding thread is resolved. Fresh clean code and security results must postdate the historical finding. Unknown or current findings block merge.
 
-The [official code-review instructions](https://learn.chatgpt.com/docs/third-party/github)
-and [explicit security-review instructions](https://learn.chatgpt.com/docs/security/security-review)
-describe separate review requests and reporting thresholds. They do **not**
-promise a stable machine-readable summary schema. This adapter therefore fails
-closed on format drift; update it only through tested, reviewed engineering.
-GitHub-visible findings reflect configured reporting thresholds, not proof that
-every possible weakness or every item in the private cloud report is absent.
-This batch does not change Codex settings or thresholds.
+## Protected public repository merge
 
-## Protected merge and durable pause
+`mergeReviewedPullRequest` requires the live repository to be the standalone public `darkarmy-cyber/darkphish` repository with protected default branch `main`. It verifies repository identity, public visibility, non-fork status, exact PR head/base snapshots, required checks, CodeQL state, review evidence, resolved conversations, mergeability, draft state and the `codex-automerge` opt-in label.
 
-`mergeReviewedPullRequest` checks the live internal PR, protected private default
-main, repository auto-merge policy, opt-in label, all checks and CodeQL before
-review validation. It rechecks PR/head/base/readiness and checks afterward. Any
-observed legacy queued auto-merge is revoked before evaluating pending evidence,
-even if the head changed. Draft PRs and PRs without `codex-automerge` do not merge.
+If GitHub reports a pre-existing native auto-merge, automation revokes it before evaluating current evidence. The final merge request is synchronous, uses `merge_method: squash`, and includes the complete reviewed head SHA. GitHub branch protection remains authoritative. No administrator bypass, manufactured approval or unreviewed queued merge is allowed.
 
-The final synchronous [GitHub merge request](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request)
-contains `sha` equal to the full reviewed head and `merge_method: squash`. GitHub
-still enforces branch protections and rejects a changed head. No administrator
-bypass, merge-queue insertion, manufactured approval or new required-check name
-is used. Native protection still owns concurrent check/thread/branch changes.
-Comment APIs and merge are not one atomic transaction; the adapter rechecks
-evidence but cannot make external review-provider updates atomic with GitHub.
-The full-head compare-and-swap prevents merging a later unreviewed code push.
+Remove `codex-automerge` or mark a PR draft to pause automated merging. A later push invalidates exact-head review evidence and requires fresh reviews.
 
-Remove `codex-automerge` (or mark a PR draft) to pause automated merging. Release
-preparation applies the label only when it creates a new release PR, never during
-recovery of an existing one. Re-add it explicitly after reviews and readiness are
-appropriate. Recovery may still validate/update generated changelog content and
-dispatch checks while merge is paused; the pause is specifically a merge pause.
+## Workflow isolation
 
-## Workflow isolation and review requests
+Privileged merge/release workflows execute protected-main automation code only. They do not execute untrusted pull-request code with elevated `pull_request_target` privileges. Generated release PRs are subject to the same exact-head review and resolved-thread requirements as engineering PRs.
 
-Engineering reconciliation runs on a bounded schedule, manual dispatch and PR
-metadata events. The `pull_request_target` workflow and its scripts come from
-protected main; it never checks out PR code, installs its dependencies, restores
-its caches or executes its artifacts. It rejects external forks and non-team
-authors. Only read permissions needed for evidence supplement the existing
-contents/PR merge permissions; checkout credentials are not persisted. See
-[GitHub's privileged-workflow guidance](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target).
+A maintainer or approved automation explicitly requests both `@codex review` and `@codex security review` on each final head. Workflow execution approval, where GitHub requires it, is separate from PR review evidence and cannot substitute for a review.
 
-Bot-generated release PRs remain owned by release-prepare's exact-generated-diff
-recovery path and use the same merge interlock. A maintainer or the approved
-desktop continuation requests `@codex review` and `@codex security review` on
-each final head. Workflows do not impersonate a reviewer or assume that a
-GitHub Actions bot has a Codex workspace identity. Missing reviews stay pending;
-scheduled recovery can merge once real evidence and all protections are ready.
-Workflow-execution approval for a held bot PR remains separate from PR review.
-Green dispatched tests never substitute for an unapproved required PR run.
+## Publication gate
 
-Publication also verifies that both review completions preceded the release
-PR's merge. It checks before building and again before exposing the draft,
-alongside existing exact-main CI, CodeQL and immutable-asset checks. Human review
-approval count and repository/tag protection settings are unchanged; this is an
-automation/publication interlock, not a new GitHub organization policy.
+Release publication verifies that the merged generated release PR was reviewed on its exact head before merge, that protected `main` still corresponds to the expected release source, and that required CI, CodeQL, native artifacts, checksums and SBOM validation succeed. Unexpected or mutable tag/release state fails closed.
 
-The first rollout PR can be merged by the maintainer's existing protected,
-full-head operation after all checks and both reviews, because the new script
-does not exist on protected main until that merge. Do not run its unmerged code
-with privileged workflow credentials to bootstrap the interlock.
+The interlock is deliberately conservative: inability to prove the required state is treated as a blocker, not as permission to merge or publish.

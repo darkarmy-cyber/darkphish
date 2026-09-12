@@ -3,6 +3,7 @@ import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "no
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { api, assertCurrentVersionPublished, assertGeneratedCommits, mergeReviewedPullRequest, git, greenCommit, nextPatchVersion, pages, protectedMain, repository, versionTag } from "./release-lib.mjs"
+import { dispatchChecks } from "./check-refresh.mjs"
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 
 async function prepare() {
@@ -19,6 +20,7 @@ async function prepare() {
     return
   }
   if (!await greenCommit(repo, sha)) {
+    await dispatchChecks(repo, "main")
     console.log("Waiting for all required main CI and security checks before release preparation.")
     return
   }
@@ -78,6 +80,11 @@ async function prepare() {
     }
   }
   if (created) await api(`repos/${repo}/issues/${pr.number}/labels`, { method: "POST", body: { labels: ["codex-automerge"] } })
+  const refreshed = await dispatchChecks(repo, branch)
+  if (refreshed.dispatched || !await greenCommit(repo, refreshed.sha)) {
+    console.log(`Release PR #${pr.number}: exact-head CI/CodeQL refresh requested for ${refreshed.sha}; merge waits for successful required checks.`)
+    return
+  }
   await mergeReviewedPullRequest(repo, await api(`repos/${repo}/pulls/${pr.number}`), { releaseMerge: true })
   console.log(`Prepared ${pr.html_url} at ${releaseSHA}; recovery requires exact-head code and explicit security review before protected merge.`)
 }

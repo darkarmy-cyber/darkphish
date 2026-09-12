@@ -1,6 +1,6 @@
 import { appendFileSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { createHash } from "node:crypto"
-import { api, assetDisposition, assertReleaseState, generatedPath, git, greenCommit, pages, protectedMain, repository, verifyChecksums, versionTag } from "./release-lib.mjs"
+import { api, assetDisposition, assertReleaseState, generatedPath, git, greenCommit, pages, protectedMain, publicationReceiptName, repository, verifyChecksums, versionTag } from "./release-lib.mjs"
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 import { verifyPullRequestReviews } from "./review-gate.mjs"
 
@@ -37,6 +37,13 @@ function verifyRetainedFragments(releaseVersion) {
     if (compareVersions(fragmentVersion, releaseVersion) <= 0) throw new Error(`release source contains unconsumed fragment ${name} targeting ${fragmentVersion}`)
   }
 }
+async function uploadAsset(release, name, content) {
+  const url = new URL(release.upload_url.split("{")[0])
+  if (url.origin !== "https://uploads.github.com") throw new Error("unexpected release upload host")
+  url.searchParams.set("name", name)
+  const response = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, "Content-Type": "application/octet-stream" }, body: content })
+  if (!response.ok) throw new Error(`asset upload failed with HTTP ${response.status}; draft release retained for protected retry`)
+}
 
 async function source() {
   const repo = repository(), sha = git("rev-parse", "HEAD"), version = readFileSync("VERSION", "utf8").trim(), tag = versionTag(version)
@@ -72,6 +79,8 @@ async function run() {
   }
   if (command !== "publish" || !current) throw new Error("publication requires the fully checked protected release merge")
   const { repo, sha, version, tag } = current
+  const receiptName = publicationReceiptName(version)
+  if (!receiptName) throw new Error("publication receipt is required for this release line")
   const expected = ["linux-amd64.tar.gz", "linux-arm64.tar.gz", "windows-amd64.zip", "darwin-amd64.tar.gz", "darwin-arm64.tar.gz"].map((target) => `darkphish-${tag}-${target}`)
   expected.push(`darkphish-${tag}.spdx.json`, "SHA256SUMS")
   const names = readdirSync("dist").filter((name) => statSync(`dist/${name}`).isFile()).sort()
@@ -96,20 +105,16 @@ async function run() {
   assertTrustedDraftRelease(release, sha)
 
   const assets = await pages(`repos/${repo}/releases/${release.id}/assets`)
-  if (assets.some((asset) => !names.includes(asset.name)) || new Set(assets.map((asset) => asset.name)).size !== assets.length) throw new Error("release draft contains unexpected assets")
+  const allowedNames = new Set([...names, receiptName])
+  if (assets.some((asset) => !allowedNames.has(asset.name)) || new Set(assets.map((asset) => asset.name)).size !== assets.length) throw new Error("release draft contains unexpected assets")
   for (const asset of assets) assertTrustedReleaseAsset(asset)
   for (const name of names) {
     const content = bytes.get(name)
     if (assetDisposition(assets.find((asset) => asset.name === name), hashes.get(name), content.length) === "reuse") continue
-    const url = new URL(release.upload_url.split("{")[0])
-    if (url.origin !== "https://uploads.github.com") throw new Error("unexpected release upload host")
-    url.searchParams.set("name", name)
-    const response = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, "Content-Type": "application/octet-stream" }, body: content })
-    if (!response.ok) throw new Error(`asset upload failed with HTTP ${response.status}; draft release retained for protected retry`)
+    await uploadAsset(release, name, content)
   }
 
   const uploaded = await pages(`repos/${repo}/releases/${release.id}/assets`)
-  if (uploaded.length !== names.length) throw new Error("unexpected release asset set after upload")
   for (const name of names) {
     const asset = uploaded.find((candidate) => candidate.name === name)
     if (!asset) throw new Error("release asset missing after upload")
@@ -117,12 +122,37 @@ async function run() {
     assetDisposition(asset, hashes.get(name), bytes.get(name).length)
   }
 
+  // The receipt is intentionally minted only after every final security/source gate.
+  // A concurrently published draft observed before this point cannot later become a
+  // trusted serialization boundary because the workflow refuses to mint the receipt.
   await protectedMain(repo, sha)
   await verifyCodeQLBaseline(repo, sha)
   const beforePublish = await api(`repos/${repo}/releases/${release.id}`)
   assertTrustedDraftRelease(beforePublish, sha)
   const publishSource = await source()
   if (!publishSource || publishSource.sha !== sha || publishSource.tag !== tag || publishSource.state !== "resume") throw new Error("release source changed before final publication")
+
+  const receipt = Buffer.from(`${JSON.stringify({
+    schema: "darkphish-release-publication-receipt/v1",
+    tag,
+    source_sha: sha,
+    checksums_sha256: hashes.get("SHA256SUMS"),
+  })}\n`, "utf8")
+  const receiptHash = createHash("sha256").update(receipt).digest("hex")
+  const beforeReceipt = await api(`repos/${repo}/releases/${release.id}`)
+  assertTrustedDraftRelease(beforeReceipt, sha)
+  let receiptAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
+  const existingReceipt = receiptAssets.find((asset) => asset.name === receiptName)
+  if (assetDisposition(existingReceipt, receiptHash, receipt.length) === "upload") await uploadAsset(release, receiptName, receipt)
+  receiptAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
+  const receiptAsset = receiptAssets.find((asset) => asset.name === receiptName)
+  if (!receiptAsset) throw new Error("post-gate publication receipt is missing")
+  assertTrustedReleaseAsset(receiptAsset)
+  assetDisposition(receiptAsset, receiptHash, receipt.length)
+  if (receiptAssets.length !== names.length + 1) throw new Error("final draft release asset set is incomplete or unexpected")
+
+  const finalDraft = await api(`repos/${repo}/releases/${release.id}`)
+  assertTrustedDraftRelease(finalDraft, sha)
   const published = await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, prerelease: false, make_latest: "true" } })
   assertTrustedPublishedRelease(published, sha)
   const verified = await api(`repos/${repo}/releases/${release.id}`)

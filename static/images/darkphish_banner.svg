@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="873" viewBox="0 0 1600 873" role="img" aria-labelledby="title desc">
+  <title id="title">DarkPhish</title>
+  <desc id="desc">DarkPhish phishing simulation platform banner with a neon cyber fish and hook.</desc>
+  <defs>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#10d7e5"/>
+      <stop offset="1" stop-color="#79f0d2"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="1600" height="873" fill="#000"/>
+  <g transform="translate(585 165)" fill="none" stroke="url(#cyan)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+    <path d="M20 120 L86 84 L203 84 Q276 38 365 80 Q409 99 447 127 Q414 154 370 170 Q281 205 203 158 L86 158 Z"/>
+    <path d="M86 84 L33 38 L13 108 L20 120 L14 137 L33 207 L86 158"/>
+    <path d="M198 84 L246 27 L309 82"/>
+    <path d="M245 51 L268 83"/><path d="M266 38 L289 81"/>
+    <path d="M247 160 L289 220 L326 171"/>
+    <path d="M340 163 Q327 129 346 105"/>
+    <path d="M58 118 H142 L171 92 H257"/>
+    <path d="M59 139 H168 L197 116 H282"/>
+    <path d="M113 157 H202 L235 141 H312"/>
+    <circle cx="258" cy="92" r="6" fill="#000"/><circle cx="283" cy="116" r="6" fill="#000"/><circle cx="313" cy="141" r="6" fill="#000"/>
+    <path d="M146 91 L120 115"/><circle cx="120" cy="115" r="5" fill="#000"/>
+    <circle cx="375" cy="106" r="12" fill="url(#cyan)" stroke="none"/>
+    <path d="M395 131 L431 132"/>
+    <path d="M452 132 Q477 158 503 167"/>
+    <path d="M503 52 V165 Q503 219 470 225 Q430 232 419 191 Q414 166 435 149"/>
+    <path d="M435 149 L450 178 L461 151"/>
+    <circle cx="503" cy="90" r="10" fill="#000"/>
+  </g>
+  <g transform="translate(470 430)" font-family="Arial, Helvetica, sans-serif">
+    <text x="0" y="0" font-size="122" font-weight="700" letter-spacing="-5" fill="#1fd3df" filter="url(#softGlow)">Dark</text>
+    <text x="274" y="0" font-size="122" font-weight="700" letter-spacing="-5" fill="#fff">Phish</text>
+    <text x="5" y="62" font-size="39" font-weight="700" letter-spacing="-1" fill="#fff">Platform for phishing simulations.</text>
+  </g>
+</svg>

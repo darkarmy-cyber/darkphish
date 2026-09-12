@@ -54,9 +54,10 @@ export async function dispatchChecks(repo, branch, { request = api } = {}) {
     }
   } else {
     const canonical = await hasExactRun(repo, "codeql.yml", branch, sha, request)
-    const refresh = await hasExactRun(repo, "codeql-ondemand.yml", branch, sha, request)
-    if (!canonical && !refresh) {
-      await request(`repos/${repo}/actions/workflows/codeql-ondemand.yml/dispatches`, { method: "POST", body: { ref: branch } })
+    const required = await request(`repos/${repo}/commits/${sha}/check-runs?filter=latest&per_page=100`)
+    const names = new Set((required?.check_runs || []).filter((run) => run?.app?.slug === "github-actions" && run?.status === "completed" && run?.conclusion === "success").map((run) => run.name))
+    if (!canonical && (!names.has("CodeQL (go)") || !names.has("CodeQL (javascript-typescript)"))) {
+      await request(`repos/${repo}/dispatches`, { method: "POST", body: { event_type: "generated-release-codeql", client_payload: { branch, sha } } })
       dispatched = true
     }
   }

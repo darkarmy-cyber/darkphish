@@ -123,7 +123,7 @@ test("preparation and publication require the read-only gate without changing re
   const prepare = readFileSync(new URL("./release-prepare.mjs", import.meta.url), "utf8")
   const publish = readFileSync(new URL("./release-publish.mjs", import.meta.url), "utf8")
   assert.ok(prepare.indexOf("await verifyCodeQLBaseline(repo, sha)") < prepare.indexOf('git("push"'))
-  assert.equal((publish.match(/await verifyCodeQLBaseline\(repo, sha\)/g) || []).length, 2)
+  assert.equal((publish.match(/await verifyCodeQLBaseline\(repo, sha\)/g) || []).length, 3)
   for (const name of ["release-prepare.yml", "release.yml", "security-baseline.yml"]) {
     const workflow = readFileSync(new URL(`../.github/workflows/${name}`, import.meta.url), "utf8")
     assert.match(workflow, /security-events: read/)

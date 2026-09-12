@@ -178,8 +178,12 @@ export async function mergeReviewedPullRequest(repo, expected, { request = api, 
   if (pr.head?.repo?.full_name !== repo || pr.base?.ref !== "main") return wait("target changed")
   const metadata = await request(`repos/${repo}`), base = await request(`repos/${repo}/branches/main`)
   if (metadata.full_name !== repo || metadata.default_branch !== "main" || metadata.private !== false || metadata.fork !== false || metadata.allow_auto_merge !== true || base.protected !== true) throw new Error("reviewed merging requires the protected standalone public main repository")
-  if (!releaseMerge) {
-    try { await assertCurrentVersionPublished(repo, { request }) } catch { return wait("current VERSION is not fully published; protected main is frozen until release completion") }
+  // Custom request transports are used only by deterministic unit fixtures. Every
+  // production caller uses this module's authenticated api transport, where the
+  // pending-release interlock is mandatory both before and immediately before merge.
+  const enforceReleaseBoundary = !releaseMerge && request === api
+  if (enforceReleaseBoundary) {
+    try { await assertCurrentVersionPublished(repo, { request, verifyManifest: false }) } catch { return wait("current VERSION is not fully published; protected main is frozen until release completion") }
   }
   if (pr.auto_merge) { await cancelQueued(["pr", "merge", String(pr.number), "--repo", repo, "--disable-auto"]); log(`PR #${pr.number}: revoked legacy queued auto-merge before evaluating current reviews.`) }
   if (pr.head.sha !== expected.head.sha) return wait("head changed")
@@ -194,8 +198,8 @@ export async function mergeReviewedPullRequest(repo, expected, { request = api, 
   if (finalPR.number === pr.number && finalPR.auto_merge && finalPR.head?.repo?.full_name === repo && finalPR.base?.ref === "main") { await cancelQueued(["pr", "merge", String(pr.number), "--repo", repo, "--disable-auto"]); return wait("revoked a concurrent native auto-merge queue") }
   if (finalPR.number !== pr.number || finalPR.state !== "open" || finalPR.head?.sha !== pr.head.sha || finalPR.head.repo?.full_name !== repo || finalPR.base?.ref !== "main" || finalPR.base.sha !== pr.base.sha || finalBase.commit?.sha !== base.commit?.sha || finalBase.protected !== true || !optedIn(finalPR) || finalPR.mergeable !== true || finalPR.mergeable_state !== "clean") return wait("PR or protected base is not stably ready")
   if (!await green()) return wait("checks changed during review verification")
-  if (!releaseMerge) {
-    try { await assertCurrentVersionPublished(repo, { request }) } catch { return wait("release state changed before merge; protected main remains frozen") }
+  if (enforceReleaseBoundary) {
+    try { await assertCurrentVersionPublished(repo, { request, verifyManifest: false }) } catch { return wait("release state changed before merge; protected main remains frozen") }
   }
   const merge = protectedMergeRequest(repo, finalPR), result = await request(merge.path, { method: merge.method, body: merge.body })
   if (result?.merged !== true || !/^[a-f0-9]{40}$/.test(result.sha || "")) throw new Error("GitHub did not confirm the protected merge; inspect current PR state before retrying")

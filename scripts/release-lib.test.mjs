@@ -28,15 +28,34 @@ test("release recovery never moves a tag or adopts unknown publication",()=>{ass
 test("asset retries reuse only identical bytes and never replace",()=>{assert.equal(assetDisposition(null,"abc",123),"upload");assert.equal(assetDisposition({digest:"sha256:abc",size:123},"abc",123),"reuse");assert.throws(()=>assetDisposition({digest:"sha256:old",size:123},"abc",123))})
 test("checksums cover each artifact exactly once",()=>{const digest="a".repeat(64),hashes=new Map([["darkphish-one.zip",digest],["darkphish-two.tar.gz",digest],["SHA256SUMS","unused"]]),first=`${digest}  darkphish-one.zip`,second=`${digest}  darkphish-two.tar.gz`;assert.doesNotThrow(()=>verifyChecksums(`${first}\n${second}\n`,hashes));assert.throws(()=>verifyChecksums(`${first}\n${first}\n`,hashes));assert.throws(()=>verifyChecksums(first,hashes));assert.throws(()=>verifyChecksums(`${first}\n${"b".repeat(64)}  darkphish-two.tar.gz`,hashes))})
 
-test("write-capable release and merge workflows cannot be branch-dispatched", () => {
-  for (const path of ["release.yml", "release-prepare.yml", "dependabot-automerge.yml"]) {
+test("write-capable security release and merge workflows cannot be branch-dispatched", () => {
+  for (const path of ["release.yml", "release-prepare.yml", "dependabot-automerge.yml", "automerge.yml", "codeql.yml"]) {
     const workflow = readFileSync(new URL(`../.github/workflows/${path}`, import.meta.url), "utf8")
     assert.doesNotMatch(workflow, /\bworkflow_dispatch\s*:/, path)
+  }
+  for (const path of ["release.yml", "release-prepare.yml", "dependabot-automerge.yml", "automerge.yml"]) {
+    const workflow = readFileSync(new URL(`../.github/workflows/${path}`, import.meta.url), "utf8")
     assert.match(workflow, /github\.ref == 'refs\/heads\/main'/, path)
   }
   const publish = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8")
   const prepare = readFileSync(new URL("../.github/workflows/release-prepare.yml", import.meta.url), "utf8")
   assert.match(publish, /workflow_run:/); assert.match(publish, /branches: \[main\]/); assert.match(prepare, /workflow_run:/); assert.match(prepare, /branches: \[main\]/)
+})
+test("release draft recovery authenticates the immutable Actions actor and existing assets", () => {
+  const publish = readFileSync(new URL("./release-publish.mjs", import.meta.url), "utf8")
+  assert.match(publish, /actor\?\.id === 41898282/)
+  assert.match(publish, /assertTrustedDraft\(release, sha\)/)
+  assert.match(publish, /for \(const asset of assets\) assertTrustedDraftAsset\(asset\)/)
+  assert.match(publish, /assertTrustedDraftAsset\(asset\)[\s\S]*assetDisposition\(asset,/)
+})
+test("protected engineering merge and publication share one non-cancelling serialization group", () => {
+  const merge = readFileSync(new URL("../.github/workflows/automerge.yml", import.meta.url), "utf8")
+  const publish = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8")
+  const group = text => text.match(/concurrency:\s+group: ([^\r\n]+)/)?.[1]
+  assert.equal(group(merge), "protected-main-mutation")
+  assert.equal(group(publish), "protected-main-mutation")
+  assert.match(merge, /cancel-in-progress: false/)
+  assert.match(publish, /cancel-in-progress: false/)
 })
 test("preparation cannot replace a pending publication run",()=>{const prepare=readFileSync(new URL("../.github/workflows/release-prepare.yml",import.meta.url),"utf8"),publish=readFileSync(new URL("../.github/workflows/release.yml",import.meta.url),"utf8"),group=text=>text.match(/concurrency:\s+group: ([^\r\n]+)/)?.[1];assert.ok(group(prepare));assert.ok(group(publish));assert.notEqual(group(prepare),group(publish));assert.match(prepare,/cancel-in-progress: false/);assert.match(publish,/cancel-in-progress: false/);assert.match(publish,/schedule:\s+- cron:/);assert.match(publish,/github\.event_name != 'workflow_run'/)})
 test("protected synchronous merge pins a safe internal head without a queue or bypass",()=>{const repo="owner/repository",pr={number:42,state:"open",draft:false,base:{ref:"main"},head:{sha:"a".repeat(40),repo:{full_name:repo}}};for(const mergeable_state of ["clean","blocked","unstable"])assert.deepEqual(protectedMergeRequest(repo,{...pr,mergeable_state}),{path:`repos/${repo}/pulls/42/merge`,method:"PUT",body:{sha:pr.head.sha,merge_method:"squash"}});assert.throws(()=>protectedMergeRequest(repo,{...pr,draft:true}));assert.throws(()=>protectedMergeRequest(repo,{...pr,state:"closed"}));assert.throws(()=>protectedMergeRequest(repo,{...pr,base:{ref:"unprotected"}}));assert.throws(()=>protectedMergeRequest(repo,{...pr,head:{...pr.head,sha:"--admin"}}));assert.throws(()=>protectedMergeRequest(repo,{...pr,head:{...pr.head,repo:{full_name:"outside/fork"}}}));assert.throws(()=>protectedMergeRequest("../repository",pr))})

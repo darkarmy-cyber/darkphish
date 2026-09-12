@@ -5,17 +5,12 @@ on:
     types: [labeled, unlabeled, synchronize, reopened, ready_for_review, converted_to_draft]
   schedule:
     - cron: '2,17,32,47 * * * *'
-  workflow_dispatch:
-    inputs:
-      number:
-        description: Internal engineering PR number (empty reconciles opted-in PRs)
-        required: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: reviewed-engineering-merge
+  group: protected-main-mutation
   cancel-in-progress: false
 
 jobs:
@@ -46,5 +41,5 @@ jobs:
       - name: Reconcile exact-head reviews and perform one protected merge
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_PR_NUMBER: ${{ github.event.pull_request.number || inputs.number || '' }}
+          TARGET_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
         run: node scripts/automerge.mjs

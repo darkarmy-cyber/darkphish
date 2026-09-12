@@ -23,19 +23,45 @@ test("generated-release CodeQL runs only from protected default-branch workflow 
   assert.match(validator, /files\.some\(\(file\) => !generatedPath/)
 })
 
-test("generated release refresh retries only head-SHA convergence while preserving PR identity checks", () => {
+test("generated release refresh retries only head-SHA convergence while preserving immutable PR identity", () => {
   const refresh = read("./check-refresh.mjs")
   const shape = refresh.indexOf("pr?.draft !== false")
+  const captureIdentity = refresh.indexOf("identity = releasePullIdentity(pr)")
+  const rejectIdentityChange = refresh.indexOf("generated release PR identity changed during head convergence")
   const exactHead = refresh.indexOf("pr?.head?.sha === sha")
   const retry = refresh.indexOf("await sleep(releaseHeadConvergenceDelayMs)")
   const failure = refresh.indexOf("generated release PR head did not converge to the exact branch SHA")
 
-  assert.ok(shape >= 0 && exactHead > shape && retry > exactHead && failure > retry)
+  assert.ok(shape >= 0 && captureIdentity > shape && rejectIdentityChange > captureIdentity && exactHead > rejectIdentityChange && retry > exactHead && failure > retry)
   assert.match(refresh, /pr\?\.base\?\.ref !== "main"/)
   assert.match(refresh, /pr\?\.head\?\.ref !== branch/)
   assert.match(refresh, /pr\?\.head\?\.repo\?\.full_name !== repo/)
   assert.match(refresh, /pr\?\.title !== `release: Darkphish/)
+  assert.match(refresh, /pr\?\.number === identity\.number/)
+  assert.match(refresh, /pr\?\.id === identity\.id/)
+  assert.match(refresh, /pr\?\.node_id === identity\.nodeID/)
   assert.match(refresh, /releaseHeadConvergenceAttempts = 6/)
+})
+
+test("generated release convergence pins the exact branch SHA before and after accepting the PR head", () => {
+  const refresh = read("./check-refresh.mjs")
+  const loop = refresh.indexOf("for (let attempt = 1; attempt <= releaseHeadConvergenceAttempts")
+  const firstRefCheck = refresh.indexOf("await exactBranchSHA(repo, branch, sha, request)", loop)
+  const exactHead = refresh.indexOf("pr?.head?.sha === sha", firstRefCheck)
+  const secondRefCheck = refresh.indexOf("await exactBranchSHA(repo, branch, sha, request)", exactHead)
+  const branchMoved = refresh.indexOf("generated release branch moved during pull-request head convergence")
+
+  assert.ok(loop >= 0 && firstRefCheck > loop && exactHead > firstRefCheck && secondRefCheck > exactHead)
+  assert.ok(branchMoved >= 0)
+})
+
+test("exact release check dispatches revalidate the branch ref immediately before mutable-ref dispatch", () => {
+  const refresh = read("./check-refresh.mjs")
+  const ciDispatch = refresh.indexOf("actions/workflows/ci.yml/dispatches")
+  const codeqlDispatch = refresh.indexOf('event_type: "generated-release-codeql"')
+  assert.ok(ciDispatch > 0 && codeqlDispatch > ciDispatch)
+  assert.match(refresh.slice(Math.max(0, ciDispatch - 180), ciDispatch), /exactBranchSHA\(repo, branch, sha, request\)/)
+  assert.match(refresh.slice(Math.max(0, codeqlDispatch - 220), codeqlDispatch), /exactBranchSHA\(repo, branch, sha, request\)/)
 })
 
 test("legacy engineering auto-merge is revoked before the publication freeze can return", () => {

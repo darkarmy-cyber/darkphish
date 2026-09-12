@@ -32,9 +32,9 @@ jobs:
           set -euo pipefail
           mapfile -t numbers < <(gh pr list --state open --base main --author 'app/dependabot' --label dependencies --json number --jq '.[].number')
 
-          # Migration cleanup: the previous implementation used `gh pr merge --auto`.
-          # Revoke every surviving native queue before any release-boundary return,
-          # so GitHub cannot merge it later outside protected-main-mutation.
+          # Migration cleanup for native queues created by the previous implementation.
+          # Revoke every surviving queue before any release-boundary return, so
+          # GitHub cannot merge it later outside protected-main-mutation.
           for number in "${numbers[@]}"; do
             [ -n "$number" ] || continue
             author="$(gh pr view "$number" --json author --jq '.author.login')"

@@ -14,6 +14,7 @@
 
 - Require authenticated, completed code and explicit security reviews of the current head and resolved review threads before automated engineering or generated-release merges; fail closed on stale, edited, ambiguous or unavailable evidence.
 - Replace queued merge permissions with a single protected squash merge matching the complete head SHA, preserve label-removal pauses during release recovery, and recheck pre-merge review evidence before native publication.
+- Reconcile trusted generated-release full-head CodeQL results only against the unchanged protected-main baseline for generated-only release PRs, preserving local SARIF evidence while continuing to fail closed on unresolved alerts, unexpected files, or target/base changes.
 
 ## 0.7.0 - 2026-09-07
 

@@ -16,6 +16,7 @@ test("generated-release CodeQL runs only from protected default-branch workflow 
   assert.match(workflow, /actions\/checkout@v7[\s\S]*ref: main/)
   assert.match(workflow, /ref: \$\{\{ needs\.validate\.outputs\.target_sha \}\}/)
   assert.match(workflow, /upload: never/)
+  assert.match(workflow, /security-events: read/)
   assert.doesNotMatch(workflow, /security-events: write/)
   assert.match(refresh, /event_type: "generated-release-codeql"/)
   assert.doesNotMatch(refresh, /codeql-ondemand\.yml\/dispatches/)
@@ -23,14 +24,22 @@ test("generated-release CodeQL runs only from protected default-branch workflow 
   assert.match(validator, /files\.some\(\(file\) => !generatedPath/)
 })
 
-test("generated-release CodeQL reports result identities without weakening fail-closed behavior", () => {
+test("generated-release CodeQL reconciles local evidence only against the unchanged protected baseline", () => {
   const workflow = read("../.github/workflows/codeql-ondemand.yml")
+  const validator = read("./release-codeql-target.mjs")
+
   assert.match(workflow, /ruleId:/)
   assert.match(workflow, /artifactLocation\?\.uri/)
   assert.match(workflow, /region\?\.startLine/)
-  assert.match(workflow, /if \(findings\.length !== 0\)/)
-  assert.match(workflow, /throw new Error\(`CodeQL found \$\{findings\.length\} local result\(s\); exact head remains blocked`\)/)
+  assert.match(workflow, /Inspect exact-head local CodeQL results/)
+  assert.match(workflow, /Revalidate generated target and protected CodeQL baseline/)
+  assert.match(workflow, /run: node scripts\/release-codeql-target\.mjs/g)
   assert.doesNotMatch(workflow, /filter\([^\n]*(?:diagnostic|warning|note|security)/i)
+  assert.doesNotMatch(workflow, /findings\.length\s*!==?\s*0[\s\S]{0,300}throw/)
+  assert.match(validator, /verifyCodeQLBaseline/)
+  assert.match(validator, /await verifyCodeQLBaseline\(repo, pr\.base\.sha\)/)
+  assert.match(validator, /finalPR\?\.base\?\.sha !== pr\.base\.sha/)
+  assert.match(validator, /finalRef\?\.object\?\.sha !== sha/)
 })
 
 test("legacy engineering auto-merge is revoked before the publication freeze can return", () => {

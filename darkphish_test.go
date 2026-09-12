@@ -11,8 +11,15 @@ func TestDevelopmentVersionSummary(t *testing.T) {
 	previous := releaseVersion
 	releaseVersion = ""
 	t.Cleanup(func() { releaseVersion = previous })
-	wantDisplay := strings.TrimSuffix(semanticVersion(), ".0") + "-dev"
-	if !strings.Contains(versionSummary(), "Darkphish "+wantDisplay) || !strings.Contains(versionSummary(), "commit ") || !strings.Contains(versionSummary(), "built ") {
+
+	semantic := semanticVersion()
+	parts := strings.Split(semantic, ".")
+	wantDisplay := semantic + "-dev"
+	if len(parts) >= 2 {
+		wantDisplay = strings.Join(parts[:2], ".") + "-dev"
+	}
+	wantSummary := "Darkphish " + wantDisplay + " (version " + semantic + ", commit "
+	if !strings.Contains(versionSummary(), wantSummary) || !strings.Contains(versionSummary(), ", built ") {
 		t.Fatalf("unexpected development version: %q", versionSummary())
 	}
 }

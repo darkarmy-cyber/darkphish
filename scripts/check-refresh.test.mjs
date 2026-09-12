@@ -18,7 +18,11 @@ function releasePull(body = "Prepare Darkphish 0.7.1") {
   }
 }
 
-function mockRequest({ ciConclusion, codeqlConclusion, body = "Prepare Darkphish 0.7.1" }) {
+function codeQLCheck(name, conclusion, id) {
+  return { id, name, app: { slug: "github-actions" }, status: "completed", conclusion }
+}
+
+function mockRequest({ ciConclusion, codeqlConclusion, body = "Prepare Darkphish 0.7.1", checks = [] }) {
   const calls = []
   let pr = releasePull(body)
   const request = async (path, options = {}) => {
@@ -30,14 +34,10 @@ function mockRequest({ ciConclusion, codeqlConclusion, body = "Prepare Darkphish
       pr = { ...pr, body: options.body?.body }
       return pr
     }
-    if (path.startsWith(`repos/${repo}/actions/workflows/ci.yml/runs?`)) {
-      return { workflow_runs: [{ head_sha: sha, status: "completed", conclusion: ciConclusion }] }
-    }
+    if (path.startsWith(`repos/${repo}/actions/workflows/ci.yml/runs?`)) return { workflow_runs: [{ head_sha: sha, status: "completed", conclusion: ciConclusion }] }
     if (path === `repos/${repo}/actions/workflows/ci.yml/dispatches`) return {}
-    if (path.startsWith(`repos/${repo}/actions/workflows/codeql.yml/runs?`)) {
-      return { workflow_runs: [{ head_sha: sha, status: "completed", conclusion: codeqlConclusion }] }
-    }
-    if (path === `repos/${repo}/commits/${sha}/check-runs?filter=latest&per_page=100`) return { check_runs: [] }
+    if (path.startsWith(`repos/${repo}/actions/workflows/codeql.yml/runs?`)) return { workflow_runs: [{ head_sha: sha, status: "completed", conclusion: codeqlConclusion }] }
+    if (path === `repos/${repo}/commits/${sha}/check-runs?filter=latest&per_page=100`) return { check_runs: checks }
     if (path === `repos/${repo}/dispatches`) return {}
     throw new Error(`unexpected request: ${path}`)
   }
@@ -46,9 +46,7 @@ function mockRequest({ ciConclusion, codeqlConclusion, body = "Prepare Darkphish
 
 test("refreshes exact-head release checks that require action before any job ran", async () => {
   const { calls, request, currentPull } = mockRequest({ ciConclusion: "action_required", codeqlConclusion: "action_required" })
-
   const result = await dispatchChecks(repo, branch, { request })
-
   assert.deepEqual(result, { sha, dispatched: true })
   assert.ok(calls.some(({ path, options }) => path === `repos/${repo}/actions/workflows/ci.yml/dispatches` && options.method === "POST" && options.body?.ref === branch))
   assert.ok(calls.some(({ path, options }) => path === `repos/${repo}/dispatches` && options.method === "POST" && options.body?.event_type === "generated-release-codeql" && options.body?.client_payload?.sha === sha))
@@ -59,9 +57,7 @@ test("refreshes exact-head release checks that require action before any job ran
 test("does not repeat a generated-release refresh already recorded for the exact head", async () => {
   const markerBody = `Prepare Darkphish 0.7.1\n\n<!-- darkphish-check-refresh:ci:${sha} -->\n<!-- darkphish-check-refresh:codeql:${sha} -->`
   const { calls, request } = mockRequest({ ciConclusion: "action_required", codeqlConclusion: "action_required", body: markerBody })
-
   const result = await dispatchChecks(repo, branch, { request })
-
   assert.deepEqual(result, { sha, dispatched: false })
   assert.equal(calls.some(({ path }) => path === `repos/${repo}/actions/workflows/ci.yml/dispatches`), false)
   assert.equal(calls.some(({ path }) => path === `repos/${repo}/dispatches`), false)
@@ -69,9 +65,26 @@ test("does not repeat a generated-release refresh already recorded for the exact
 
 test("does not turn a real exact-head workflow failure into an automatic retry loop", async () => {
   const { calls, request } = mockRequest({ ciConclusion: "failure", codeqlConclusion: "failure" })
-
   const result = await dispatchChecks(repo, branch, { request })
-
   assert.deepEqual(result, { sha, dispatched: false })
   assert.equal(calls.some(({ options }) => options.method === "POST"), false)
+})
+
+test("preserves a failed on-demand CodeQL check instead of refreshing it away", async () => {
+  const checks = [
+    codeQLCheck("CodeQL (go)", "failure", 20),
+    codeQLCheck("CodeQL (javascript-typescript)", "success", 21),
+  ]
+  const { calls, request } = mockRequest({ ciConclusion: "success", codeqlConclusion: "action_required", checks })
+  const result = await dispatchChecks(repo, branch, { request })
+  assert.deepEqual(result, { sha, dispatched: false })
+  assert.equal(calls.some(({ path }) => path === `repos/${repo}/dispatches`), false)
+})
+
+test("refreshes CodeQL only when a required matching check is genuinely absent", async () => {
+  const checks = [codeQLCheck("CodeQL (go)", "success", 30)]
+  const { calls, request } = mockRequest({ ciConclusion: "success", codeqlConclusion: "action_required", checks })
+  const result = await dispatchChecks(repo, branch, { request })
+  assert.deepEqual(result, { sha, dispatched: true })
+  assert.ok(calls.some(({ path, options }) => path === `repos/${repo}/dispatches` && options.method === "POST" && options.body?.event_type === "generated-release-codeql"))
 })

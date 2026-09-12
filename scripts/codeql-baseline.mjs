@@ -1,7 +1,7 @@
 import { pathToFileURL } from "node:url"
 import { git, repository } from "./release-lib.mjs"
 
-const categories = ["go", "javascript-typescript"].map((language) => `.github/workflows/codeql.yml:analyze/language:${language}`)
+const categories = ["go", "javascript-typescript"].map((language) => `.github/workflows/codeql.yml:analyze-main/language:${language}`)
 
 // Deliberately GET-only; a read-scoped token suffices. Never follow redirects
 // with credentials and never print response bodies, alert messages or secrets.
@@ -67,7 +67,7 @@ export async function verifyCodeQLBaseline(repo, expectedSHA, { get = readGitHub
     const analysis = latest.get(category)
     if (analysis?.ref !== ref || analysis.commit_sha !== expectedSHA || analysis.tool?.name !== "CodeQL" ||
         analysis.error !== "" || analysis.warning || !Number.isSafeInteger(analysis.rules_count) || analysis.rules_count <= 0) {
-      throw new Error(`CodeQL baseline requires a successful current-source ${category.split(":").at(-1)} analysis; dispatch CodeQL on the default branch`)
+      throw new Error(`CodeQL baseline requires a successful current-source ${category.split(":").at(-1)} analysis; run CodeQL on the default branch`)
     }
   }
 

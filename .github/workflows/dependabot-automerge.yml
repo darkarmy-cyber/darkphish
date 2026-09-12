@@ -23,15 +23,31 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24.19.0
-      - name: Merge only controlled ready Dependabot updates synchronously
+      - name: Revoke legacy queues, then merge only controlled ready Dependabot updates synchronously
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          mapfile -t numbers < <(gh pr list --state open --base main --author 'app/dependabot' --label dependencies --json number --jq '.[].number')
+
+          # Migration cleanup: the previous implementation used `gh pr merge --auto`.
+          # Revoke every surviving native queue before any release-boundary return,
+          # so GitHub cannot merge it later outside protected-main-mutation.
+          for number in "${numbers[@]}"; do
+            [ -n "$number" ] || continue
+            author="$(gh pr view "$number" --json author --jq '.author.login')"
+            [ "$author" = "app/dependabot" ] || [ "$author" = "dependabot" ] || continue
+            queued="$(gh pr view "$number" --json autoMergeRequest --jq '.autoMergeRequest != null')"
+            if [ "$queued" = "true" ]; then
+              gh pr merge "$number" --disable-auto
+            fi
+          done
+
           node scripts/require-green-main.mjs
-          gh pr list --state open --base main --author 'app/dependabot' --label dependencies --json number --jq '.[].number' | while read -r number; do
+
+          for number in "${numbers[@]}"; do
             [ -n "$number" ] || continue
             author="$(gh pr view "$number" --json author --jq '.author.login')"
             [ "$author" = "app/dependabot" ] || [ "$author" = "dependabot" ] || continue

@@ -5,6 +5,7 @@
 ### Fixed
 
 - Preserve an existing protected IMAP password when administrators update other reporting settings without entering a replacement password.
+- Recover generated release checks that GitHub marks `action_required` before any job executes, while preserving fail-closed behavior for real CI or CodeQL failures and bounding each exact-head recovery dispatch to a single attempt.
 - Keep development-version regression tests valid when a generated patch release advances `VERSION` within the same minor line.
 
 ### Security

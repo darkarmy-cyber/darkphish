@@ -23,6 +23,21 @@ test("generated-release CodeQL runs only from protected default-branch workflow 
   assert.match(validator, /files\.some\(\(file\) => !generatedPath/)
 })
 
+test("generated release refresh retries only head-SHA convergence while preserving PR identity checks", () => {
+  const refresh = read("./check-refresh.mjs")
+  const shape = refresh.indexOf("pr?.draft !== false")
+  const exactHead = refresh.indexOf("pr?.head?.sha === sha")
+  const retry = refresh.indexOf("await sleep(releaseHeadConvergenceDelayMs)")
+  const failure = refresh.indexOf("generated release PR head did not converge to the exact branch SHA")
+
+  assert.ok(shape >= 0 && exactHead > shape && retry > exactHead && failure > retry)
+  assert.match(refresh, /pr\?\.base\?\.ref !== "main"/)
+  assert.match(refresh, /pr\?\.head\?\.ref !== branch/)
+  assert.match(refresh, /pr\?\.head\?\.repo\?\.full_name !== repo/)
+  assert.match(refresh, /pr\?\.title !== `release: Darkphish/)
+  assert.match(refresh, /releaseHeadConvergenceAttempts = 6/)
+})
+
 test("legacy engineering auto-merge is revoked before the publication freeze can return", () => {
   const lib = read("./release-lib.mjs")
   const cancel = lib.indexOf("if (pr.auto_merge)")

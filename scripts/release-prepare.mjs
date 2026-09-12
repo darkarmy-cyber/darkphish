@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process"
 import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { api, assertGeneratedCommits, assertPublishedVersion, dispatchChecks, mergeReviewedPullRequest, git, greenCommit, nextPatchVersion, pages, peelTagToCommit, protectedMain, repository, versionTag } from "./release-lib.mjs"
+import { api, assertGeneratedCommits, assertPublishedVersion, mergeReviewedPullRequest, git, greenCommit, nextPatchVersion, pages, peelTagToCommit, protectedMain, repository, versionTag } from "./release-lib.mjs"
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 
 async function prepare() {
@@ -26,7 +26,6 @@ async function prepare() {
     return
   }
   if (!await greenCommit(repo, sha)) {
-    await dispatchChecks(repo, "main")
     console.log("Waiting for all required main CI and security checks before release preparation.")
     return
   }
@@ -93,7 +92,8 @@ async function prepare() {
   }
   // Removing this label is a durable merge pause; recovery must not restore it.
   if (created) await api(`repos/${repo}/issues/${pr.number}/labels`, { method: "POST", body: { labels: ["codex-automerge"] } })
-  await dispatchChecks(repo, branch)
+  // CI and CodeQL are triggered by the release PR itself. Neither security
+  // workflow exposes a branch-dispatch path with write-capable permissions.
   await mergeReviewedPullRequest(repo, await api(`repos/${repo}/pulls/${pr.number}`))
   console.log(`Prepared ${pr.html_url} at ${releaseSHA}; recovery requires exact-head code and explicit security review before protected merge.`)
 }

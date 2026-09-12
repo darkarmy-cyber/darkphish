@@ -1,0 +1,75 @@
+name: CodeQL on-demand
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: codeql-ondemand-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      security-events: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [go, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        if: matrix.language == 'go'
+        with:
+          go-version: 1.27.1
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/autobuild@v4
+      - uses: github/codeql-action/analyze@v4
+        with:
+          upload: never
+          output: ${{ runner.temp }}/codeql-results
+          upload-database: false
+      - name: Fail closed on local CodeQL findings
+        env:
+          CODEQL_RESULTS: ${{ runner.temp }}/codeql-results
+        shell: bash
+        run: |
+          node --input-type=module <<'EOF'
+          import { readdirSync, readFileSync, statSync } from "node:fs"
+          import { join } from "node:path"
+          const root = process.env.CODEQL_RESULTS
+          if (!root) throw new Error("CODEQL_RESULTS is required")
+          const pending = [root], files = []
+          while (pending.length) {
+            const current = pending.pop()
+            for (const name of readdirSync(current)) {
+              const path = join(current, name)
+              if (statSync(path).isDirectory()) pending.push(path)
+              else if (name.endsWith(".sarif")) files.push(path)
+            }
+          }
+          if (!files.length) throw new Error("CodeQL produced no SARIF output")
+          let findings = 0
+          for (const path of files) {
+            const sarif = JSON.parse(readFileSync(path, "utf8"))
+            if (sarif?.version !== "2.1.0" || !Array.isArray(sarif.runs)) throw new Error("CodeQL produced malformed SARIF")
+            for (const run of sarif.runs) {
+              const results = run?.results ?? []
+              if (!Array.isArray(results)) throw new Error("CodeQL SARIF results are malformed")
+              findings += results.length
+            }
+          }
+          if (findings !== 0) throw new Error(`CodeQL found ${findings} local result(s); exact head remains blocked`)
+          console.log("On-demand local CodeQL SARIF contains zero findings.")
+          EOF

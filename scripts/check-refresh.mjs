@@ -1,13 +1,11 @@
-import { api } from "./release-lib.mjs"
+import { api, pages } from "./release-lib.mjs"
 
 const shaPattern = /^[a-f0-9]{40}$/
 const releaseBranchPattern = /^release\/v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const requiredCodeQLChecks = ["CodeQL (go)", "CodeQL (javascript-typescript)"]
 
 async function workflowRuns(repo, workflow, branch, request) {
-  const result = await request(`repos/${repo}/actions/workflows/${workflow}/runs?branch=${encodeURIComponent(branch)}&per_page=20`)
-  if (!Array.isArray(result?.workflow_runs)) throw new Error(`GitHub returned malformed ${workflow} workflow runs`)
-  return result.workflow_runs
+  return pages(`repos/${repo}/actions/workflows/${workflow}/runs?branch=${encodeURIComponent(branch)}`, "workflow_runs", request)
 }
 
 function completedWithoutExecution(run) {
@@ -116,8 +114,8 @@ export async function dispatchChecks(repo, branch, { request = api } = {}) {
       dispatched = true
     }
   } else if (needsGeneratedReleaseRefresh(codeqlRuns, sha)) {
-    const required = await request(`repos/${repo}/commits/${sha}/check-runs?filter=latest&per_page=100`)
-    const state = generatedReleaseCodeQLState(required?.check_runs)
+    const required = await pages(`repos/${repo}/commits/${sha}/check-runs?filter=latest`, "check_runs", request)
+    const state = generatedReleaseCodeQLState(required)
     // A present non-successful required check is authoritative and blocking. Never
     // refresh it away with a newer success. Only recover genuinely absent checks.
     if (!state.blocking && state.missing && await markRefreshRequested(repo, pr, "codeql", sha, request)) {

@@ -4,6 +4,20 @@ import { api, assetDisposition, assertReleaseState, generatedPath, git, greenCom
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 import { verifyPullRequestReviews } from "./review-gate.mjs"
 
+const trustedActionsActor = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
+
+function assertTrustedDraft(release, sha) {
+  if (!release?.draft || release.target_commitish !== sha || !trustedActionsActor(release.author)) {
+    throw new Error("resumable release draft must be owned by the immutable GitHub Actions actor")
+  }
+}
+
+function assertTrustedDraftAsset(asset) {
+  if (asset?.state !== "uploaded" || !trustedActionsActor(asset?.uploader)) {
+    throw new Error("resumable release draft contains an asset not uploaded by the immutable GitHub Actions actor")
+  }
+}
+
 function parseFragmentVersion(path) {
   const body = readFileSync(path, "utf8").replace(/\r\n/g, "\n")
   const match = body.match(/^---\ncategory: [A-Za-z]+\nversion: (\d+\.\d+\.\d+)\n---\n/)
@@ -90,8 +104,10 @@ async function run() {
       draft: true, body: `${current.notes}\n\nSource commit: ${sha}\n\n<!-- darkphish-release-source:${sha} -->\n\nNative binaries, SHA-256 checksums and SPDX SBOM are attached.`,
     } })
   }
+  assertTrustedDraft(release, sha)
   const assets = await pages(`repos/${repo}/releases/${release.id}/assets`)
   if (assets.some((asset) => !names.includes(asset.name)) || new Set(assets.map((asset) => asset.name)).size !== assets.length) throw new Error("draft contains unexpected release assets; refusing to publish")
+  for (const asset of assets) assertTrustedDraftAsset(asset)
   for (const name of names) {
     const content = bytes.get(name)
     if (assetDisposition(assets.find((asset) => asset.name === name), hashes.get(name), content.length) === "reuse") continue
@@ -104,8 +120,10 @@ async function run() {
   const uploaded = await pages(`repos/${repo}/releases/${release.id}/assets`)
   if (uploaded.length !== names.length) throw new Error("unexpected release asset set after upload")
   for (const name of names) {
-    if (!uploaded.some((asset) => asset.name === name)) throw new Error("release asset missing after upload")
-    assetDisposition(uploaded.find((asset) => asset.name === name), hashes.get(name), bytes.get(name).length)
+    const asset = uploaded.find((candidate) => candidate.name === name)
+    if (!asset) throw new Error("release asset missing after upload")
+    assertTrustedDraftAsset(asset)
+    assetDisposition(asset, hashes.get(name), bytes.get(name).length)
   }
   await protectedMain(repo, sha)
   await verifyCodeQLBaseline(repo, sha)
@@ -116,6 +134,7 @@ async function run() {
     console.log("Release was already published; leaving it immutable.")
     return
   }
+  assertTrustedDraft(finalSource.release, sha)
   await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, make_latest: "true" } })
   console.log(`Published https://github.com/${repo}/releases/tag/${tag}`)
 }

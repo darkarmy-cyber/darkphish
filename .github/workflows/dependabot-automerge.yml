@@ -10,6 +10,10 @@ permissions:
   checks: read
   actions: read
 
+concurrency:
+  group: protected-main-mutation
+  cancel-in-progress: false
+
 jobs:
   inspect:
     if: github.ref == 'refs/heads/main'
@@ -19,12 +23,13 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24.19.0
-      - name: Enable auto-merge only for controlled patch/minor updates
+      - name: Merge only controlled ready Dependabot updates synchronously
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
           node scripts/require-green-main.mjs
           gh pr list --state open --base main --author 'app/dependabot' --label dependencies --json number --jq '.[].number' | while read -r number; do
             [ -n "$number" ] || continue
@@ -34,6 +39,9 @@ jobs:
             files="$(gh pr view "$number" --json files --jq '.files[].path')"
             if node scripts/dependabot-automerge.mjs "$title" "$files"; then
               pr_sha="$(gh pr view "$number" --json headRefOid --jq '.headRefOid')"
-              gh pr merge "$number" --auto --squash --match-head-commit "$pr_sha"
+              # Never queue a merge that may execute after this workflow releases
+              # the protected-main-mutation lock. Merge synchronously or leave the
+              # PR untouched for a later scheduled reconciliation.
+              gh pr merge "$number" --squash --match-head-commit "$pr_sha" || true
             fi
           done

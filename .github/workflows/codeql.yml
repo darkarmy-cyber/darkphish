@@ -10,16 +10,48 @@ on:
 permissions:
   contents: read
   actions: read
-  security-events: write
 
 concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  analyze:
+  analyze-pr:
+    if: github.event_name == 'pull_request'
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      security-events: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [go, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        if: matrix.language == 'go'
+        with:
+          go-version: 1.27.1
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/autobuild@v4
+      - uses: github/codeql-action/analyze@v4
+        with:
+          upload: never
+          output: ${{ runner.temp }}/codeql-results
+          upload-database: false
+
+  analyze-main:
+    if: github.event_name != 'pull_request'
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
     strategy:
       fail-fast: false
       matrix:

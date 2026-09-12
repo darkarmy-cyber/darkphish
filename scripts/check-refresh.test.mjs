@@ -124,3 +124,14 @@ test("preserves a failed required CodeQL check found on a later page", async () 
   assert.deepEqual(result, { sha, dispatched: false })
   assert.equal(calls.some(({ path }) => path === `repos/${repo}/dispatches`), false)
 })
+
+test("preserves an older failed CodeQL check even when a newer check with the same name succeeds", async () => {
+  const checks = [
+    codeQLCheck("CodeQL (go)", "failure", 40),
+    codeQLCheck("CodeQL (go)", "success", 41),
+  ]
+  const { calls, request } = mockRequest({ ciConclusion: "success", codeqlConclusion: "action_required", checks })
+  const result = await dispatchChecks(repo, branch, { request })
+  assert.deepEqual(result, { sha, dispatched: false })
+  assert.equal(calls.some(({ path }) => path === `repos/${repo}/dispatches`), false)
+})

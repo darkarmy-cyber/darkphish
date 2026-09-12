@@ -2,6 +2,7 @@ import { api } from "./release-lib.mjs"
 
 const shaPattern = /^[a-f0-9]{40}$/
 const releaseBranchPattern = /^release\/v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+const requiredCodeQLChecks = ["CodeQL (go)", "CodeQL (javascript-typescript)"]
 
 async function workflowRuns(repo, workflow, branch, request) {
   const result = await request(`repos/${repo}/actions/workflows/${workflow}/runs?branch=${encodeURIComponent(branch)}&per_page=20`)
@@ -20,6 +21,19 @@ function hasAnyExactRun(runs, sha) {
 function needsGeneratedReleaseRefresh(runs, sha) {
   const exact = runs.filter((run) => run?.head_sha === sha)
   return exact.length === 0 || exact.every(completedWithoutExecution)
+}
+
+function generatedReleaseCodeQLState(checks) {
+  const latest = new Map()
+  for (const check of checks || []) {
+    if (check?.app?.slug !== "github-actions" || !requiredCodeQLChecks.includes(check?.name) || !Number.isSafeInteger(check?.id)) continue
+    const previous = latest.get(check.name)
+    if (!previous || check.id > previous.id) latest.set(check.name, check)
+  }
+
+  const blocking = [...latest.values()].some((check) => check.status !== "completed" || check.conclusion !== "success")
+  const missing = requiredCodeQLChecks.some((name) => !latest.has(name))
+  return { blocking, missing }
 }
 
 function refreshMarker(kind, sha) {
@@ -103,8 +117,10 @@ export async function dispatchChecks(repo, branch, { request = api } = {}) {
     }
   } else if (needsGeneratedReleaseRefresh(codeqlRuns, sha)) {
     const required = await request(`repos/${repo}/commits/${sha}/check-runs?filter=latest&per_page=100`)
-    const names = new Set((required?.check_runs || []).filter((run) => run?.app?.slug === "github-actions" && run?.status === "completed" && run?.conclusion === "success").map((run) => run.name))
-    if ((!names.has("CodeQL (go)") || !names.has("CodeQL (javascript-typescript)")) && await markRefreshRequested(repo, pr, "codeql", sha, request)) {
+    const state = generatedReleaseCodeQLState(required?.check_runs)
+    // A present non-successful required check is authoritative and blocking. Never
+    // refresh it away with a newer success. Only recover genuinely absent checks.
+    if (!state.blocking && state.missing && await markRefreshRequested(repo, pr, "codeql", sha, request)) {
       await request(`repos/${repo}/dispatches`, { method: "POST", body: { event_type: "generated-release-codeql", client_payload: { branch, sha } } })
       dispatched = true
     }

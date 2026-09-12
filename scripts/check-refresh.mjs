@@ -22,15 +22,15 @@ function needsGeneratedReleaseRefresh(runs, sha) {
 }
 
 function generatedReleaseCodeQLState(checks) {
-  const latest = new Map()
-  for (const check of checks || []) {
-    if (check?.app?.slug !== "github-actions" || !requiredCodeQLChecks.includes(check?.name) || !Number.isSafeInteger(check?.id)) continue
-    const previous = latest.get(check.name)
-    if (!previous || check.id > previous.id) latest.set(check.name, check)
-  }
+  const matching = (checks || []).filter((check) =>
+    check?.app?.slug === "github-actions" && requiredCodeQLChecks.includes(check?.name) && Number.isSafeInteger(check?.id))
+  const present = new Set(matching.map((check) => check.name))
 
-  const blocking = [...latest.values()].some((check) => check.status !== "completed" || check.conclusion !== "success")
-  const missing = requiredCodeQLChecks.some((name) => !latest.has(name))
+  // Fail closed across the complete exact-head history. Once a required CodeQL
+  // check exists and is non-successful, a later successful check with the same
+  // name must never erase that evidence or authorize another recovery dispatch.
+  const blocking = matching.some((check) => check.status !== "completed" || check.conclusion !== "success")
+  const missing = requiredCodeQLChecks.some((name) => !present.has(name))
   return { blocking, missing }
 }
 

@@ -9,8 +9,12 @@ async function workflowRuns(repo, workflow, branch, request) {
   return result.workflow_runs
 }
 
+function completedWithoutExecution(run) {
+  return run?.status === "completed" && run?.conclusion === "action_required"
+}
+
 async function hasExactRun(repo, workflow, branch, sha, request) {
-  return (await workflowRuns(repo, workflow, branch, request)).some((run) => run?.head_sha === sha)
+  return (await workflowRuns(repo, workflow, branch, request)).some((run) => run?.head_sha === sha && !completedWithoutExecution(run))
 }
 
 async function validateTarget(repo, branch, request) {

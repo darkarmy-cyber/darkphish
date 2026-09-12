@@ -4,6 +4,8 @@ on:
   push:
     branches: [master, main]
   pull_request:
+  repository_dispatch:
+    types: [protected-main-codeql]
   schedule:
     - cron: "17 3 * * 1"
 
@@ -80,7 +82,11 @@ jobs:
           EOF
 
   analyze-main:
-    if: github.event_name != 'pull_request'
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'repository_dispatch' || (
+        github.ref == 'refs/heads/main' &&
+        github.event.client_payload.sha == github.sha))
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-24.04
     permissions:
@@ -93,6 +99,8 @@ jobs:
         language: [go, javascript-typescript]
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v7
         if: matrix.language == 'go'
         with:

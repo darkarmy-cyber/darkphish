@@ -2,25 +2,18 @@ import { execFileSync } from "node:child_process"
 import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { api, assertGeneratedCommits, assertPublishedVersion, mergeReviewedPullRequest, git, greenCommit, nextPatchVersion, pages, peelTagToCommit, protectedMain, repository, versionTag } from "./release-lib.mjs"
+import { api, assertCurrentVersionPublished, assertGeneratedCommits, mergeReviewedPullRequest, git, greenCommit, nextPatchVersion, pages, protectedMain, repository, versionTag } from "./release-lib.mjs"
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 
 async function prepare() {
   const repo = repository()
   const sha = git("rev-parse", "HEAD")
-  // Validate fragments and select their target without changing VERSION yet.
   const version = execFileSync(process.execPath, ["scripts/changelog.mjs", "target"], { encoding: "utf8" }).trim()
   const tag = versionTag(version)
   const branch = `release/${tag}`
   await protectedMain(repo, sha)
   const currentVersion = readFileSync("VERSION", "utf8").trim()
-  if (version === nextPatchVersion(currentVersion)) {
-    const currentTag = versionTag(currentVersion)
-    const currentRef = await api(`repos/${repo}/git/ref/tags/${currentTag}`, { missing: true })
-    const currentTagSHA = currentRef ? await peelTagToCommit(currentRef, tagSHA => api(`repos/${repo}/git/tags/${tagSHA}`)) : null
-    const currentRelease = await api(`repos/${repo}/releases/tags/${currentTag}`, { missing: true })
-    assertPublishedVersion(currentTagSHA, currentRelease, currentVersion)
-  }
+  if (version === nextPatchVersion(currentVersion)) await assertCurrentVersionPublished(repo, { version: currentVersion })
   if (await api(`repos/${repo}/git/ref/tags/${tag}`, { missing: true }) || await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })) {
     console.log("Release tag or release already exists; preparation leaves it unchanged.")
     return
@@ -49,15 +42,11 @@ async function prepare() {
   if (oldSHA) {
     git("fetch", "--no-tags", "origin", branch)
     const base = git("merge-base", sha, oldSHA)
-    const commits = git("log", "--format=%an%x09%s", `${sha}..${oldSHA}`).split("\n").filter(Boolean).map((line) => {
-      const [author, subject] = line.split("\t")
-      return { author, subject }
-    })
+    const commits = git("log", "--format=%an%x09%s", `${sha}..${oldSHA}`).split("\n").filter(Boolean).map((line) => { const [author, subject] = line.split("\t"); return { author, subject } })
     assertGeneratedCommits(commits, git("diff", "--name-only", `${base}..${oldSHA}`).split("\n").filter(Boolean), version)
     const temporary = mkdtempSync(join(tmpdir(), "darkphish-release-check-"))
     try {
       git("worktree", "add", "--detach", temporary, base)
-      // Execute only the trusted main generator, never historical branch code.
       copyFileSync("scripts/changelog.mjs", join(temporary, "scripts/changelog.mjs"))
       execFileSync(process.execPath, [join(temporary, "scripts/changelog.mjs"), "prepare"], { cwd: temporary, stdio: "pipe" })
       const expected = execFileSync("git", ["diff", "--", "VERSION", "CHANGELOG.md", "changes"], { cwd: temporary, encoding: "utf8" }).replace(/\r\n/g, "\n")
@@ -76,8 +65,6 @@ async function prepare() {
     git("config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
     const parents = oldSHA && oldSHA !== sha ? ["-p", oldSHA, "-p", sha] : ["-p", sha]
     releaseSHA = git("commit-tree", tree, ...parents, "-m", `release: Darkphish ${version}`)
-    // Descend from the known old tip and let a normal push reject concurrent
-    // updates. No force-push, branch deletion, or unknown history replacement.
     git("push", "origin", `${releaseSHA}:refs/heads/${branch}`)
   }
   let pr = prs[0]
@@ -90,11 +77,8 @@ async function prepare() {
       throw new Error(`${error.message}. Enable Settings > Actions > General > Workflow permissions > Allow GitHub Actions to create and approve pull requests. The generated branch is safe to reuse; no review approval is fabricated.`)
     }
   }
-  // Removing this label is a durable merge pause; recovery must not restore it.
   if (created) await api(`repos/${repo}/issues/${pr.number}/labels`, { method: "POST", body: { labels: ["codex-automerge"] } })
-  // CI and CodeQL are triggered by the release PR itself. Neither security
-  // workflow exposes a branch-dispatch path with write-capable permissions.
-  await mergeReviewedPullRequest(repo, await api(`repos/${repo}/pulls/${pr.number}`))
+  await mergeReviewedPullRequest(repo, await api(`repos/${repo}/pulls/${pr.number}`), { releaseMerge: true })
   console.log(`Prepared ${pr.html_url} at ${releaseSHA}; recovery requires exact-head code and explicit security review before protected merge.`)
 }
 

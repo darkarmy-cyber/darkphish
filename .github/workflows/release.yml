@@ -78,27 +78,31 @@ jobs:
 
   binaries:
     needs: [metadata, verify]
-    if: needs.metadata.outputs.ready == 'true'
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
+          - runner: ubuntu-24.04
             goos: linux
             goarch: amd64
-          - os: ubuntu-24.04-arm
+            binary: darkphish
+          - runner: ubuntu-24.04-arm
             goos: linux
             goarch: arm64
-          - os: windows-2025
+            binary: darkphish
+          - runner: windows-2025
             goos: windows
             goarch: amd64
-          - os: macos-15-intel
+            binary: darkphish.exe
+          - runner: macos-15-intel
             goos: darwin
             goarch: amd64
-          - os: macos-15
+            binary: darkphish
+          - runner: macos-15
             goos: darwin
             goarch: arm64
-    runs-on: ${{ matrix.os }}
+            binary: darkphish
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -107,53 +111,93 @@ jobs:
         with:
           go-version: 1.27.1
           cache: true
-      - name: Build native binary
-        shell: bash
+      - name: Enable the runner's MinGW compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $compilerDirectory = @('C:\mingw64\bin', 'C:\msys64\mingw64\bin') |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_ 'gcc.exe') } |
+            Select-Object -First 1
+          if (-not $compilerDirectory) { throw "Required MinGW compiler is unavailable" }
+          $compilerDirectory | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Build and package native binary
+        shell: pwsh
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: '0'
-          VERSION: ${{ needs.metadata.outputs.version }}
+          CGO_ENABLED: "1"
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          RELEASE_BINARY: ${{ matrix.binary }}
+          BUILT_AT: ${{ needs.metadata.outputs.built_at }}
+          COMMIT_SHA: ${{ needs.metadata.outputs.sha }}
         run: |
-          set -euo pipefail
-          mkdir -p dist
-          ext=""
-          if [ "$GOOS" = windows ]; then ext=".exe"; fi
-          go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "dist/darkphish${ext}" .
-          if [ "$GOOS" = windows ]; then
-            7z a "dist/darkphish-v${VERSION}-${GOOS}-${GOARCH}.zip" "dist/darkphish${ext}"
-          else
-            tar -C dist -czf "dist/darkphish-v${VERSION}-${GOOS}-${GOARCH}.tar.gz" "darkphish${ext}"
-          fi
+          $name = "darkphish-$env:RELEASE_TAG-$env:GOOS-$env:GOARCH"
+          New-Item -ItemType Directory -Force -Path "dist/$name" | Out-Null
+          $ldflags = "-s -w -X main.releaseVersion=$env:RELEASE_VERSION -X main.commitSHA=$env:COMMIT_SHA -X main.builtAt=$env:BUILT_AT"
+          go build -trimpath -ldflags $ldflags -o "dist/$name/$env:RELEASE_BINARY" ./
+          if ($LASTEXITCODE -ne 0) { throw "Native build failed" }
+          $versionOutput = & "dist/$name/$env:RELEASE_BINARY" version
+          $versionParts = $env:RELEASE_VERSION -split '\.'
+          $displayVersion = $versionParts[0..1] -join '.'
+          if ($versionOutput -notmatch "Darkphish $displayVersion" -or $versionOutput -match '-dev' -or $versionOutput -notmatch [regex]::Escape($env:COMMIT_SHA)) {
+            throw "Built binary did not report release metadata: $versionOutput"
+          }
+          Copy-Item VERSION,LICENSE,NOTICE.md,README.md,CHANGELOG.md,config.json -Destination "dist/$name"
+          Copy-Item db,templates -Recurse -Destination "dist/$name"
+          New-Item -ItemType Directory -Force -Path "dist/$name/static/js","dist/$name/static/css" | Out-Null
+          Copy-Item static/images,static/font,static/db,static/endpoint -Recurse -Destination "dist/$name/static"
+          Copy-Item static/js/dist,static/js/src -Recurse -Destination "dist/$name/static/js"
+          Copy-Item static/css/dist -Recurse -Destination "dist/$name/static/css"
+          if ($env:GOOS -eq 'windows') {
+            Compress-Archive -Path "dist/$name/*" -DestinationPath "dist/$name.zip"
+          } else {
+            tar -czf "dist/$name.tar.gz" -C dist $name
+          }
       - uses: actions/upload-artifact@v7
         with:
-          name: native-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/darkphish-v${{ needs.metadata.outputs.version }}-*
+          name: darkphish-${{ needs.metadata.outputs.tag }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
           if-no-files-found: error
 
-  sbom:
-    needs: metadata
-    if: needs.metadata.outputs.ready == 'true'
+  audit-smoke:
+    needs: [metadata, binaries]
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: darkphish_binary_audit_test
+          POSTGRES_USER: darkphish
+          POSTGRES_PASSWORD: darkphish-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U darkphish -d darkphish_binary_audit_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.metadata.outputs.sha }}
-      - uses: anchore/sbom-action@v0
+      - uses: actions/download-artifact@v8
         with:
-          path: .
-          format: spdx-json
-          output-file: darkphish-v${{ needs.metadata.outputs.version }}.spdx.json
-          upload-artifact: false
-      - uses: actions/upload-artifact@v7
+          name: darkphish-${{ needs.metadata.outputs.tag }}-linux-amd64
+          path: .cache/native-audit
+      - name: Extract the exact release archive
+        env:
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+        run: tar -xzf ".cache/native-audit/darkphish-$RELEASE_TAG-linux-amd64.tar.gz" -C .cache/native-audit
+      - uses: ./.github/actions/audit-binary-smoke
         with:
-          name: sbom
-          path: darkphish-v${{ needs.metadata.outputs.version }}.spdx.json
-          if-no-files-found: error
+          binary: .cache/native-audit/darkphish-${{ needs.metadata.outputs.tag }}-linux-amd64/darkphish
+          sha: ${{ needs.metadata.outputs.sha }}
 
   publish:
-    needs: [metadata, verify, binaries, sbom]
-    if: needs.metadata.outputs.ready == 'true'
+    needs: [metadata, binaries, audit-smoke]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -161,6 +205,8 @@ jobs:
       checks: read
       pull-requests: read
       issues: read
+      id-token: write
+      attestations: write
       security-events: read
     steps:
       - uses: actions/checkout@v7
@@ -171,20 +217,24 @@ jobs:
           node-version: 24.19.0
       - uses: actions/download-artifact@v8
         with:
-          pattern: native-*
+          pattern: darkphish-*
           path: dist
           merge-multiple: true
-      - uses: actions/download-artifact@v8
+      - uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
         with:
-          name: sbom
-          path: dist
-      - name: Generate immutable checksum manifest
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd dist
-          sha256sum darkphish-* > SHA256SUMS
-      - name: Publish verified native release
+          path: .
+          format: spdx-json
+          output-file: dist/darkphish-${{ needs.metadata.outputs.tag }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum -- *.zip *.tar.gz *.spdx.json > SHA256SUMS
+      - uses: actions/attest@v4
+        if: vars.RELEASE_ATTESTATIONS_SUPPORTED == 'true'
+        with:
+          subject-path: dist/*
+      - name: Publish verified assets without overwriting an existing release
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release-publish.mjs publish

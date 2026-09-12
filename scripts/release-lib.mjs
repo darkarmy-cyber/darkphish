@@ -196,13 +196,6 @@ export async function protectedMain(repo, sha) {
   return metadata
 }
 export async function greenCommit(repo, sha) { return checksPassed(await pages(`repos/${repo}/commits/${sha}/check-runs?filter=latest`, "check_runs")) }
-export async function dispatchChecks(repo, branch) {
-  for (const workflow of ["ci.yml", "codeql.yml"]) {
-    const runs = await api(`repos/${repo}/actions/workflows/${workflow}/runs?branch=${encodeURIComponent(branch)}&per_page=10`), ref = await api(`repos/${repo}/git/ref/heads/${branch}`)
-    if (runs.workflow_runs.some((run) => run.head_sha === ref.object.sha)) continue
-    await api(`repos/${repo}/actions/workflows/${workflow}/dispatches`, { method: "POST", body: { ref: branch } })
-  }
-}
 export async function mergeReviewedPullRequest(repo, expected, { request = api, verifyReviews = verifyPullRequestReviews, cancelQueued = args => execFileSync("gh", args, { stdio: "inherit" }), log = console.log, releaseMerge = false } = {}) {
   protectedMergeRequest(repo, { ...expected, state: "open", draft: false })
   const path = `repos/${repo}/pulls/${expected.number}`, pr = await request(path)
@@ -212,11 +205,14 @@ export async function mergeReviewedPullRequest(repo, expected, { request = api, 
   if (pr.head?.repo?.full_name !== repo || pr.base?.ref !== "main") return wait("target changed")
   const metadata = await request(`repos/${repo}`), base = await request(`repos/${repo}/branches/main`)
   if (metadata.full_name !== repo || metadata.default_branch !== "main" || metadata.private !== false || metadata.fork !== false || metadata.allow_auto_merge !== true || base.protected !== true) throw new Error("reviewed merging requires the protected standalone public main repository")
+  if (pr.auto_merge) {
+    await cancelQueued(["pr", "merge", String(pr.number), "--repo", repo, "--disable-auto"])
+    log(`PR #${pr.number}: revoked legacy queued auto-merge before evaluating any release boundary.`)
+  }
   const enforceReleaseBoundary = !releaseMerge && request === api
   if (enforceReleaseBoundary) {
     try { await assertCurrentVersionPublished(repo, { request, verifyManifest: false }) } catch { return wait("current VERSION is not fully published; protected main is frozen until release completion") }
   }
-  if (pr.auto_merge) { await cancelQueued(["pr", "merge", String(pr.number), "--repo", repo, "--disable-auto"]); log(`PR #${pr.number}: revoked legacy queued auto-merge before evaluating current reviews.`) }
   if (pr.head.sha !== expected.head.sha) return wait("head changed")
   if (!/^[a-f0-9]{40}$/.test(base.commit?.sha || "") || pr.base.sha !== base.commit.sha) return wait("base snapshot changed")
   const optedIn = value => value.draft === false && value.labels?.some(label => label.name === "codex-automerge")
@@ -226,7 +222,10 @@ export async function mergeReviewedPullRequest(repo, expected, { request = api, 
   if ((await pages(`repos/${repo}/code-scanning/alerts?tool_name=CodeQL&state=open`, undefined, request)).length) return wait("open CodeQL alerts")
   try { await verifyReviews(repo, pr, { get: request, query: body => request("graphql", { method: "POST", body }) }) } catch (error) { if (!(error instanceof ReviewGateError)) throw error; return wait(error.message) }
   const finalPR = await request(path), finalBase = await request(`repos/${repo}/branches/main`)
-  if (finalPR.number === pr.number && finalPR.auto_merge && finalPR.head?.repo?.full_name === repo && finalPR.base?.ref === "main") { await cancelQueued(["pr", "merge", String(pr.number), "--repo", repo, "--disable-auto"]); return wait("revoked a concurrent native auto-merge queue") }
+  if (finalPR.number === pr.number && finalPR.auto_merge && finalPR.head?.repo?.full_name === repo && finalPR.base?.ref === "main") {
+    await cancelQueued(["pr", "merge", String(pr.number), "--repo", repo, "--disable-auto"])
+    return wait("revoked a concurrent native auto-merge queue")
+  }
   if (finalPR.number !== pr.number || finalPR.state !== "open" || finalPR.head?.sha !== pr.head.sha || finalPR.head.repo?.full_name !== repo || finalPR.base?.ref !== "main" || finalPR.base.sha !== pr.base.sha || finalBase.commit?.sha !== base.commit?.sha || finalBase.protected !== true || !optedIn(finalPR) || finalPR.mergeable !== true || finalPR.mergeable_state !== "clean") return wait("PR or protected base is not stably ready")
   if (!await green()) return wait("checks changed during review verification")
   if (enforceReleaseBoundary) {

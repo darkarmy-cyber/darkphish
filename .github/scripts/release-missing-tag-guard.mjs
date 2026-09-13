@@ -36,10 +36,10 @@ async function withdrawWhileTagAbsent(repo, tag, releases) {
     const direct = await Promise.all(ids.map((id) => api(`repos/${repo}/releases/${id}`, { missing: true })))
     const byTag = await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })
     const after = await publicReleases(repo, tag)
-    const directPublic = direct.some((release) => release && release.draft === false && release?.tag_name === tag)
+    const directNotWithdrawn = direct.some((release) => release && (release.draft !== true || release.prerelease !== false))
     const publicByTag = Boolean(byTag && byTag.draft === false)
 
-    if (!directPublic && !publicByTag && after.length === 0) {
+    if (!directNotWithdrawn && !publicByTag && after.length === 0) {
       if (tagAppeared || await currentTag(repo, tag)) {
         throw new Error("release tag appeared while withdrawing tagless public release; publication was withdrawn but recovery cannot establish a new trust baseline")
       }

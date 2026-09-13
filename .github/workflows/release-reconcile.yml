@@ -3,6 +3,8 @@ name: Reconcile release metadata
 on:
   push:
     branches: [main]
+  release:
+    types: [published]
   schedule:
     - cron: '12,27,42,57 * * * *'
 
@@ -15,7 +17,6 @@ concurrency:
 
 jobs:
   reconcile:
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

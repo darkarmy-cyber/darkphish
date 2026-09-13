@@ -18,21 +18,26 @@ function timestamp(value) {
   return result
 }
 
-async function readPages(get, path) {
+async function readPages(get, path, identity) {
   const all = [], seen = new Set()
   for (let page = 1; page <= 20; page++) {
     const separator = path.includes("?") ? "&" : "?"
     const rows = await get(`${path}${separator}per_page=100&page=${page}`)
     requireReview(Array.isArray(rows) && rows.length <= 100, "Invalid release review evidence page")
     for (const row of rows) {
-      requireReview(Number.isSafeInteger(row?.id) && row.id > 0 && !seen.has(row.id), "Duplicate or invalid release review evidence identity")
-      seen.add(row.id)
+      const key = identity(row)
+      requireReview(typeof key === "string" && key.length > 0 && !seen.has(key), "Duplicate or invalid release review evidence identity")
+      seen.add(key)
       all.push(row)
     }
     if (rows.length < 100) return all
   }
   throw new ReleaseMaintainerReviewError("Release review pagination limit reached; manual investigation required")
 }
+
+const reviewIdentity = (review) => Number.isSafeInteger(review?.id) && review.id > 0 ? `review:${review.id}` : null
+const fileIdentity = (file) => typeof file?.filename === "string" && file.filename.length > 0 && /^[a-f0-9]{40}$/.test(file?.sha || "")
+  ? `file:${file.filename}:${file.sha}` : null
 
 function parseAttestation(repo, pr, review) {
   requireReview(typeof review?.body === "string" && review.body.startsWith(expectedPrefix + "\n"), "Missing explicit generated-release review statement")
@@ -48,6 +53,71 @@ function parseAttestation(repo, pr, review) {
     attestation.securityReview === "completed" && attestation.decision === "approved",
   "Generated-release review does not certify this exact PR head and base")
   return attestation
+}
+
+async function verifyReviewGraphQL(get, review) {
+  requireReview(typeof review?.node_id === "string" && review.node_id.length > 0, "Trusted maintainer review is missing immutable GraphQL identity")
+  const result = await get("graphql", { method: "POST", body: {
+    query: `query($id: ID!) {
+      node(id: $id) {
+        ... on PullRequestReview {
+          databaseId
+          body
+          submittedAt
+          lastEditedAt
+          author { __typename ... on User { databaseId login } }
+          editor { __typename ... on User { databaseId login } }
+        }
+      }
+    }`,
+    variables: { id: review.node_id },
+  } })
+  requireReview(!result?.errors && result?.data?.node, "Unable to verify trusted maintainer review provenance")
+  const node = result.data.node
+  requireReview(node.databaseId === review.id && node.body === review.body && node.submittedAt === review.submitted_at,
+    "Trusted maintainer review provenance does not match REST evidence")
+  requireReview(node.author?.__typename === "User" && node.author?.databaseId === 309485696 && node.author?.login === "oliverkko",
+    "Trusted maintainer review GraphQL author is not the pinned repository owner")
+  requireReview(node.lastEditedAt === null && node.editor === null,
+    "Trusted maintainer release attestation was edited after submission")
+}
+
+async function verifyResolvedThreads(get, repo, pr) {
+  let after = null
+  for (let page = 1; page <= 20; page++) {
+    const result = await get("graphql", { method: "POST", body: {
+      query: `query($owner: String!, $name: String!, $number: Int!, $after: String) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) {
+            headRefOid
+            reviewThreads(first: 100, after: $after) {
+              nodes { id isResolved }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+        }
+      }`,
+      variables: { owner: repo.split("/")[0], name: repo.split("/")[1], number: pr.number, after },
+    } })
+    requireReview(!result?.errors && result?.data?.repository?.pullRequest, "Unable to verify release review threads")
+    const pull = result.data.repository.pullRequest
+    requireReview(pull.headRefOid === pr.head.sha, "Release PR head changed while verifying review threads")
+    const threads = pull.reviewThreads
+    requireReview(Array.isArray(threads?.nodes) && threads?.pageInfo && typeof threads.pageInfo.hasNextPage === "boolean",
+      "Invalid release review thread page")
+    const ids = new Set()
+    for (const thread of threads.nodes) {
+      requireReview(typeof thread?.id === "string" && thread.id.length > 0 && !ids.has(thread.id) && typeof thread.isResolved === "boolean",
+        "Invalid release review thread identity")
+      ids.add(thread.id)
+      requireReview(thread.isResolved, "An unresolved review thread still blocks the release PR")
+    }
+    if (!threads.pageInfo.hasNextPage) return
+    requireReview(typeof threads.pageInfo.endCursor === "string" && threads.pageInfo.endCursor.length > 0,
+      "Invalid release review thread pagination cursor")
+    after = threads.pageInfo.endCursor
+  }
+  throw new ReleaseMaintainerReviewError("Release review thread pagination limit reached; manual investigation required")
 }
 
 export function releaseReviewBody(repo, pr) {
@@ -74,11 +144,11 @@ export async function verifyReleaseMaintainerReview(repo, pr, { get }) {
     /^[a-f0-9]{40}$/.test(pr.head?.sha || "") && pr.title === `release: Darkphish ${pr.head.ref.slice("release/v".length)}`,
   "PR is not a trusted generated release pull request")
 
-  const files = await readPages(get, `repos/${repo}/pulls/${pr.number}/files`)
+  const files = await readPages(get, `repos/${repo}/pulls/${pr.number}/files`, fileIdentity)
   requireReview(files.length > 0 && files.every((file) => typeof file?.filename === "string" && generatedPath(file.filename)),
     "Generated release review target includes application or unexpected files")
 
-  const reviews = await readPages(get, `repos/${repo}/pulls/${pr.number}/reviews`)
+  const reviews = await readPages(get, `repos/${repo}/pulls/${pr.number}/reviews`, reviewIdentity)
   const opinions = new Map()
   for (const review of reviews.sort((a, b) => a.id - b.id)) {
     requireReview(typeof review.user?.login === "string" && ["APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED", "PENDING"].includes(review.state),
@@ -95,6 +165,9 @@ export async function verifyReleaseMaintainerReview(repo, pr, { get }) {
   parseAttestation(repo, pr, latest)
   const submitted = timestamp(latest.submitted_at)
   if (pr.merged_at) requireReview(submitted <= timestamp(pr.merged_at), "Generated-release review was submitted after merge")
+
+  await verifyReviewGraphQL(get, latest)
+  await verifyResolvedThreads(get, repo, pr)
 
   const finalPR = await get(`repos/${repo}/pulls/${pr.number}`)
   requireReview(finalPR.number === pr.number && finalPR.head?.repo?.full_name === repo && finalPR.head?.ref === pr.head.ref &&

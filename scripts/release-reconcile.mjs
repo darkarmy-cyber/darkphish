@@ -1,15 +1,82 @@
 import { createHash } from "node:crypto"
-import { api, expectedReleaseAssetNames, pages, peelTagToCommit, publicationReceiptName, versionTag } from "./release-lib.mjs"
 import { releaseBody } from "./release-notes.mjs"
 
 const bot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const semver = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+const stableVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const sha40 = (value) => /^[a-f0-9]{40}$/.test(value || "")
 
+function versionTag(version) {
+  if (!stableVersion.test(version || "")) throw new Error("release version must be stable SemVer")
+  return `v${version}`
+}
+
 function versionAtLeast(version, floor) {
+  versionTag(version); versionTag(floor)
   const a = version.split(".").map(Number), b = floor.split(".").map(Number)
   for (let i = 0; i < 3; i += 1) if (a[i] !== b[i]) return a[i] > b[i]
   return true
+}
+
+function publicationReceiptName(version) {
+  return versionAtLeast(version, "0.7.1") ? `darkphish-v${version}.release.json` : null
+}
+
+function expectedReleaseAssetNames(version) {
+  const tag = versionTag(version), receipt = publicationReceiptName(version)
+  return [
+    `darkphish-${tag}-darwin-amd64.tar.gz`,
+    `darkphish-${tag}-darwin-arm64.tar.gz`,
+    `darkphish-${tag}-linux-amd64.tar.gz`,
+    `darkphish-${tag}-linux-arm64.tar.gz`,
+    `darkphish-${tag}-windows-amd64.zip`,
+    `darkphish-${tag}.spdx.json`,
+    "SHA256SUMS",
+    ...(receipt ? [receipt] : []),
+  ].sort()
+}
+
+async function api(path, { method = "GET", body } = {}) {
+  if (typeof path !== "string" || !/^repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\//.test(path)) throw new Error("GitHub API path is invalid")
+  const response = await fetch(`https://api.github.com/${path}`, {
+    method,
+    redirect: "error",
+    signal: AbortSignal.timeout(15000),
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${process.env.GH_TOKEN || process.env.GITHUB_TOKEN}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error(`GitHub ${method} request failed with HTTP ${response.status}`)
+  return response.status === 204 ? null : response.json()
+}
+
+async function pages(path) {
+  const all = []
+  for (let page = 1; page <= 100; page += 1) {
+    const rows = await api(`${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${page}`)
+    if (!Array.isArray(rows) || rows.length > 100) throw new Error("invalid GitHub API page")
+    all.push(...rows)
+    if (rows.length < 100) return all
+  }
+  throw new Error("GitHub pagination limit reached")
+}
+
+async function peelTagToCommit(ref, fetchTag) {
+  let object = ref?.object
+  const seen = new Set()
+  for (let depth = 0; depth <= 8; depth += 1) {
+    if (!object || !sha40(object.sha) || !["commit", "tag", "tree", "blob"].includes(object.type)) throw new Error("release tag has malformed Git object metadata")
+    if (object.type === "commit") return object.sha
+    if (object.type !== "tag") throw new Error("release tag must resolve to a commit")
+    if (seen.has(object.sha) || depth === 8) throw new Error("release tag cannot be safely resolved")
+    seen.add(object.sha)
+    const tag = await fetchTag(object.sha)
+    object = tag?.object
+  }
+  throw new Error("release tag does not resolve to a commit")
 }
 
 async function sourceText(repo, source) {
@@ -39,7 +106,7 @@ function assertAssetMetadata(release, version) {
 async function downloadAsset(repo, asset) {
   const expected = `https://api.github.com/repos/${repo}/releases/assets/${asset.id}`
   if (asset?.url !== expected || !Number.isSafeInteger(asset?.id) || asset.id < 1) throw new Error("release asset API identity is malformed")
-  const response = await fetch(asset.url, {
+  const response = await fetch(expected, {
     headers: {
       Accept: "application/octet-stream",
       Authorization: `Bearer ${process.env.GH_TOKEN || process.env.GITHUB_TOKEN}`,

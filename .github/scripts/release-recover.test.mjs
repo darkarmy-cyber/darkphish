@@ -26,7 +26,31 @@ test("recovery proves historical release provenance without treating an ancestor
   assert.match(script, /candidates\.sort\(\(a, b\) => b\.id - a\.id\)/)
   assert.match(script, /historical release provenance spans unexpected Native release workflows/)
   assert.doesNotMatch(script, /verifyCodeQLBaseline\(repo, source\)/)
-  assert.match(script, /verifyCodeQLBaseline\(repo, branch\.commit\.sha\)/)
+  assert.match(script, /verifyCodeQLBaseline\(repo, source\)/)
+})
+
+test("historical CI and CodeQL evidence is pinned to canonical workflow paths", () => {
+  const original = script.slice(script.indexOf("async function verifyOriginalNativeRelease"), script.indexOf("async function expectedMetadata"))
+  assert.match(original, /run\.path === "\.github\/workflows\/ci\.yml"/)
+  assert.match(original, /run\.path === "\.github\/workflows\/codeql\.yml"/)
+  assert.match(original, /run\.status === "completed"/)
+
+  const exact = script.slice(script.indexOf("async function exactMainChecks"), script.indexOf("async function exactRequiredChecksBefore"))
+  assert.match(exact, /successBefore\(run, "CI", "\.github\/workflows\/ci\.yml"\)/)
+  assert.match(exact, /successBefore\(run, "CodeQL", "\.github\/workflows\/codeql\.yml"\)/)
+  assert.match(exact, /run\.path === path/)
+})
+
+test("protected main is rechecked after CodeQL verification", () => {
+  const fn = script.slice(script.indexOf("async function currentProtectedMain"), script.indexOf("async function readTagState"))
+  const firstGreen = fn.indexOf("greenCommit(repo, source)")
+  const codeql = fn.indexOf("verifyCodeQLBaseline(repo, source)")
+  const secondGreen = fn.indexOf("greenCommit(repo, source)", firstGreen + 1)
+  const closingBranch = fn.indexOf("protected main changed after final required-check verification")
+  assert.ok(firstGreen >= 0 && codeql > firstGreen && secondGreen > codeql && closingBranch > secondGreen)
+  assert.match(fn, /const finalMetadata = await api\(`repos\/\$\{repo\}`\)/)
+  assert.match(fn, /const finalBranch = await api\(`repos\/\$\{repo\}\/branches\/main`\)/)
+  assert.match(fn, /current protected main required checks changed during CodeQL verification/)
 })
 
 test("recovery rebuilds instead of adopting staged binaries and mandates attestations", () => {
@@ -55,6 +79,17 @@ test("published recovery fast path is cryptographically attested and idempotent"
   assert.match(metadata, /if \(state\.published\)/)
   assert.match(metadata, /output\("ready", "false"\)/)
   assert.match(metadata, /Verified existing attested recovery publication/)
+})
+
+test("tag trust snapshot precedes withdrawal and cannot be re-baselined", () => {
+  const recovery = script.slice(script.indexOf("async function recoveryState"), script.indexOf("function localArtifacts"))
+  const snapshot = recovery.indexOf("const initialTagState = await readTagState(repo, tag)")
+  const withdrawal = recovery.indexOf("await ensureDraftState(repo, release.id, tag, initialTagState)")
+  const verifySnapshot = recovery.indexOf("await assertTagSnapshot(repo, tag, initialTagState")
+  assert.ok(snapshot >= 0 && withdrawal > snapshot && verifySnapshot > withdrawal)
+  assert.doesNotMatch(recovery.slice(withdrawal, verifySnapshot), /const tagState = await readTagState/)
+  assert.match(script, /if \(expected === null\)/)
+  assert.match(script, /expectedTagState !== undefined/)
 })
 
 test("published fast path proves all required checks existed before the recovery run", () => {
@@ -116,7 +151,7 @@ test("published fast path rechecks tag assets and protected main after attestati
 test("unverified public release is withdrawn before normal recovery", () => {
   const recovery = script.slice(script.indexOf("async function recoveryState"), script.indexOf("function localArtifacts"))
   assert.match(recovery, /not a fully attested recovery publication and will be withdrawn/)
-  assert.match(recovery, /for \(const release of published\) await ensureDraftState\(repo, release\.id, tag\)/)
+  assert.match(recovery, /for \(const release of published\) await ensureDraftState\(repo, release\.id, tag, initialTagState\)/)
   assert.match(recovery, /published release state could not be withdrawn before trusted recovery/)
   assert.match(recovery, /Withdrew unverified public/)
 })
@@ -134,6 +169,7 @@ test("recovery pins the exact immutable tag ref object, not only the peeled comm
   assert.match(script, /objectType/)
   assert.match(script, /objectSha/)
   assert.match(script, /sameTagState/)
+  assert.match(script, /assertTagSnapshot/)
   assert.match(script, /release tag ref object changed since recovery metadata verification/)
   assert.match(script, /release tag appeared since recovery metadata verification/)
   assert.match(script, /final immutable release tag ref object verification failed/)

@@ -1,6 +1,6 @@
 # Darkphish
 
-![Darkphish](docs/assets/darkphish_banner.svg)
+![Darkphish](docs/assets/DarkPhish.png)
 
 [![CI](https://github.com/darkarmy-cyber/darkphish/actions/workflows/ci.yml/badge.svg)](https://github.com/darkarmy-cyber/darkphish/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/darkarmy-cyber/darkphish/actions/workflows/codeql.yml/badge.svg)](https://github.com/darkarmy-cyber/darkphish/actions/workflows/codeql.yml)

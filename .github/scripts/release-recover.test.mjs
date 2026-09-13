@@ -51,9 +51,10 @@ test("present-tag precheck preserves exact object type and SHA", () => {
 })
 
 test("published recovery attests every expected asset including receipt", () => {
-  assert.match(script, /const attestedNames = expectedReleaseAssetNames\(version\)\.sort\(\)/)
-  assert.doesNotMatch(script, /expectedReleaseAssetNames\(version\)\.filter\(\(name\) => name !== receiptName\)/)
-  assert.match(script, /for \(const name of attestedNames\) verifyRecoveryAttestation/)
+  const qualifying = script.slice(script.indexOf("async function qualifyingRecoveryRun"), script.indexOf("async function verifyPublishedRecovery"))
+  assert.match(qualifying, /const attestedNames = expectedReleaseAssetNames\(version\)\.sort\(\)/)
+  assert.doesNotMatch(qualifying, /\.filter\(\(name\) => name !== receiptName\)/)
+  assert.match(qualifying, /for \(const name of attestedNames\) verifyRecoveryAttestation/)
 })
 
 test("recovery attestation is bound to exact workflow run and attempt", () => {

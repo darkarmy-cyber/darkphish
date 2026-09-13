@@ -237,10 +237,10 @@ async function withdrawUnverified(repo, tag, expectedTagState, releases) {
     const publicAfter = after.filter((release) => release?.tag_name === tag && release.draft === false)
     for (const release of publicAfter) ids.add(release.id)
     const byTag = await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })
-    const directPublic = direct.some((release) => release && release?.tag_name === tag && release.draft === false)
+    const directNotWithdrawn = direct.some((release) => release && (release.draft !== true || release.prerelease !== false))
     const publicByTag = Boolean(byTag && byTag.draft === false)
 
-    if (!directPublic && publicAfter.length === 0 && !publicByTag) {
+    if (!directNotWithdrawn && publicAfter.length === 0 && !publicByTag) {
       if (expectedTagState !== undefined) {
         const currentTag = await readTagState(repo, tag)
         if (expectedTagState === null) {
@@ -270,13 +270,19 @@ async function preflight() {
     throw new Error("release tag appeared after the explicit absent-tag precheck; refusing to establish a recovery trust baseline")
   }
 
-  if (publicReleases.length && !tagState) {
-    await withdrawUnverified(repo, tag, expectedAbsent ? null : undefined, publicReleases)
-    throw new Error("public release became tagless before provenance preflight; publication was withdrawn and recovery failed closed")
+  if (!expectedAbsent && !tagState) {
+    if (publicReleases.length) await withdrawUnverified(repo, tag, undefined, publicReleases)
+    throw new Error("release tag disappeared after the tagged precheck; refusing to re-baseline recovery trust")
+  }
+
+  if (expectedAbsent && publicReleases.length) {
+    await withdrawUnverified(repo, tag, null, publicReleases)
+    throw new Error("tagless public release appeared after the absent-tag precheck; publication was withdrawn and recovery failed closed")
   }
 
   if (!publicReleases.length) {
     if (expectedAbsent && await readTagState(repo, tag)) throw new Error("release tag appeared after the absent-tag precheck")
+    if (!expectedAbsent && !await readTagState(repo, tag)) throw new Error("release tag disappeared after the tagged precheck")
     output("verified", "false")
     return
   }

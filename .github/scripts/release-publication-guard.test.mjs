@@ -9,6 +9,8 @@ test("recovery executable checkout is pinned to the immutable workflow run SHA",
   const pinned = workflow.match(/uses: actions\/checkout@v7\n\s+with:\n\s+ref: \$\{\{ github\.sha \}\}/g) || []
   assert.ok(pinned.length >= 2, "metadata and publish executable checkouts must both use github.sha")
   assert.match(workflow, /RECOVERY_EXECUTION_SHA: \$\{\{ github\.sha \}\}/)
+  assert.match(workflow, /Verify immutable recovery execution before any release mutation/)
+  assert.match(workflow, /release-publication-guard\.mjs execution/)
   assert.match(guard, /branch\?\.commit\?\.sha !== expectedSHA/)
   assert.match(guard, /protected main moved during recovery execution verification/)
 })
@@ -33,10 +35,28 @@ test("public release is preserved only after recovery or canonical native proven
   assert.match(guard, /output\("verified", "true"\); output\("kind", "recovery"\)/)
 })
 
-test("native attestations are required exactly when the canonical workflow emitted them", () => {
-  assert.match(guard, /attestStep\?\.conclusion === "success"/)
-  assert.match(guard, /verifyAttestation\(repo, local\.get\(asset\.name\)\.path, "\.github\/workflows\/release\.yml", common\.source\)/)
-  assert.match(guard, /attestStep\?\.conclusion !== "skipped"/)
+test("native preservation requires successful attestations for every published asset", () => {
+  assert.match(guard, /attestStep\?\.status !== "completed" \|\| attestStep\.conclusion !== "success"/)
+  assert.match(guard, /canonical Native release did not attest its complete published asset set/)
+  assert.match(guard, /for \(const asset of common\.assets\) verifyAttestation\(repo, local\.get\(asset\.name\)\.path, "\.github\/workflows\/release\.yml", common\.source\)/)
+  assert.doesNotMatch(guard, /attestStep\?\.conclusion !== "skipped"/)
+})
+
+test("unverified publication withdrawal uses direct release and by-tag confirmation", () => {
+  assert.match(guard, /const direct = await Promise\.all/)
+  assert.match(guard, /releases\/\$\{id\}/)
+  assert.match(guard, /releases\/tags\/\$\{tag\}/)
+  assert.match(guard, /directPublic/)
+  assert.match(guard, /publicByTag/)
+  assert.match(guard, /release tag appeared while confirming withdrawal of an explicitly tagless publication/)
+})
+
+test("absent-tag precheck cannot be silently re-baselined", () => {
+  assert.match(workflow, /RECOVERY_PRECHECK_TAG_ABSENT: \$\{\{ steps\.missing_tag\.outputs\.tag_absent \}\}/)
+  assert.match(workflow, /grep -qx 'tag_present=true'/)
+  assert.match(guard, /expectedAbsent && tagState/)
+  assert.match(guard, /release tag appeared after the explicit absent-tag precheck/)
+  assert.match(guard, /public release became tagless before provenance preflight/)
 })
 
 test("all trusted paths close with tag, assets, and protected-main TOCTOU rechecks", () => {

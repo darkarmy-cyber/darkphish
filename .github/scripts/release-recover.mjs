@@ -1,59 +1,36 @@
+import { appendFileSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { createHash } from "node:crypto"
-import { readFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
 import {
-  api, assetDisposition, expectedReleaseAssetNames, generatedPath, greenCommit, pages,
-  publicationReceiptName, repository, versionTag,
+  api, assertCurrentVersionPublished, assetDisposition, expectedReleaseAssetNames, generatedPath,
+  greenCommit, pages, peelTagToCommit, publicationReceiptName, repository, verifyChecksums, versionTag,
 } from "../../scripts/release-lib.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
 
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
+const output = (name, value) => { if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`) }
 
-function assertTrustedDraft(release, version) {
-  const tag = versionTag(version)
-  if (!release || release.tag_name !== tag || release.draft !== true || release.prerelease !== false || !actionsBot(release.author)) {
-    throw new Error("pending release is not a trusted GitHub Actions draft")
-  }
-  if (!sha40(release.target_commitish) || !release.body?.includes(`<!-- darkphish-release-source:${release.target_commitish} -->`)) {
-    throw new Error("pending release has invalid source provenance")
-  }
-  return release
+function notesForVersion(changelog, version) {
+  const start = changelog.indexOf(`## ${version} - `)
+  if (start < 0) throw new Error("recovery source changelog is missing the release section")
+  const end = changelog.indexOf("\n## ", start + 1)
+  return changelog.slice(start, end < 0 ? undefined : end).trim()
 }
 
-function assertTrustedAsset(repo, asset) {
-  if (!asset?.url || !Number.isSafeInteger(asset.id) || asset.id < 1 || asset.state !== "uploaded" || !actionsBot(asset.uploader) || !/^sha256:[a-f0-9]{64}$/.test(asset.digest || "") || !Number.isSafeInteger(asset.size) || asset.size <= 0) {
-    throw new Error("pending release contains an untrusted asset")
-  }
-  const url = new URL(asset.url)
-  if (url.origin !== "https://api.github.com" || url.pathname !== `/repos/${repo}/releases/assets/${asset.id}`) {
-    throw new Error("pending release asset has an unexpected API URL")
-  }
-  return asset
+function releaseName(version) {
+  return `Darkphish ${version.split(".").slice(0, 2).join(".")}`
 }
 
-function draftFingerprint(release) {
-  return JSON.stringify({
-    id: release.id,
-    tag_name: release.tag_name,
-    target_commitish: release.target_commitish,
-    name: release.name,
-    body: release.body,
-    draft: release.draft,
-    prerelease: release.prerelease,
-    author_id: release.author?.id,
-  })
+function releaseBody(notes, source) {
+  return `${notes}\n\nSource commit: ${source}\n\n<!-- darkphish-release-source:${source} -->\n\nNative binaries, SHA-256 checksums and SPDX SBOM are attached.`
 }
 
-function assetFingerprint(assets) {
-  return JSON.stringify(assets.map((asset) => ({
-    id: asset.id,
-    name: asset.name,
-    state: asset.state,
-    digest: asset.digest,
-    size: asset.size,
-    uploader_id: asset.uploader?.id,
-  })).sort((a, b) => a.name.localeCompare(b.name)))
+async function sourceText(repo, path, source) {
+  const file = await api(`repos/${repo}/contents/${path}?ref=${source}`)
+  if (file?.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") throw new Error(`recovery source ${path} is unavailable`)
+  return Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf8")
 }
 
 async function currentProtectedMain(repo) {
@@ -63,7 +40,14 @@ async function currentProtectedMain(repo) {
     throw new Error("expected standalone public repository with protected main")
   }
   if (!await greenCommit(repo, branch.commit.sha)) throw new Error("current protected main is not green")
+  await verifyCodeQLBaseline(repo, branch.commit.sha)
   return branch.commit.sha
+}
+
+async function tagCommit(repo, tag) {
+  const ref = await api(`repos/${repo}/git/ref/tags/${tag}`, { missing: true })
+  if (!ref) return null
+  return peelTagToCommit(ref, (sha) => api(`repos/${repo}/git/tags/${sha}`))
 }
 
 async function verifySourceAncestry(repo, source, main) {
@@ -81,138 +65,241 @@ async function verifiedReleasePR(repo, source, version, tag) {
   if (matches.length !== 1) throw new Error("pending release source does not map to exactly one trusted release PR")
   const pr = await api(`repos/${repo}/pulls/${matches[0].number}`)
   await verifyReleaseMaintainerReview(repo, pr, { get: api })
-  await verifyCodeQLBaseline(repo, source)
   const files = await pages(`repos/${repo}/pulls/${pr.number}/files`)
   if (!files.length || files.some((file) => !generatedPath(file.filename))) throw new Error("pending release PR includes application changes")
   return pr
 }
 
-async function downloadAsset(repo, asset) {
-  assertTrustedAsset(repo, asset)
-  const response = await fetch(asset.url, {
-    headers: {
-      Accept: "application/octet-stream",
-      Authorization: `Bearer ${process.env.GH_TOKEN || process.env.GITHUB_TOKEN}`,
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-    redirect: "follow",
-    signal: AbortSignal.timeout(30000),
-  })
-  if (!response.ok) throw new Error(`pending release asset download failed with HTTP ${response.status}`)
-  const bytes = Buffer.from(await response.arrayBuffer())
-  if (bytes.length !== asset.size || createHash("sha256").update(bytes).digest("hex") !== asset.digest.slice(7)) {
-    throw new Error("pending release asset bytes do not match GitHub digest metadata")
-  }
-  return bytes
+function successfulStep(job, name) {
+  return job?.steps?.some((step) => step.name === name && step.status === "completed" && step.conclusion === "success")
 }
 
-function parseManifest(text) {
-  const entries = new Map()
-  for (const line of text.trim().split(/\r?\n/)) {
-    const match = line.match(/^([a-f0-9]{64})  (darkphish-[A-Za-z0-9._-]+)$/)
-    if (!match || entries.has(match[2])) throw new Error("pending release checksum manifest is malformed")
-    entries.set(match[2], match[1])
+async function verifyOriginalNativeRelease(repo, source) {
+  const runs = await pages(`repos/${repo}/actions/runs?head_sha=${source}`, "workflow_runs")
+  const ci = runs.filter((run) => run.name === "CI" && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.conclusion === "success")
+  const codeql = runs.filter((run) => run.name === "CodeQL" && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.conclusion === "success")
+  if (!ci.length || !codeql.length) throw new Error("historical release source lacks successful exact-SHA CI or CodeQL")
+
+  const candidates = []
+  for (const run of runs.filter((item) => item.name === "Native release" && item.path === ".github/workflows/release.yml" && item.event === "workflow_run" && item.head_branch === "main" && item.head_sha === source && item.status === "completed" && item.conclusion === "failure")) {
+    const jobs = await pages(`repos/${repo}/actions/runs/${run.id}/jobs`, "jobs")
+    const metadata = jobs.find((job) => job.name === "metadata")
+    const verify = jobs.find((job) => job.name === "verify")
+    const smoke = jobs.find((job) => job.name === "audit-smoke")
+    const publish = jobs.find((job) => job.name === "publish")
+    const binaries = jobs.filter((job) => job.name?.startsWith("binaries ("))
+    if (metadata?.conclusion !== "success" || verify?.conclusion !== "success" || smoke?.conclusion !== "success" || publish?.conclusion !== "failure" || binaries.length !== 5 || binaries.some((job) => job.conclusion !== "success")) continue
+    if (!successfulStep(metadata, "Run node scripts/release-publish.mjs metadata") ||
+        !successfulStep(publish, "Run actions/download-artifact@v8") ||
+        !successfulStep(publish, "Run anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b") ||
+        !successfulStep(publish, "Generate checksums")) continue
+    const failedPublish = publish.steps?.find((step) => step.name === "Publish verified assets without overwriting an existing release")
+    if (failedPublish?.status !== "completed" || failedPublish.conclusion !== "failure") continue
+    if (ci.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at)) || codeql.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at))) continue
+    candidates.push(run)
   }
-  return entries
+  if (candidates.length !== 1) throw new Error("historical release provenance does not map to exactly one failed Native release run")
+  return candidates[0]
 }
 
-async function uploadAsset(release, name, bytes) {
+async function expectedMetadata(repo, source, version) {
+  const changelog = await sourceText(repo, "CHANGELOG.md", source)
+  const notes = notesForVersion(changelog, version)
+  return { name: releaseName(version), body: releaseBody(notes, source) }
+}
+
+function assertExactDraft(release, version, source, expected) {
+  const tag = versionTag(version)
+  if (!release || release.tag_name !== tag || release.target_commitish !== source || release.name !== expected.name || release.body !== expected.body || release.draft !== true || release.prerelease !== false || release.published_at !== null || !actionsBot(release.author)) {
+    throw new Error("pending release draft metadata does not exactly match the verified source")
+  }
+  return release
+}
+
+async function recoveryState(repo, version, main) {
+  const tag = versionTag(version)
+  const releases = await pages(`repos/${repo}/releases`)
+  const tagged = releases.filter((release) => release?.tag_name === tag)
+  const published = tagged.filter((release) => release.draft === false)
+  if (published.length) {
+    if (published.length !== 1 || tagged.length !== 1) throw new Error("release tag maps to ambiguous published state")
+    await assertCurrentVersionPublished(repo, { version })
+    return { published: true, tag }
+  }
+  const drafts = tagged.filter((release) => release.draft === true)
+  if (drafts.length > 1) throw new Error("multiple pending release drafts require manual investigation")
+
+  const tagSHA = await tagCommit(repo, tag)
+  const source = drafts[0]?.target_commitish || tagSHA
+  if (!source) return null
+  if (!sha40(source)) throw new Error("pending release source is malformed")
+  if (tagSHA && tagSHA !== source) throw new Error("release tag already exists at an unexpected commit; tags are immutable")
+
+  await verifySourceAncestry(repo, source, main)
+  await verifiedReleasePR(repo, source, version, tag)
+  const originalRun = await verifyOriginalNativeRelease(repo, source)
+  const expected = await expectedMetadata(repo, source, version)
+  if (drafts[0]) assertExactDraft(drafts[0], version, source, expected)
+
+  const commit = await api(`repos/${repo}/commits/${source}`)
+  const builtAt = commit?.commit?.committer?.date
+  if (!builtAt || Number.isNaN(Date.parse(builtAt))) throw new Error("pending release source commit timestamp is unavailable")
+  return { published: false, tag, source, draft: drafts[0] || null, originalRun, expected, builtAt: new Date(builtAt).toISOString() }
+}
+
+function localArtifacts(version) {
+  const receiptName = publicationReceiptName(version)
+  if (!receiptName) throw new Error("release recovery requires publication receipt support")
+  const expected = expectedReleaseAssetNames(version).filter((name) => name !== receiptName).sort()
+  const names = readdirSync("dist").filter((name) => statSync(`dist/${name}`).isFile()).sort()
+  if (names.join("\n") !== expected.join("\n")) throw new Error("rebuilt recovery artifact set is incomplete or unexpected")
+  const bytes = new Map(names.map((name) => [name, readFileSync(`dist/${name}`)]))
+  const hashes = new Map([...bytes].map(([name, value]) => [name, createHash("sha256").update(value).digest("hex")]))
+  verifyChecksums(bytes.get("SHA256SUMS").toString("utf8"), hashes)
+  return { receiptName, names, bytes, hashes }
+}
+
+async function uploadAsset(release, name, content) {
   const url = new URL(release.upload_url.split("{")[0])
   if (url.origin !== "https://uploads.github.com") throw new Error("unexpected release upload host")
   url.searchParams.set("name", name)
   const response = await fetch(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.GH_TOKEN || process.env.GITHUB_TOKEN}`, "Content-Type": "application/octet-stream" },
-    body: bytes,
+    body: content,
     redirect: "error",
     signal: AbortSignal.timeout(30000),
   })
   if (!response.ok) throw new Error(`release recovery asset upload failed with HTTP ${response.status}`)
 }
 
-async function recover() {
+function assertUploadedAssetSet(assets, local, receiptHash, receiptLength) {
+  const expected = [...local.names, local.receiptName].sort()
+  const names = assets.map((asset) => asset?.name).sort()
+  if (assets.length !== expected.length || new Set(names).size !== names.length || names.join("\n") !== expected.join("\n")) throw new Error("recovery release asset set changed or is incomplete")
+  for (const asset of assets) {
+    if (!actionsBot(asset?.uploader) || asset.state !== "uploaded") throw new Error("recovery release contains an asset from an untrusted uploader")
+    if (asset.name === local.receiptName) assetDisposition(asset, receiptHash, receiptLength)
+    else assetDisposition(asset, local.hashes.get(asset.name), local.bytes.get(asset.name)?.length)
+  }
+}
+
+async function ensureTag(repo, tag, source) {
+  let current = await tagCommit(repo, tag)
+  if (!current) {
+    await api(`repos/${repo}/git/refs`, { method: "POST", body: { ref: `refs/tags/${tag}`, sha: source } })
+    current = await tagCommit(repo, tag)
+  }
+  if (current !== source) throw new Error("release tag does not resolve to the immutable verified source")
+}
+
+async function metadata() {
   const repo = repository()
   const version = readFileSync("VERSION", "utf8").trim()
-  const tag = versionTag(version)
+  versionTag(version)
   const main = await currentProtectedMain(repo)
-  const releases = await pages(`repos/${repo}/releases`)
-  const drafts = releases.filter((release) => release?.draft === true && release?.tag_name === tag)
-  if (drafts.length === 0) {
-    console.log(`No pending ${tag} draft release requires recovery.`)
+  const state = await recoveryState(repo, version, main)
+  if (!state || state.published) {
+    output("ready", "false")
+    console.log(state?.published ? `Release ${state.tag} is already fully published and verified.` : "No pending release recovery is required.")
     return
   }
-  if (drafts.length !== 1) throw new Error(`multiple pending ${tag} drafts require manual investigation`)
+  output("ready", "true")
+  output("source", state.source)
+  output("main", main)
+  output("version", version)
+  output("tag", state.tag)
+  output("built_at", state.builtAt)
+  output("original_run_id", state.originalRun.id)
+  console.log(`Verified recovery source ${state.source} from Native release run ${state.originalRun.id}`)
+}
 
-  let release = assertTrustedDraft(drafts[0], version)
-  const source = release.target_commitish
-  const originalDraft = draftFingerprint(release)
-  await verifySourceAncestry(repo, source, main)
-  await verifiedReleasePR(repo, source, version, tag)
-  const tagRef = await api(`repos/${repo}/git/ref/tags/${tag}`, { missing: true })
-  if (tagRef) throw new Error("pending release recovery found an unexpected existing tag ref")
+async function publish() {
+  const repo = repository()
+  const version = process.env.RECOVERY_VERSION
+  const source = process.env.RECOVERY_SOURCE
+  const expectedMain = process.env.RECOVERY_MAIN
+  if (!version || !sha40(source) || !sha40(expectedMain)) throw new Error("recovery publication inputs are invalid")
+  const tag = versionTag(version)
 
-  const receiptName = publicationReceiptName(version)
-  if (!receiptName) throw new Error("release recovery requires publication receipt support")
-  const requiredWithoutReceipt = expectedReleaseAssetNames(version).filter((name) => name !== receiptName).sort()
-  let assets = await pages(`repos/${repo}/releases/${release.id}/assets`)
-  const names = assets.map((asset) => asset.name)
-  if (new Set(names).size !== names.length || names.filter((name) => name !== receiptName).sort().join("\n") !== requiredWithoutReceipt.join("\n")) {
-    throw new Error("pending release asset set is incomplete or unexpected")
-  }
-  for (const asset of assets) assertTrustedAsset(repo, asset)
+  const checkout = process.env.RECOVERY_SOURCE_DIR || ".cache/source"
+  const checkedOut = execFileSync("git", ["-C", checkout, "rev-parse", "HEAD"], { encoding: "utf8" }).trim()
+  if (checkedOut !== source || readFileSync(`${checkout}/VERSION`, "utf8").trim() !== version) throw new Error("recovery build checkout is not the immutable release source")
 
-  const bytes = new Map()
-  for (const asset of assets.filter((asset) => asset.name !== receiptName)) bytes.set(asset.name, await downloadAsset(repo, asset))
-  const manifest = parseManifest(bytes.get("SHA256SUMS").toString("utf8"))
-  const payloads = requiredWithoutReceipt.filter((name) => name !== "SHA256SUMS")
-  if (manifest.size !== payloads.length) throw new Error("pending release checksum manifest is incomplete")
-  for (const name of payloads) {
-    const digest = createHash("sha256").update(bytes.get(name)).digest("hex")
-    if (manifest.get(name) !== digest) throw new Error("pending release checksum manifest does not match uploaded assets")
-  }
-
+  const local = localArtifacts(version)
   const receipt = Buffer.from(`${JSON.stringify({
     schema: "darkphish-release-publication-receipt/v1",
     tag,
     source_sha: source,
-    checksums_sha256: createHash("sha256").update(bytes.get("SHA256SUMS")).digest("hex"),
+    checksums_sha256: local.hashes.get("SHA256SUMS"),
   })}\n`, "utf8")
-  const receiptDigest = createHash("sha256").update(receipt).digest("hex")
-  const existingReceipt = assets.find((asset) => asset.name === receiptName)
-  if (existingReceipt) assertTrustedAsset(repo, existingReceipt)
-  if (assetDisposition(existingReceipt, receiptDigest, receipt.length) === "upload") await uploadAsset(release, receiptName, receipt)
+  const receiptHash = createHash("sha256").update(receipt).digest("hex")
 
-  release = assertTrustedDraft(await api(`repos/${repo}/releases/${release.id}`), version)
-  if (draftFingerprint(release) !== originalDraft) throw new Error("pending release metadata changed during recovery")
-  assets = await pages(`repos/${repo}/releases/${release.id}/assets`)
-  const expected = expectedReleaseAssetNames(version).sort()
-  if (assets.length !== expected.length || assets.map((asset) => asset.name).sort().join("\n") !== expected.join("\n")) throw new Error("pending release final asset set is incomplete")
-  for (const asset of assets) {
-    assertTrustedAsset(repo, asset)
-    if (asset.name === receiptName) {
-      if (assetDisposition(asset, receiptDigest, receipt.length) !== "reuse") throw new Error("publication receipt changed during recovery")
-    } else await downloadAsset(repo, asset)
-  }
-  const verifiedAssets = assetFingerprint(assets)
+  let main = await currentProtectedMain(repo)
+  if (main !== expectedMain) throw new Error("protected main changed since recovery metadata verification")
+  let state = await recoveryState(repo, version, main)
+  if (!state || state.published || state.source !== source || state.originalRun.id.toString() !== process.env.RECOVERY_ORIGINAL_RUN_ID) throw new Error("release recovery provenance changed before publication")
 
-  const finalMain = await currentProtectedMain(repo)
-  if (finalMain !== main) throw new Error("protected main changed during release recovery")
-  await verifySourceAncestry(repo, source, finalMain)
+  await ensureTag(repo, tag, source)
+  main = await currentProtectedMain(repo)
+  if (main !== expectedMain) throw new Error("protected main changed after recovery tag creation")
+  await verifySourceAncestry(repo, source, main)
   await verifiedReleasePR(repo, source, version, tag)
-  const finalTagRef = await api(`repos/${repo}/git/ref/tags/${tag}`, { missing: true })
-  if (finalTagRef) throw new Error("release tag appeared during recovery; refusing publication")
-  const finalDraft = assertTrustedDraft(await api(`repos/${repo}/releases/${release.id}`), version)
-  const finalAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
-  if (draftFingerprint(finalDraft) !== originalDraft || assetFingerprint(finalAssets) !== verifiedAssets) {
-    throw new Error("pending release state changed immediately before publication")
-  }
-  for (const asset of finalAssets) assertTrustedAsset(repo, asset)
+  await verifyOriginalNativeRelease(repo, source)
 
-  const published = await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, prerelease: false, make_latest: "true" } })
-  if (published?.draft !== false || published?.tag_name !== tag || published?.target_commitish !== source || !actionsBot(published.author)) {
-    throw new Error("release recovery publication verification failed")
+  if (state.draft) {
+    assertExactDraft(await api(`repos/${repo}/releases/${state.draft.id}`), version, source, state.expected)
+    await api(`repos/${repo}/releases/${state.draft.id}`, { method: "DELETE" })
+    if (await api(`repos/${repo}/releases/${state.draft.id}`, { missing: true })) throw new Error("stale release draft still exists after deletion")
   }
-  console.log(`Recovered and published https://github.com/${repo}/releases/tag/${tag} from immutable source ${source}`)
+  const remaining = (await pages(`repos/${repo}/releases`)).filter((release) => release?.tag_name === tag)
+  if (remaining.length) throw new Error("release state appeared after stale draft deletion")
+
+  let release = await api(`repos/${repo}/releases`, { method: "POST", body: {
+    tag_name: tag,
+    target_commitish: source,
+    name: state.expected.name,
+    body: state.expected.body,
+    draft: true,
+    prerelease: false,
+    make_latest: "true",
+  } })
+  assertExactDraft(release, version, source, state.expected)
+
+  for (const name of local.names) await uploadAsset(release, name, local.bytes.get(name))
+  await uploadAsset(release, local.receiptName, receipt)
+
+  release = assertExactDraft(await api(`repos/${repo}/releases/${release.id}`), version, source, state.expected)
+  let assets = await pages(`repos/${repo}/releases/${release.id}/assets`)
+  assertUploadedAssetSet(assets, local, receiptHash, receipt.length)
+  if (await tagCommit(repo, tag) !== source) throw new Error("release tag changed before publication")
+
+  main = await currentProtectedMain(repo)
+  if (main !== expectedMain) throw new Error("protected main changed immediately before recovery publication")
+  await verifySourceAncestry(repo, source, main)
+  await verifiedReleasePR(repo, source, version, tag)
+  await verifyOriginalNativeRelease(repo, source)
+  release = assertExactDraft(await api(`repos/${repo}/releases/${release.id}`), version, source, state.expected)
+  assets = await pages(`repos/${repo}/releases/${release.id}/assets`)
+  assertUploadedAssetSet(assets, local, receiptHash, receipt.length)
+  if (await tagCommit(repo, tag) !== source) throw new Error("release tag changed immediately before publication")
+
+  await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, prerelease: false, make_latest: "true" } })
+
+  const published = await api(`repos/${repo}/releases/${release.id}`)
+  const byTag = await api(`repos/${repo}/releases/tags/${tag}`)
+  if (published.id !== release.id || byTag.id !== release.id || published.draft !== false || byTag.draft !== false || published.target_commitish !== source || byTag.target_commitish !== source || published.name !== state.expected.name || published.body !== state.expected.body || !actionsBot(published.author) || !actionsBot(byTag.author)) {
+    throw new Error("post-publication release metadata verification failed")
+  }
+  if (await tagCommit(repo, tag) !== source) throw new Error("post-publication tag verification failed")
+  const publishedAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
+  assertUploadedAssetSet(publishedAssets, local, receiptHash, receipt.length)
+  const fullyVerified = await assertCurrentVersionPublished(repo, { version })
+  if (fullyVerified.id !== release.id) throw new Error("published release verification resolved a different release")
+  console.log(`Rebuilt, published and verified https://github.com/${repo}/releases/tag/${tag} from immutable source ${source}`)
 }
 
-recover().catch((error) => { console.error(error.message); process.exitCode = 1 })
+const command = process.argv[2] || "metadata"
+const runner = command === "metadata" ? metadata : command === "publish" ? publish : null
+if (!runner) throw new Error(`unknown recovery command ${command}`)
+runner().catch((error) => { console.error(error.message); process.exitCode = 1 })

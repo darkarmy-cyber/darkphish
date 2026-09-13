@@ -59,7 +59,6 @@ jobs:
           baseline: e38c64c9a90c3f6b96063fb569249e31be8ae611
           backend: sqlite3
           fixture: audit-v05
-
       - name: Verify v0.6 SQLite full schema and audit compatibility
         uses: ./.github/actions/persistence-compat
         with:
@@ -67,7 +66,6 @@ jobs:
           backend: sqlite3
           fixture: audit-v06
           coordination: '1'
-
       - name: Vet
         run: go vet ./...
       - name: Staticcheck
@@ -175,8 +173,6 @@ jobs:
           go build -trimpath -ldflags "-X main.commitSHA=$SOURCE_SHA" -o .cache/audit-native/darkphish ./
           node scripts/audit-binary-smoke.mjs .cache/audit-native/darkphish "$SOURCE_SHA" .
 
-
-
   postgres-migrations:
     name: PostgreSQL migrations up/down/up
     runs-on: ubuntu-24.04
@@ -254,14 +250,12 @@ jobs:
           go build -trimpath -ldflags "-X main.commitSHA=$SOURCE_SHA" -o .cache/audit-native/darkphish ./
           node scripts/audit-binary-smoke.mjs .cache/audit-native/darkphish "$SOURCE_SHA" .
 
-
-
   frontend:
     name: Frontend reproducibility
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 11.19.0
       - uses: actions/setup-node@v7

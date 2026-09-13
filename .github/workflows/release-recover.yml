@@ -295,7 +295,7 @@ jobs:
           RECOVERY_TAG_OBJECT_TYPE: ${{ needs.metadata.outputs.tag_object_type }}
           RECOVERY_TAG_OBJECT_SHA: ${{ needs.metadata.outputs.tag_object_sha }}
           RECOVERY_SOURCE_DIR: .cache/source
-        run: node --import .github/scripts/release-create-consistency.mjs .github/scripts/release-recover.mjs publish
+        run: node --import ./.github/scripts/release-create-consistency.mjs .github/scripts/release-recover.mjs publish
       - name: Verify published recovery including receipt attestation
         env:
           GH_TOKEN: ${{ github.token }}

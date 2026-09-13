@@ -1,5 +1,7 @@
 import { appendFileSync, readFileSync } from "node:fs"
-import { api, pages, repository, versionTag } from "../../scripts/release-lib.mjs"
+import { api, generatedPath, greenCommit, pages, repository, versionTag } from "../../scripts/release-lib.mjs"
+import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
+import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const output = (name, value) => { if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`) }
@@ -54,6 +56,27 @@ function assertTrustedDraft(release, tag, source, expected) {
   return release
 }
 
+async function verifySourceAncestry(repo, source, main) {
+  if (source === main) return
+  const comparison = await api(`repos/${repo}/compare/${source}...${main}`)
+  if (comparison?.base_commit?.sha !== source || !["ahead", "identical"].includes(comparison?.status) || comparison.behind_by !== 0) {
+    throw new Error("duplicate-draft release source is not an ancestor of protected main")
+  }
+}
+
+async function verifyGeneratedReleaseSource(repo, source, version, tag) {
+  if (!await greenCommit(repo, source)) throw new Error("duplicate-draft release source required checks are not green")
+  await verifyCodeQLBaseline(repo, source)
+  const prs = await pages(`repos/${repo}/commits/${source}/pulls`)
+  const matches = prs.filter((pr) => pr.merged_at && pr.merge_commit_sha === source && pr.base?.ref === "main" &&
+    pr.head?.ref === `release/${tag}` && pr.title === `release: Darkphish ${version}`)
+  if (matches.length !== 1) throw new Error("duplicate-draft source does not map to exactly one trusted generated release PR")
+  const pr = await api(`repos/${repo}/pulls/${matches[0].number}`)
+  await verifyReleaseMaintainerReview(repo, pr, { get: api })
+  const files = await pages(`repos/${repo}/pulls/${pr.number}/files`)
+  if (!files.length || files.some((file) => !generatedPath(file.filename))) throw new Error("duplicate-draft release PR includes application changes")
+}
+
 async function publicReleases(repo, tag) {
   return (await pages(`repos/${repo}/releases`)).filter((release) => release?.tag_name === tag && release.draft === false)
 }
@@ -72,6 +95,13 @@ async function reconcileDuplicateDrafts(repo, tag, version) {
   if (sources.size !== 1) throw new Error("pending release drafts disagree on immutable source")
   const source = [...sources][0]
   if (!sha40(source)) throw new Error("pending release draft source is malformed")
+
+  const branch = await api(`repos/${repo}/branches/main`)
+  const main = branch?.commit?.sha
+  if (branch?.protected !== true || !sha40(main)) throw new Error("duplicate-draft reconciliation requires protected main")
+  await verifySourceAncestry(repo, source, main)
+  await verifyGeneratedReleaseSource(repo, source, version, tag)
+
   const expected = await expectedMetadata(repo, source, version)
   for (const draft of drafts) assertTrustedDraft(draft, tag, source, expected)
 
@@ -86,6 +116,10 @@ async function reconcileDuplicateDrafts(repo, tag, version) {
   }
 
   if (await currentTag(repo, tag)) throw new Error("release tag appeared after duplicate draft reconciliation")
+  const closingBranch = await api(`repos/${repo}/branches/main`)
+  if (closingBranch?.protected !== true || closingBranch.commit?.sha !== main) throw new Error("protected main changed during duplicate draft reconciliation")
+  await verifySourceAncestry(repo, source, main)
+
   const remaining = (await pages(`repos/${repo}/releases`)).filter((release) => release?.tag_name === tag && release.draft === true)
   if (remaining.length !== 1 || remaining[0].id !== survivor.id) throw new Error("duplicate draft reconciliation did not leave exactly one trusted survivor")
   assertTrustedDraft(await api(`repos/${repo}/releases/${survivor.id}`), tag, source, expected)

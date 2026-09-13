@@ -43,4 +43,4 @@ jobs:
       - name: Recover a fully verified trusted draft release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/release-recover.mjs
+        run: node .github/scripts/release-recover.mjs

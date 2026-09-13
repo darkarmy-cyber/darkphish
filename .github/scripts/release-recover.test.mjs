@@ -125,7 +125,7 @@ test("recovery workflow is serialized main-only automation", () => {
   assert.match(workflow, /group: protected-main-mutation/)
   assert.match(workflow, /cancel-in-progress: false/)
   assert.match(workflow, /node \.github\/scripts\/release-recover\.mjs metadata/)
-  assert.match(workflow, /node \.github\/scripts\/release-recover\.mjs publish/)
+  assert.match(workflow, /node --import \.\/\.github\/scripts\/release-create-consistency\.mjs \.github\/scripts\/release-recover\.mjs publish/)
 })
 
 test("duplicate recovery authenticates one immutable source without current-main CodeQL rebinding", () => {

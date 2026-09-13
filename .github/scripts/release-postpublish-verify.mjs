@@ -79,6 +79,13 @@ function assertSnapshot(assets, expected) {
     if (!prior || asset.digest !== prior.digest || asset.size !== prior.size || asset.uploader?.id !== prior.uploader || asset.state !== prior.state) throw new Error("recovery asset state changed during final attestation verification")
   }
 }
+async function assertPublishedSnapshot(repo, releaseId, tag, version, source, expected, expectedTag, expectedAssets) {
+  const byId = assertExactPublished(await api(`repos/${repo}/releases/${releaseId}`), version, source, expected)
+  const byTag = assertExactPublished(await api(`repos/${repo}/releases/tags/${tag}`), version, source, expected)
+  if (byId.id !== releaseId || byTag.id !== releaseId) throw new Error("recovery release identity changed during final verification")
+  if (!sameTagState(await readTagState(repo, tag), expectedTag)) throw new Error("release tag changed during final verification")
+  assertSnapshot(await pages(`repos/${repo}/releases/${releaseId}/assets`), expectedAssets)
+}
 async function withdraw(repo, releaseId, tag, tagState) {
   for (let attempt = 1; ; attempt += 1) {
     try { await api(`repos/${repo}/releases/${releaseId}`, { method: "PATCH", body: { draft: true, prerelease: false, make_latest: "false" } }) } catch (error) { console.warn(`post-publication withdrawal PATCH ${attempt} was ambiguous: ${error.message}`) }
@@ -91,7 +98,11 @@ async function withdraw(repo, releaseId, tag, tagState) {
     const current = await api(`repos/${repo}/releases/${releaseId}`, { missing: true })
     const byTag = await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })
     const currentTag = await readTagState(repo, tag)
-    if (current?.draft === true && !after.some((release) => release?.tag_name === tag && release.draft === false) && !(byTag && byTag.draft === false) && sameTagState(currentTag, tagState)) return
+    const publicRemains = after.some((release) => release?.tag_name === tag && release.draft === false) || Boolean(byTag && byTag.draft === false)
+    if (current?.draft === true && !publicRemains) {
+      if (!sameTagState(currentTag, tagState)) throw new Error("CRITICAL: publication was withdrawn but immutable recovery tag state changed")
+      return
+    }
     await delay(Math.min(5000, attempt * 500))
   }
 }
@@ -101,9 +112,9 @@ async function main() {
   const tag = versionTag(version), expectedTag = await expectedTagState(source)
   let releaseId = null
   try {
-    await assertExecutionMain(repo, executionSHA)
     const release = await api(`repos/${repo}/releases/tags/${tag}`)
     releaseId = release.id
+    await assertExecutionMain(repo, executionSHA)
     const expected = await expectedMetadata(repo, source, version)
     assertExactPublished(release, version, source, expected)
     const canonical = await assertCurrentVersionPublished(repo, { version })
@@ -120,12 +131,10 @@ async function main() {
         verifyAttestation(repo, local.path, executionSHA)
       }
     } finally { rmSync(directory, { recursive: true, force: true }) }
-    const finalRelease = await assertCurrentVersionPublished(repo, { version })
-    assertExactPublished(finalRelease, version, source, expected)
-    if (finalRelease.id !== release.id) throw new Error("release identity changed during final attestation verification")
-    if (!sameTagState(await readTagState(repo, tag), expectedTag)) throw new Error("release tag changed during final attestation verification")
-    assertSnapshot(await pages(`repos/${repo}/releases/${release.id}/assets`), initial)
+
+    await assertPublishedSnapshot(repo, release.id, tag, version, source, expected, expectedTag, initial)
     await assertExecutionMain(repo, executionSHA)
+    await assertPublishedSnapshot(repo, release.id, tag, version, source, expected, expectedTag, initial)
     console.log(`Cryptographically verified published recovery ${tag}, including the attested publication receipt.`)
   } catch (error) {
     if (releaseId) {

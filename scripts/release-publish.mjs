@@ -2,7 +2,7 @@ import { appendFileSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { api, assetDisposition, assertReleaseState, generatedPath, git, greenCommit, pages, protectedMain, publicationReceiptName, repository, verifyChecksums, versionTag } from "./release-lib.mjs"
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
-import { verifyPullRequestReviews } from "./review-gate.mjs"
+import { verifyReleaseMaintainerReview } from "./release-maintainer-review.mjs"
 
 const trustedActionsActor = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 
@@ -64,7 +64,7 @@ async function source() {
   const prs = await pages(`repos/${repo}/commits/${sha}/pulls`)
   const pr = prs.find((item) => item.merged_at && item.merge_commit_sha === sha && item.base.ref === "main" && item.head.ref === `release/${tag}` && item.title === `release: Darkphish ${version}`)
   if (!pr) return null
-  await verifyPullRequestReviews(repo, await api(`repos/${repo}/pulls/${pr.number}`), { get: api, query: body => api("graphql", { method: "POST", body }) })
+  await verifyReleaseMaintainerReview(repo, await api(`repos/${repo}/pulls/${pr.number}`), { get: api })
   await verifyCodeQLBaseline(repo, sha)
   const files = await pages(`repos/${repo}/pulls/${pr.number}/files`)
   if (!files.length || files.some((file) => !generatedPath(file.filename))) throw new Error("release PR includes application changes")

@@ -35,34 +35,42 @@ test("public release is preserved only after recovery or canonical native proven
   assert.match(guard, /output\("verified", "true"\); output\("kind", "recovery"\)/)
 })
 
-test("native preservation requires successful attestations for every published asset", () => {
+test("native preservation requires successful attestations for every published asset and exact run attempt", () => {
   assert.match(guard, /attestStep\?\.status !== "completed" \|\| attestStep\.conclusion !== "success"/)
   assert.match(guard, /canonical Native release did not attest its complete published asset set/)
-  assert.match(guard, /for \(const asset of common\.assets\) verifyAttestation\(repo, local\.get\(asset\.name\)\.path, "\.github\/workflows\/release\.yml", common\.source\)/)
+  assert.match(guard, /for \(const asset of common\.assets\) verifyAttestation\(repo, local\.get\(asset\.name\)\.path, "\.github\/workflows\/release\.yml", common\.source, run\)/)
+  assert.match(guard, /"--format", "json"/)
+  assert.match(guard, /predicate\?\.runDetails\?\.metadata\?\.invocationId/)
+  assert.match(guard, /actions\/runs\/\$\{run\.id\}\/attempts\/\$\{run\.run_attempt\}/)
   assert.doesNotMatch(guard, /attestStep\?\.conclusion !== "skipped"/)
 })
 
-test("unverified publication withdrawal uses direct release and by-tag confirmation", () => {
-  assert.match(guard, /const direct = await Promise\.all/)
+test("unverified publication withdrawal uses a stable direct release and by-tag confirmation", () => {
+  assert.match(guard, /const finalDirect = await Promise\.all/)
   assert.match(guard, /releases\/\$\{id\}/)
   assert.match(guard, /releases\/tags\/\$\{tag\}/)
+  assert.match(guard, /if \(Number\.isSafeInteger\(byTag\?\.id\)\) ids\.add\(byTag\.id\)/)
   assert.match(guard, /directNotWithdrawn/)
   assert.match(guard, /release\.draft !== true \|\| release\.prerelease !== false/)
   assert.match(guard, /publicByTag/)
   assert.match(guard, /release tag appeared while confirming withdrawal of an explicitly tagless publication/)
 })
 
-test("tag precheck cannot be silently re-baselined in either direction", () => {
+test("tag precheck carries the exact present tag object and cannot be silently re-baselined", () => {
   assert.match(workflow, /RECOVERY_PRECHECK_TAG_ABSENT: \$\{\{ steps\.missing_tag\.outputs\.tag_absent \}\}/)
   assert.match(workflow, /grep -qx 'tag_present=true'/)
-  assert.match(guard, /expectedAbsent && tagState/)
-  assert.match(guard, /!expectedAbsent && !tagState/)
+  assert.match(guard, /\^false:\(commit\|tag\):\(\[a-f0-9\]\{40\}\)\$/)
+  assert.match(guard, /tagState\.objectType !== precheck\.tagState\.objectType/)
+  assert.match(guard, /tagState\.objectSha !== precheck\.tagState\.objectSha/)
   assert.match(guard, /release tag appeared after the explicit absent-tag precheck/)
   assert.match(guard, /release tag disappeared after the tagged precheck/)
+  assert.match(guard, /release tag object changed after the tagged precheck/)
   assert.match(guard, /tagless public release appeared after the absent-tag precheck/)
 })
 
-test("all trusted paths close with tag, assets, and protected-main TOCTOU rechecks", () => {
+test("all trusted paths close with release, tag, assets, and protected-main TOCTOU rechecks", () => {
+  const snapshots = guard.match(/await assertPublishedSnapshot\(repo, release, version, tagState, common\)/g) || []
+  assert.ok(snapshots.length >= 4, "both native and recovery paths must snapshot before and after final main verification")
   assert.match(guard, /assertSameAssets\(await pages\(`repos\/\$\{repo\}\/releases\/\$\{release\.id\}\/assets`\), common\.snapshot\)/)
   assert.match(guard, /assertTagState\(repo, versionTag\(version\), tagState/)
   const finalMainChecks = guard.match(/await executionMain\(repo, process\.env\.RECOVERY_EXECUTION_SHA\)/g) || []

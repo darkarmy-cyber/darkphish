@@ -45,10 +45,29 @@ async function currentProtectedMain(repo) {
   return branch.commit.sha
 }
 
-async function tagCommit(repo, tag) {
+async function readTagState(repo, tag) {
   const ref = await api(`repos/${repo}/git/ref/tags/${tag}`, { missing: true })
   if (!ref) return null
-  return peelTagToCommit(ref, (sha) => api(`repos/${repo}/git/tags/${sha}`))
+  const objectType = ref.object?.type
+  const objectSha = ref.object?.sha
+  if (!sha40(objectSha) || !["commit", "tag"].includes(objectType)) throw new Error("release tag ref object is malformed")
+  const commit = await peelTagToCommit(ref, (sha) => api(`repos/${repo}/git/tags/${sha}`))
+  if (!sha40(commit)) throw new Error("release tag does not peel to a commit")
+  return { objectType, objectSha, commit }
+}
+
+function sameTagState(actual, expected) {
+  return Boolean(actual && expected && actual.objectType === expected.objectType && actual.objectSha === expected.objectSha && actual.commit === expected.commit)
+}
+
+async function assertTagState(repo, tag, expected, message) {
+  const current = await readTagState(repo, tag)
+  if (!sameTagState(current, expected)) throw new Error(message)
+  return current
+}
+
+async function tagCommit(repo, tag) {
+  return (await readTagState(repo, tag))?.commit || null
 }
 
 async function verifySourceAncestry(repo, source, main) {
@@ -128,7 +147,7 @@ function assertExactPublished(release, version, source, expected) {
   return release
 }
 
-async function ensureDraftState(repo, releaseId, tag, expectedSource = null) {
+async function ensureDraftState(repo, releaseId, tag, expectedTagState = null) {
   let attempt = 0
   for (;;) {
     attempt += 1
@@ -139,12 +158,23 @@ async function ensureDraftState(repo, releaseId, tag, expectedSource = null) {
     }
 
     try {
-      const withdrawn = await api(`repos/${repo}/releases/${releaseId}`)
-      if (withdrawn?.draft === true && withdrawn?.prerelease === false) {
-        if (expectedSource) {
-          const target = await tagCommit(repo, tag)
-          if (target !== expectedSource) throw new Error("immutable release tag changed while withdrawing publication")
+      const currentReleases = await pages(`repos/${repo}/releases`)
+      const publicForTag = currentReleases.filter((release) => release?.tag_name === tag && release.draft === false)
+      for (const publicRelease of publicForTag) {
+        try {
+          await api(`repos/${repo}/releases/${publicRelease.id}`, { method: "PATCH", body: { draft: true, prerelease: false, make_latest: "false" } })
+        } catch (error) {
+          console.warn(`replacement withdrawal PATCH attempt ${attempt} for release ${publicRelease.id} was ambiguous: ${error.message}`)
         }
+      }
+
+      const withdrawn = await api(`repos/${repo}/releases/${releaseId}`, { missing: true })
+      const after = await pages(`repos/${repo}/releases`)
+      const publicAfter = after.filter((release) => release?.tag_name === tag && release.draft === false)
+      const byTag = await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })
+      const publicByTag = byTag && byTag.draft === false
+      if (withdrawn?.draft === true && withdrawn?.prerelease === false && publicAfter.length === 0 && !publicByTag) {
+        if (expectedTagState) await assertTagState(repo, tag, expectedTagState, "immutable release tag ref object changed while withdrawing publication")
         return withdrawn
       }
     } catch (error) {
@@ -155,46 +185,31 @@ async function ensureDraftState(repo, releaseId, tag, expectedSource = null) {
   }
 }
 
-async function withdrawPublishedRelease(repo, releaseId, tag, source, originalError) {
-  const withdrawn = await ensureDraftState(repo, releaseId, tag, source)
+async function withdrawPublishedRelease(repo, releaseId, tag, expectedTagState, originalError) {
+  const withdrawn = await ensureDraftState(repo, releaseId, tag, expectedTagState)
   if (withdrawn?.draft !== true) throw new Error("CRITICAL: release withdrawal returned without confirmed draft state")
   throw new Error(`release publication was withdrawn after verification failed: ${originalError.message}`)
 }
 
 async function recoveryState(repo, version, main) {
   const tag = versionTag(version)
-  const releases = await pages(`repos/${repo}/releases`)
-  const tagged = releases.filter((release) => release?.tag_name === tag)
-  const published = tagged.filter((release) => release.draft === false)
+  let releases = await pages(`repos/${repo}/releases`)
+  let tagged = releases.filter((release) => release?.tag_name === tag)
+  let published = tagged.filter((release) => release.draft === false)
   if (published.length) {
-    if (published.length !== 1 || tagged.length !== 1) {
-      for (const release of published) await ensureDraftState(repo, release.id, tag)
-      throw new Error("ambiguous published release state was withdrawn for manual investigation")
-    }
-
-    const release = published[0]
-    const source = release.target_commitish
-    try {
-      if (!sha40(source)) throw new Error("published release source is malformed")
-      if (await tagCommit(repo, tag) !== source) throw new Error("published release tag does not resolve to its declared source")
-      await verifySourceAncestry(repo, source, main)
-      await verifiedReleasePR(repo, source, version, tag)
-      const originalRun = await verifyOriginalNativeRelease(repo, source)
-      const expected = await expectedMetadata(repo, source, version)
-      assertExactPublished(release, version, source, expected)
-      const fullyVerified = await assertCurrentVersionPublished(repo, { version })
-      assertExactPublished(fullyVerified, version, source, expected)
-      if (fullyVerified.id !== release.id) throw new Error("published release verification resolved a different release")
-      return { published: true, tag, source, originalRun, expected }
-    } catch (error) {
-      await withdrawPublishedRelease(repo, release.id, tag, sha40(source) ? source : null, new Error(`published release failed recovery provenance verification: ${error.message}`))
-    }
+    for (const release of published) await ensureDraftState(repo, release.id, tag)
+    releases = await pages(`repos/${repo}/releases`)
+    tagged = releases.filter((release) => release?.tag_name === tag)
+    published = tagged.filter((release) => release.draft === false)
+    if (published.length) throw new Error("published release state could not be withdrawn before trusted recovery")
+    console.warn(`Withdrew existing public ${tag}; recovery will rebuild and attest all assets before publication.`)
   }
 
   const drafts = tagged.filter((release) => release.draft === true)
   if (drafts.length > 1) throw new Error("multiple pending release drafts require manual investigation")
 
-  const tagSHA = await tagCommit(repo, tag)
+  const initialTagState = await readTagState(repo, tag)
+  const tagSHA = initialTagState?.commit || null
   const source = drafts[0]?.target_commitish || tagSHA
   if (!source) return null
   if (!sha40(source)) throw new Error("pending release source is malformed")
@@ -209,7 +224,7 @@ async function recoveryState(repo, version, main) {
   const commit = await api(`repos/${repo}/commits/${source}`)
   const builtAt = commit?.commit?.committer?.date
   if (!builtAt || Number.isNaN(Date.parse(builtAt))) throw new Error("pending release source commit timestamp is unavailable")
-  return { published: false, tag, source, draft: drafts[0] || null, originalRun, expected, builtAt: new Date(builtAt).toISOString() }
+  return { tag, source, draft: drafts[0] || null, originalRun, expected, builtAt: new Date(builtAt).toISOString(), tagState: initialTagState }
 }
 
 function localArtifacts(version) {
@@ -249,13 +264,21 @@ function assertUploadedAssetSet(assets, local, receiptHash, receiptLength) {
   }
 }
 
-async function ensureTag(repo, tag, source) {
-  let current = await tagCommit(repo, tag)
-  if (!current) {
+async function ensureTag(repo, tag, source, expectedInitialState) {
+  let current = await readTagState(repo, tag)
+  if (expectedInitialState?.present === true) {
+    const expected = { objectType: expectedInitialState.objectType, objectSha: expectedInitialState.objectSha, commit: source }
+    if (!sameTagState(current, expected)) throw new Error("release tag ref object changed since recovery metadata verification")
+  } else if (expectedInitialState?.present === false) {
+    if (current) throw new Error("release tag appeared since recovery metadata verification")
     await api(`repos/${repo}/git/refs`, { method: "POST", body: { ref: `refs/tags/${tag}`, sha: source } })
-    current = await tagCommit(repo, tag)
+    current = await readTagState(repo, tag)
+  } else if (!current) {
+    await api(`repos/${repo}/git/refs`, { method: "POST", body: { ref: `refs/tags/${tag}`, sha: source } })
+    current = await readTagState(repo, tag)
   }
-  if (current !== source) throw new Error("release tag does not resolve to the immutable verified source")
+  if (!current || current.commit !== source) throw new Error("release tag does not resolve to the immutable verified source")
+  return current
 }
 
 async function metadata() {
@@ -264,18 +287,26 @@ async function metadata() {
   versionTag(version)
   const main = await currentProtectedMain(repo)
   const state = await recoveryState(repo, version, main)
-  if (!state || state.published) {
+  if (!state) {
     output("ready", "false")
-    console.log(state?.published ? `Release ${state.tag} is already fully published and recovery-provenance verified.` : "No pending release recovery is required.")
+    console.log("No pending release recovery is required.")
     return
   }
+
+  const finalMain = await currentProtectedMain(repo)
+  if (finalMain !== main) throw new Error("protected main changed during recovery metadata verification")
+  await verifySourceAncestry(repo, state.source, finalMain)
+
   output("ready", "true")
   output("source", state.source)
-  output("main", main)
+  output("main", finalMain)
   output("version", version)
   output("tag", state.tag)
   output("built_at", state.builtAt)
   output("original_run_id", state.originalRun.id)
+  output("tag_present", state.tagState ? "true" : "false")
+  output("tag_object_type", state.tagState?.objectType || "")
+  output("tag_object_sha", state.tagState?.objectSha || "")
   console.log(`Verified recovery source ${state.source} from Native release run ${state.originalRun.id}`)
 }
 
@@ -286,6 +317,15 @@ async function publish() {
   const expectedMain = process.env.RECOVERY_MAIN
   if (!version || !sha40(source) || !sha40(expectedMain)) throw new Error("recovery publication inputs are invalid")
   const tag = versionTag(version)
+
+  const tagPresentValue = process.env.RECOVERY_TAG_PRESENT
+  if (!["true", "false"].includes(tagPresentValue)) throw new Error("recovery tag snapshot input is invalid")
+  const initialTagExpectation = { present: tagPresentValue === "true" }
+  if (initialTagExpectation.present) {
+    initialTagExpectation.objectType = process.env.RECOVERY_TAG_OBJECT_TYPE
+    initialTagExpectation.objectSha = process.env.RECOVERY_TAG_OBJECT_SHA
+    if (!["commit", "tag"].includes(initialTagExpectation.objectType) || !sha40(initialTagExpectation.objectSha)) throw new Error("recovery tag object snapshot is invalid")
+  }
 
   const checkout = process.env.RECOVERY_SOURCE_DIR || ".cache/source"
   const checkedOut = execFileSync("git", ["-C", checkout, "rev-parse", "HEAD"], { encoding: "utf8" }).trim()
@@ -303,15 +343,16 @@ async function publish() {
   let main = await currentProtectedMain(repo)
   if (main !== expectedMain) throw new Error("protected main changed since recovery metadata verification")
   let state = await recoveryState(repo, version, main)
-  if (!state || state.published || state.source !== source || state.originalRun.id.toString() !== process.env.RECOVERY_ORIGINAL_RUN_ID) throw new Error("release recovery provenance changed before publication")
+  if (!state || state.source !== source || state.originalRun.id.toString() !== process.env.RECOVERY_ORIGINAL_RUN_ID) throw new Error("release recovery provenance changed before publication")
 
-  await ensureTag(repo, tag, source)
+  const immutableTag = await ensureTag(repo, tag, source, initialTagExpectation)
   main = await currentProtectedMain(repo)
   if (main !== expectedMain) throw new Error("protected main changed after recovery tag creation")
   await verifySourceAncestry(repo, source, main)
   await verifiedReleasePR(repo, source, version, tag)
   const originalRun = await verifyOriginalNativeRelease(repo, source)
   if (originalRun.id.toString() !== process.env.RECOVERY_ORIGINAL_RUN_ID) throw new Error("selected historical Native release provenance changed")
+  await assertTagState(repo, tag, immutableTag, "immutable release tag ref object changed after recovery tag creation")
 
   if (state.draft) {
     assertExactDraft(await api(`repos/${repo}/releases/${state.draft.id}`), version, source, state.expected)
@@ -338,7 +379,7 @@ async function publish() {
   release = assertExactDraft(await api(`repos/${repo}/releases/${release.id}`), version, source, state.expected)
   let assets = await pages(`repos/${repo}/releases/${release.id}/assets`)
   assertUploadedAssetSet(assets, local, receiptHash, receipt.length)
-  if (await tagCommit(repo, tag) !== source) throw new Error("release tag changed before publication")
+  await assertTagState(repo, tag, immutableTag, "release tag ref object changed before publication")
 
   main = await currentProtectedMain(repo)
   if (main !== expectedMain) throw new Error("protected main changed immediately before recovery publication")
@@ -349,12 +390,12 @@ async function publish() {
   release = assertExactDraft(await api(`repos/${repo}/releases/${release.id}`), version, source, state.expected)
   assets = await pages(`repos/${repo}/releases/${release.id}/assets`)
   assertUploadedAssetSet(assets, local, receiptHash, receipt.length)
-  if (await tagCommit(repo, tag) !== source) throw new Error("release tag changed immediately before publication")
+  await assertTagState(repo, tag, immutableTag, "release tag ref object changed immediately before publication")
 
   try {
     await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, prerelease: false, make_latest: "true" } })
   } catch (error) {
-    await withdrawPublishedRelease(repo, release.id, tag, source, new Error(`publication PATCH returned an ambiguous failure: ${error.message}`))
+    await withdrawPublishedRelease(repo, release.id, tag, immutableTag, new Error(`publication PATCH returned an ambiguous failure: ${error.message}`))
   }
 
   try {
@@ -368,14 +409,25 @@ async function publish() {
     const published = assertExactPublished(await api(`repos/${repo}/releases/${release.id}`), version, source, state.expected)
     const byTag = assertExactPublished(await api(`repos/${repo}/releases/tags/${tag}`), version, source, state.expected)
     if (published.id !== release.id || byTag.id !== release.id) throw new Error("post-publication release identity verification failed")
-    if (await tagCommit(repo, tag) !== source) throw new Error("post-publication tag verification failed")
+    await assertTagState(repo, tag, immutableTag, "post-publication tag ref object verification failed")
     const publishedAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
     assertUploadedAssetSet(publishedAssets, local, receiptHash, receipt.length)
+
     const fullyVerified = await assertCurrentVersionPublished(repo, { version })
     assertExactPublished(fullyVerified, version, source, state.expected)
     if (fullyVerified.id !== release.id) throw new Error("published release verification resolved a different release")
+
+    const finalRelease = assertExactPublished(await api(`repos/${repo}/releases/${release.id}`), version, source, state.expected)
+    const finalByTag = assertExactPublished(await api(`repos/${repo}/releases/tags/${tag}`), version, source, state.expected)
+    if (finalRelease.id !== release.id || finalByTag.id !== release.id) throw new Error("final published release identity verification failed")
+    const finalAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
+    assertUploadedAssetSet(finalAssets, local, receiptHash, receipt.length)
+    await assertTagState(repo, tag, immutableTag, "final immutable release tag ref object verification failed")
+    const finalMain = await currentProtectedMain(repo)
+    if (finalMain !== expectedMain) throw new Error("protected main changed before final recovery publication acceptance")
+    await verifySourceAncestry(repo, source, finalMain)
   } catch (error) {
-    await withdrawPublishedRelease(repo, release.id, tag, source, error)
+    await withdrawPublishedRelease(repo, release.id, tag, immutableTag, error)
   }
 
   console.log(`Rebuilt, published and verified https://github.com/${repo}/releases/tag/${tag} from immutable source ${source}`)

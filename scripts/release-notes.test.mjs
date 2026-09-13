@@ -32,6 +32,24 @@ test("release body is deterministically bound to source commit", () => {
   assert.match(body, new RegExp(`darkphish-release-source:${source}`))
 })
 
+test("release lookup only accepts an anchored level-two release heading", () => {
+  const changelog = "# Changelog\n\n## 0.9.0 - 2026-09-15\n\n### Fixed\n\n- Mentioned text: ## 0.8.0 - 2026-09-14\n\n## 0.8.0 - 2026-09-14\n\n### Security\n\n- Real release notes.\n"
+  const section = releaseSection(changelog, "0.8.0")
+  assert.match(section, /^## 0\.8\.0 - 2026-09-14/)
+  assert.match(section, /- Real release notes\./)
+  assert.doesNotMatch(section, /Mentioned text/)
+})
+
+test("leading-zero SemVer is rejected consistently", () => {
+  assert.throws(() => releaseSection("## 01.2.3 - 2026-09-14\n", "01.2.3"), /stable SemVer/)
+  assert.throws(() => canonicalReleaseNotes("## 01.2.3 - 2026-09-14\n\n### Fixed\n\n- Fix."), /heading is malformed/)
+})
+
+test("section headings with leading or trailing whitespace fail closed", () => {
+  assert.throws(() => canonicalReleaseNotes("## 0.8.0 - 2026-09-14\n\n### Security \n\n- Hidden disclosure."), /section heading is malformed/)
+  assert.throws(() => canonicalReleaseNotes("## 0.8.0 - 2026-09-14\n\n###  Security\n\n- Hidden disclosure."), /section heading is malformed/)
+})
+
 test("malformed headings and source SHAs fail closed", () => {
   assert.throws(() => canonicalReleaseNotes("## release\n\n### Fixed\n\n- Fix."), /heading is malformed/)
   assert.throws(() => releaseBody("# Changelog\n\n## 0.8.0 - 2026-09-14\n\n### Fixed\n\n- Fix.", "0.8.0", "main"), /source SHA is malformed/)

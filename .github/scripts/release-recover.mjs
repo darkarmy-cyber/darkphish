@@ -301,7 +301,11 @@ async function publish() {
   assertUploadedAssetSet(assets, local, receiptHash, receipt.length)
   if (await tagCommit(repo, tag) !== source) throw new Error("release tag changed immediately before publication")
 
-  await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, prerelease: false, make_latest: "true" } })
+  try {
+    await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, prerelease: false, make_latest: "true" } })
+  } catch (error) {
+    await withdrawPublishedRelease(repo, release.id, tag, source, new Error(`publication PATCH returned an ambiguous failure: ${error.message}`))
+  }
 
   try {
     const postMain = await currentProtectedMain(repo)

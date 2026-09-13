@@ -119,11 +119,17 @@ async function downloadAsset(repo, asset, directory) {
   writeFileSync(path, bytes, { flag: "wx" })
   return { path, digest, size: bytes.length }
 }
-function verifyAttestation(repo, path, workflow, digest) {
+function verifyAttestation(repo, path, workflow, digest, run) {
   if (!sha40(digest)) throw new Error("attestation signer digest is invalid")
-  execFileSync("gh", ["attestation", "verify", path, "--repo", repo, "--signer-workflow", `${repo}/${workflow}`, "--signer-digest", digest, "--source-ref", "refs/heads/main", "--source-digest", digest, "--predicate-type", "https://slsa.dev/provenance/v1", "--deny-self-hosted-runners"], {
+  if (!Number.isSafeInteger(run?.id) || run.id < 1 || !Number.isSafeInteger(run?.run_attempt) || run.run_attempt < 1) throw new Error("attestation workflow run identity is invalid")
+  const stdout = execFileSync("gh", ["attestation", "verify", path, "--repo", repo, "--signer-workflow", `${repo}/${workflow}`, "--signer-digest", digest, "--source-ref", "refs/heads/main", "--source-digest", digest, "--predicate-type", "https://slsa.dev/provenance/v1", "--deny-self-hosted-runners", "--format", "json"], {
     encoding: "utf8", env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN || process.env.GITHUB_TOKEN }, stdio: ["ignore", "pipe", "pipe"],
   })
+  let verified
+  try { verified = JSON.parse(stdout) } catch { throw new Error("verified attestation JSON is malformed") }
+  const expectedInvocation = `https://github.com/${repo}/actions/runs/${run.id}/attempts/${run.run_attempt}`
+  const matching = Array.isArray(verified) && verified.some((entry) => entry?.verificationResult?.statement?.predicate?.runDetails?.metadata?.invocationId === expectedInvocation)
+  if (!matching) throw new Error("artifact attestation is not bound to the selected workflow run and attempt")
 }
 function assetSnapshot(assets) {
   return new Map(assets.map((asset) => [asset.name, { digest: asset.digest, size: asset.size, uploader: asset.uploader?.id, state: asset.state }]))
@@ -134,6 +140,13 @@ function assertSameAssets(assets, snapshot) {
     const prior = snapshot.get(asset.name)
     if (!prior || asset.digest !== prior.digest || asset.size !== prior.size || asset.uploader?.id !== prior.uploader || asset.state !== prior.state) throw new Error("release asset state changed during provenance verification")
   }
+}
+async function assertPublishedSnapshot(repo, release, version, tagState, common) {
+  const byId = assertExactPublished(await api(`repos/${repo}/releases/${release.id}`), version, common.source, common.expected)
+  const byTag = assertExactPublished(await api(`repos/${repo}/releases/tags/${versionTag(version)}`), version, common.source, common.expected)
+  if (byId.id !== release.id || byTag.id !== release.id) throw new Error("published release identity changed during final provenance verification")
+  await assertTagState(repo, versionTag(version), tagState, "release tag object changed during final provenance verification")
+  assertSameAssets(await pages(`repos/${repo}/releases/${release.id}/assets`), common.snapshot)
 }
 async function commonPublishedState(repo, release, version, main, tagState) {
   const source = release.target_commitish
@@ -172,14 +185,12 @@ async function verifyRecoveryPublication(repo, release, version, main, tagState,
         const publishStep = publish.steps.find((step) => step.name === "Publish rebuilt verified recovery assets")
         const start = timestamp(publishStep.started_at, "recovery publish start"), end = timestamp(publishStep.completed_at, "recovery publish end")
         if (publishedAt < start || publishedAt > end) continue
-        for (const asset of common.assets) verifyAttestation(repo, local.get(asset.name).path, ".github/workflows/release-recover.yml", run.head_sha)
-        const final = await assertCurrentVersionPublished(repo, { version })
-        if (final.id !== release.id) throw new Error("canonical recovery release identity changed")
-        await assertTagState(repo, versionTag(version), tagState, "recovery tag object changed after attestation verification")
-        assertSameAssets(await pages(`repos/${repo}/releases/${release.id}/assets`), common.snapshot)
+        for (const asset of common.assets) verifyAttestation(repo, local.get(asset.name).path, ".github/workflows/release-recover.yml", run.head_sha, run)
+        await assertPublishedSnapshot(repo, release, version, tagState, common)
         const finalMain = await executionMain(repo, process.env.RECOVERY_EXECUTION_SHA)
         await verifySourceAncestry(repo, common.source, finalMain)
         await verifySourceAncestry(repo, run.head_sha, finalMain)
+        await assertPublishedSnapshot(repo, release, version, tagState, common)
         return run
       } catch (error) { console.warn(`Ignoring non-qualifying recovery publication run ${run.id}: ${error.message}`) }
     }
@@ -208,13 +219,11 @@ async function verifyNativePublication(repo, release, version, main, tagState, c
         if (publishedAt < start || publishedAt > end) continue
         const attestStep = publish.steps.find((step) => step.name === "Attest canonical native release artifacts" || step.name === "Run actions/attest@v4")
         if (attestStep?.status !== "completed" || attestStep.conclusion !== "success") throw new Error("canonical Native release did not attest its complete published asset set")
-        for (const asset of common.assets) verifyAttestation(repo, local.get(asset.name).path, ".github/workflows/release.yml", common.source)
-        const final = await assertCurrentVersionPublished(repo, { version })
-        if (final.id !== release.id) throw new Error("canonical native release identity changed")
-        await assertTagState(repo, versionTag(version), tagState, "native release tag object changed during provenance verification")
-        assertSameAssets(await pages(`repos/${repo}/releases/${release.id}/assets`), common.snapshot)
+        for (const asset of common.assets) verifyAttestation(repo, local.get(asset.name).path, ".github/workflows/release.yml", common.source, run)
+        await assertPublishedSnapshot(repo, release, version, tagState, common)
         const finalMain = await executionMain(repo, process.env.RECOVERY_EXECUTION_SHA)
         await verifySourceAncestry(repo, common.source, finalMain)
+        await assertPublishedSnapshot(repo, release, version, tagState, common)
         return run
       } catch (error) { console.warn(`Ignoring non-qualifying native publication run ${run.id}: ${error.message}`) }
     }
@@ -232,12 +241,13 @@ async function withdrawUnverified(repo, tag, expectedTagState, releases) {
       catch (error) { console.warn(`withdrawal PATCH attempt ${attempt} for ${id} was ambiguous: ${error.message}`) }
     }
 
-    const direct = await Promise.all([...ids].map((id) => api(`repos/${repo}/releases/${id}`, { missing: true })))
     const after = await pages(`repos/${repo}/releases`)
     const publicAfter = after.filter((release) => release?.tag_name === tag && release.draft === false)
     for (const release of publicAfter) ids.add(release.id)
     const byTag = await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })
-    const directNotWithdrawn = direct.some((release) => release && (release.draft !== true || release.prerelease !== false))
+    if (Number.isSafeInteger(byTag?.id)) ids.add(byTag.id)
+    const finalDirect = await Promise.all([...ids].map((id) => api(`repos/${repo}/releases/${id}`, { missing: true })))
+    const directNotWithdrawn = finalDirect.some((release) => release && (release.draft !== true || release.prerelease !== false))
     const publicByTag = Boolean(byTag && byTag.draft === false)
 
     if (!directNotWithdrawn && publicAfter.length === 0 && !publicByTag) {
@@ -254,35 +264,46 @@ async function withdrawUnverified(repo, tag, expectedTagState, releases) {
     await delay(Math.min(5000, 500 * attempt))
   }
 }
+function parsePrecheck(value) {
+  if (value === "true") return { absent: true, tagState: null }
+  const match = /^false:(commit|tag):([a-f0-9]{40})$/.exec(value || "")
+  if (!match) throw new Error("missing-tag precheck result is unavailable or invalid")
+  return { absent: false, tagState: { objectType: match[1], objectSha: match[2] } }
+}
 async function preflight() {
   const repo = repository(), version = readFileSync("VERSION", "utf8").trim(), tag = versionTag(version)
   const executionSHA = process.env.RECOVERY_EXECUTION_SHA
-  const precheck = process.env.RECOVERY_PRECHECK_TAG_ABSENT
-  if (!["true", "false"].includes(precheck)) throw new Error("missing-tag precheck result is unavailable or invalid")
-  const expectedAbsent = precheck === "true"
+  const precheck = parsePrecheck(process.env.RECOVERY_PRECHECK_TAG_ABSENT)
   const main = await executionMain(repo, executionSHA)
   const releases = await pages(`repos/${repo}/releases`)
   const publicReleases = releases.filter((release) => release?.tag_name === tag && release.draft === false)
   const tagState = await readTagState(repo, tag)
 
-  if (expectedAbsent && tagState) {
+  if (precheck.absent && tagState) {
     if (publicReleases.length) await withdrawUnverified(repo, tag, undefined, publicReleases)
     throw new Error("release tag appeared after the explicit absent-tag precheck; refusing to establish a recovery trust baseline")
   }
 
-  if (!expectedAbsent && !tagState) {
-    if (publicReleases.length) await withdrawUnverified(repo, tag, undefined, publicReleases)
-    throw new Error("release tag disappeared after the tagged precheck; refusing to re-baseline recovery trust")
+  if (!precheck.absent) {
+    if (!tagState) {
+      if (publicReleases.length) await withdrawUnverified(repo, tag, undefined, publicReleases)
+      throw new Error("release tag disappeared after the tagged precheck; refusing to re-baseline recovery trust")
+    }
+    if (tagState.objectType !== precheck.tagState.objectType || tagState.objectSha !== precheck.tagState.objectSha) {
+      if (publicReleases.length) await withdrawUnverified(repo, tag, undefined, publicReleases)
+      throw new Error("release tag object changed after the tagged precheck; refusing to re-baseline recovery trust")
+    }
   }
 
-  if (expectedAbsent && publicReleases.length) {
+  if (precheck.absent && publicReleases.length) {
     await withdrawUnverified(repo, tag, null, publicReleases)
     throw new Error("tagless public release appeared after the absent-tag precheck; publication was withdrawn and recovery failed closed")
   }
 
   if (!publicReleases.length) {
-    if (expectedAbsent && await readTagState(repo, tag)) throw new Error("release tag appeared after the absent-tag precheck")
-    if (!expectedAbsent && !await readTagState(repo, tag)) throw new Error("release tag disappeared after the tagged precheck")
+    const finalTag = await readTagState(repo, tag)
+    if (precheck.absent && finalTag) throw new Error("release tag appeared after the absent-tag precheck")
+    if (!precheck.absent && (!finalTag || finalTag.objectType !== precheck.tagState.objectType || finalTag.objectSha !== precheck.tagState.objectSha)) throw new Error("release tag object changed after the tagged precheck")
     output("verified", "false")
     return
   }

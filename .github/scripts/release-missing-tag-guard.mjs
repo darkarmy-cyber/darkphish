@@ -1,7 +1,8 @@
-import { readFileSync } from "node:fs"
+import { appendFileSync, readFileSync } from "node:fs"
 import { api, pages, repository, versionTag } from "../../scripts/release-lib.mjs"
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const output = (name, value) => { if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`) }
 
 async function currentTag(repo, tag) {
   return api(`repos/${repo}/git/ref/tags/${tag}`, { missing: true })
@@ -12,10 +13,12 @@ async function publicReleases(repo, tag) {
 }
 
 async function withdrawWhileTagAbsent(repo, tag, releases) {
+  let tagAppeared = false
   for (let attempt = 1; ; attempt += 1) {
-    if (await currentTag(repo, tag)) throw new Error("release tag appeared while withdrawing tagless public release; refusing to establish a new trust baseline")
+    const candidates = new Map(releases.filter((release) => Number.isSafeInteger(release?.id)).map((release) => [release.id, release]))
+    for (const release of await publicReleases(repo, tag)) candidates.set(release.id, release)
 
-    for (const release of releases) {
+    for (const release of candidates.values()) {
       try {
         await api(`repos/${repo}/releases/${release.id}`, {
           method: "PATCH",
@@ -26,13 +29,25 @@ async function withdrawWhileTagAbsent(repo, tag, releases) {
       }
     }
 
-    releases = await publicReleases(repo, tag)
     const tagState = await currentTag(repo, tag)
-    if (!releases.length && !tagState) {
-      console.warn(`Confirmed withdrawal of tagless public ${tag}; recovery may continue from an explicit absent-tag state.`)
+    if (tagState) tagAppeared = true
+
+    const ids = [...candidates.keys()]
+    const direct = await Promise.all(ids.map((id) => api(`repos/${repo}/releases/${id}`, { missing: true })))
+    const byTag = await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })
+    const after = await publicReleases(repo, tag)
+    const directPublic = direct.some((release) => release && release.draft === false && release?.tag_name === tag)
+    const publicByTag = Boolean(byTag && byTag.draft === false)
+
+    if (!directPublic && !publicByTag && after.length === 0) {
+      if (tagAppeared || await currentTag(repo, tag)) {
+        throw new Error("release tag appeared while withdrawing tagless public release; publication was withdrawn but recovery cannot establish a new trust baseline")
+      }
+      console.warn(`Confirmed withdrawal of tagless public ${tag}; recovery may continue only from the exported explicit absent-tag state.`)
       return
     }
-    if (tagState) throw new Error("release tag appeared during tagless-release withdrawal; fail closed")
+
+    releases = after
     await delay(Math.min(5000, attempt * 500))
   }
 }
@@ -42,9 +57,20 @@ async function main() {
   const version = readFileSync("VERSION", "utf8").trim()
   const tag = versionTag(version)
   const releases = await publicReleases(repo, tag)
-  if (!releases.length) return
-  if (await currentTag(repo, tag)) return
+  const tagState = await currentTag(repo, tag)
+
+  if (!releases.length) {
+    output("tag_absent", tagState ? "false" : "true")
+    return
+  }
+
+  if (tagState) {
+    output("tag_absent", "false")
+    return
+  }
+
   await withdrawWhileTagAbsent(repo, tag, releases)
+  output("tag_absent", "true")
 }
 
 main().catch((error) => {

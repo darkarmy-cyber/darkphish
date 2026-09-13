@@ -24,9 +24,15 @@ test("tag appearance never prevents confirmed withdrawal and cannot become a rec
   const tagProbe = guard.indexOf("await currentTag(repo, tag)")
   const appearedFailure = guard.indexOf("release tag appeared while withdrawing tagless public release")
   assert.ok(patch >= 0 && tagProbe >= 0 && appearedFailure > patch)
-  assert.match(guard, /const direct = await Promise\.all/)
+  assert.match(guard, /const finalDirect = await directSnapshot/)
   assert.match(guard, /directNotWithdrawn/)
   assert.match(guard, /release\.draft !== true \|\| release\.prerelease !== false/)
   assert.match(guard, /publicByTag/)
   assert.match(guard, /output\("tag_absent", "true"\)/)
+})
+
+test("present tag precheck exports exact immutable ref object identity", () => {
+  assert.match(guard, /\["commit", "tag"\]\.includes\(objectType\)/)
+  assert.match(guard, /`false:\$\{tagState\.objectType\}:\$\{tagState\.objectSha\}`/)
+  assert.match(guard, /output\("tag_absent", encodedTagSnapshot\(tagState\)\)/)
 })

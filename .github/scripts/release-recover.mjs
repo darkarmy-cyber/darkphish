@@ -98,7 +98,10 @@ async function verifyOriginalNativeRelease(repo, source) {
     if (ci.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at)) || codeql.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at))) continue
     candidates.push(run)
   }
-  if (candidates.length !== 1) throw new Error("historical release provenance does not map to exactly one failed Native release run")
+  if (!candidates.length) throw new Error("historical release provenance has no qualifying failed Native release run")
+  const workflowIds = new Set(candidates.map((run) => run.workflow_id))
+  if (workflowIds.size !== 1) throw new Error("historical release provenance spans unexpected Native release workflows")
+  candidates.sort((a, b) => b.id - a.id)
   return candidates[0]
 }
 
@@ -193,6 +196,18 @@ async function ensureTag(repo, tag, source) {
   if (current !== source) throw new Error("release tag does not resolve to the immutable verified source")
 }
 
+async function withdrawPublishedRelease(repo, releaseId, tag, source, originalError) {
+  try {
+    await api(`repos/${repo}/releases/${releaseId}`, { method: "PATCH", body: { draft: true, prerelease: false, make_latest: "false" } })
+    const withdrawn = await api(`repos/${repo}/releases/${releaseId}`)
+    if (withdrawn?.draft !== true || withdrawn?.prerelease !== false) throw new Error("withdrawn release did not return to draft state")
+    if (await tagCommit(repo, tag) !== source) throw new Error("immutable release tag changed while withdrawing publication")
+  } catch (withdrawError) {
+    throw new Error(`CRITICAL: post-publication verification failed and release withdrawal also failed: ${originalError.message}; withdrawal: ${withdrawError.message}`)
+  }
+  throw new Error(`release publication was withdrawn after post-publication verification failed: ${originalError.message}`)
+}
+
 async function metadata() {
   const repo = repository()
   const version = readFileSync("VERSION", "utf8").trim()
@@ -245,7 +260,8 @@ async function publish() {
   if (main !== expectedMain) throw new Error("protected main changed after recovery tag creation")
   await verifySourceAncestry(repo, source, main)
   await verifiedReleasePR(repo, source, version, tag)
-  await verifyOriginalNativeRelease(repo, source)
+  const originalRun = await verifyOriginalNativeRelease(repo, source)
+  if (originalRun.id.toString() !== process.env.RECOVERY_ORIGINAL_RUN_ID) throw new Error("selected historical Native release provenance changed")
 
   if (state.draft) {
     assertExactDraft(await api(`repos/${repo}/releases/${state.draft.id}`), version, source, state.expected)
@@ -278,7 +294,8 @@ async function publish() {
   if (main !== expectedMain) throw new Error("protected main changed immediately before recovery publication")
   await verifySourceAncestry(repo, source, main)
   await verifiedReleasePR(repo, source, version, tag)
-  await verifyOriginalNativeRelease(repo, source)
+  const finalOriginalRun = await verifyOriginalNativeRelease(repo, source)
+  if (finalOriginalRun.id.toString() !== process.env.RECOVERY_ORIGINAL_RUN_ID) throw new Error("historical Native release provenance changed immediately before publication")
   release = assertExactDraft(await api(`repos/${repo}/releases/${release.id}`), version, source, state.expected)
   assets = await pages(`repos/${repo}/releases/${release.id}/assets`)
   assertUploadedAssetSet(assets, local, receiptHash, receipt.length)
@@ -286,16 +303,28 @@ async function publish() {
 
   await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, prerelease: false, make_latest: "true" } })
 
-  const published = await api(`repos/${repo}/releases/${release.id}`)
-  const byTag = await api(`repos/${repo}/releases/tags/${tag}`)
-  if (published.id !== release.id || byTag.id !== release.id || published.draft !== false || byTag.draft !== false || published.target_commitish !== source || byTag.target_commitish !== source || published.name !== state.expected.name || published.body !== state.expected.body || !actionsBot(published.author) || !actionsBot(byTag.author)) {
-    throw new Error("post-publication release metadata verification failed")
+  try {
+    const postMain = await currentProtectedMain(repo)
+    if (postMain !== expectedMain) throw new Error("protected main changed during the publication window")
+    await verifySourceAncestry(repo, source, postMain)
+    await verifiedReleasePR(repo, source, version, tag)
+    const postOriginalRun = await verifyOriginalNativeRelease(repo, source)
+    if (postOriginalRun.id.toString() !== process.env.RECOVERY_ORIGINAL_RUN_ID) throw new Error("historical Native release provenance changed during publication")
+
+    const published = await api(`repos/${repo}/releases/${release.id}`)
+    const byTag = await api(`repos/${repo}/releases/tags/${tag}`)
+    if (published.id !== release.id || byTag.id !== release.id || published.draft !== false || byTag.draft !== false || published.target_commitish !== source || byTag.target_commitish !== source || published.name !== state.expected.name || published.body !== state.expected.body || !actionsBot(published.author) || !actionsBot(byTag.author)) {
+      throw new Error("post-publication release metadata verification failed")
+    }
+    if (await tagCommit(repo, tag) !== source) throw new Error("post-publication tag verification failed")
+    const publishedAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
+    assertUploadedAssetSet(publishedAssets, local, receiptHash, receipt.length)
+    const fullyVerified = await assertCurrentVersionPublished(repo, { version })
+    if (fullyVerified.id !== release.id) throw new Error("published release verification resolved a different release")
+  } catch (error) {
+    await withdrawPublishedRelease(repo, release.id, tag, source, error)
   }
-  if (await tagCommit(repo, tag) !== source) throw new Error("post-publication tag verification failed")
-  const publishedAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
-  assertUploadedAssetSet(publishedAssets, local, receiptHash, receipt.length)
-  const fullyVerified = await assertCurrentVersionPublished(repo, { version })
-  if (fullyVerified.id !== release.id) throw new Error("published release verification resolved a different release")
+
   console.log(`Rebuilt, published and verified https://github.com/${repo}/releases/tag/${tag} from immutable source ${source}`)
 }
 

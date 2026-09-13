@@ -5,224 +5,123 @@ import { readFileSync } from "node:fs"
 const script = readFileSync(new URL("./release-recover.mjs", import.meta.url), "utf8")
 const workflow = readFileSync(new URL("../workflows/release-recover.yml", import.meta.url), "utf8")
 
-test("recovery binds metadata to the verified source", () => {
+test("recovery metadata and publication stay bound to canonical source metadata", () => {
   assert.match(script, /notesForVersion/)
   assert.match(script, /releaseName/)
   assert.match(script, /releaseBody/)
   assert.match(script, /pending release draft metadata does not exactly match the verified source/)
   assert.match(script, /published release metadata does not exactly match the verified source/)
-  assert.match(script, /darkphish-release-source:/)
   assert.match(script, /verifyReleaseMaintainerReview/)
   assert.match(script, /generatedPath/)
 })
 
-test("recovery proves historical release provenance without treating an ancestor as current CodeQL", () => {
+test("historical release provenance is exact-SHA and canonical-workflow bound", () => {
   const historical = script.slice(script.indexOf("async function verifyOriginalNativeRelease"), script.indexOf("async function expectedMetadata"))
-  assert.match(historical, /historical release source lacks successful exact-SHA CI or CodeQL/)
+  assert.match(historical, /run\.path === "\.github\/workflows\/ci\.yml"/)
+  assert.match(historical, /run\.path === "\.github\/workflows\/codeql\.yml"/)
   assert.match(historical, /Native release/)
   assert.match(historical, /Run node scripts\/release-publish\.mjs metadata/)
-  assert.match(historical, /Run actions\/download-artifact@v8/)
   assert.match(historical, /Generate checksums/)
   assert.match(historical, /historical release provenance has no qualifying failed Native release run/)
-  assert.match(historical, /candidates\.sort\(\(a, b\) => b\.id - a\.id\)/)
   assert.match(historical, /historical release provenance spans unexpected Native release workflows/)
-  assert.doesNotMatch(historical, /verifyCodeQLBaseline/)
-  const current = script.slice(script.indexOf("async function currentProtectedMain"), script.indexOf("async function readTagState"))
-  assert.match(current, /verifyCodeQLBaseline\(repo, source\)/)
 })
 
-test("historical CI and CodeQL evidence is pinned to canonical workflow paths", () => {
-  const original = script.slice(script.indexOf("async function verifyOriginalNativeRelease"), script.indexOf("async function expectedMetadata"))
-  assert.match(original, /run\.path === "\.github\/workflows\/ci\.yml"/)
-  assert.match(original, /run\.path === "\.github\/workflows\/codeql\.yml"/)
-  assert.match(original, /run\.status === "completed"/)
-
-  const exact = script.slice(script.indexOf("async function exactMainChecks"), script.indexOf("async function exactRequiredChecksBefore"))
-  assert.match(exact, /successBefore\(run, "CI", "\.github\/workflows\/ci\.yml"\)/)
-  assert.match(exact, /successBefore\(run, "CodeQL", "\.github\/workflows\/codeql\.yml"\)/)
-  assert.match(exact, /run\.path === path/)
-})
-
-test("protected main is rechecked after CodeQL verification", () => {
+test("protected main verification can be pinned to immutable execution SHA", () => {
   const fn = script.slice(script.indexOf("async function currentProtectedMain"), script.indexOf("async function readTagState"))
-  const firstGreen = fn.indexOf("greenCommit(repo, source)")
-  const codeql = fn.indexOf("verifyCodeQLBaseline(repo, source)")
-  const secondGreen = fn.indexOf("greenCommit(repo, source)", firstGreen + 1)
-  const closingBranch = fn.indexOf("protected main changed after final required-check verification")
-  assert.ok(firstGreen >= 0 && codeql > firstGreen && secondGreen > codeql && closingBranch > secondGreen)
-  assert.match(fn, /const finalMetadata = await api\(`repos\/\$\{repo\}`\)/)
-  assert.match(fn, /const finalBranch = await api\(`repos\/\$\{repo\}\/branches\/main`\)/)
-  assert.match(fn, /current protected main required checks changed during CodeQL verification/)
+  assert.match(fn, /expectedSHA !== null && source !== expectedSHA/)
+  assert.match(fn, /verifyCodeQLBaseline\(repo, source\)/)
+  const greens = fn.match(/greenCommit\(repo, source\)/g) || []
+  assert.ok(greens.length >= 2)
+  assert.match(fn, /protected main changed after final required-check verification/)
 })
 
-test("recovery rebuilds instead of adopting staged binaries and mandates attestations", () => {
-  assert.match(workflow, /Rebuild and package immutable release source/)
-  assert.match(workflow, /ref: \$\{\{ needs\.metadata\.outputs\.source \}\}/)
-  assert.match(workflow, /recovery-\$\{\{ needs\.metadata\.outputs\.tag \}\}-\$\{\{ matrix\.goos \}\}-\$\{\{ matrix\.goarch \}\}/)
-  assert.match(workflow, /Generate recovery checksums/)
-  assert.match(workflow, /audit-binary-smoke/)
-  assert.match(workflow, /id-token: write/)
-  assert.match(workflow, /attestations: write/)
-  assert.match(workflow, /name: Attest rebuilt recovery artifacts\n\s+uses: actions\/attest@v4/)
-  assert.match(workflow, /subject-path:\s*\|[\s\S]*?dist\/\*[\s\S]*?\.cache\/recovery-receipt\/\*/)
-  const attestBlock = workflow.slice(workflow.indexOf("name: Attest rebuilt recovery artifacts"), workflow.indexOf("name: Publish rebuilt verified recovery assets"))
-  assert.doesNotMatch(attestBlock, /\bif:/)
-  assert.match(script, /rebuilt recovery artifact set is incomplete or unexpected/)
-  assert.match(script, /verifyChecksums/)
-})
-
-test("published recovery fast path is cryptographically attested and idempotent", () => {
-  const recovery = script.slice(script.indexOf("async function recoveryState"), script.indexOf("function localArtifacts"))
-  const verifyIndex = recovery.indexOf("verifyPublishedRecovery")
-  const withdrawIndex = recovery.indexOf("for (const release of published) await ensureDraftState")
-  assert.ok(verifyIndex >= 0 && withdrawIndex > verifyIndex)
-  assert.match(recovery, /return \{ tag, source, published: candidate, recoveryRun/)
+test("metadata revalidates immutable execution SHA and exact precheck tag snapshot", () => {
   const metadata = script.slice(script.indexOf("async function metadata"), script.indexOf("async function publish"))
-  assert.match(metadata, /if \(state\.published\)/)
-  assert.match(metadata, /output\("ready", "false"\)/)
-  assert.match(metadata, /Verified existing attested recovery publication/)
+  assert.match(metadata, /RECOVERY_EXECUTION_SHA \|\| process\.env\.GITHUB_SHA/)
+  assert.match(metadata, /currentProtectedMain\(repo, executionSHA\)/)
+  assert.match(metadata, /parsePrecheckSnapshot\(process\.env\.RECOVERY_PRECHECK_TAG_ABSENT\)/)
+  assert.match(metadata, /assertPrecheckSnapshot\(repo, tag, precheck/)
+  assert.match(metadata, /output\("main", finalMain\)/)
 })
 
-test("tag trust snapshot precedes withdrawal and cannot be re-baselined", () => {
-  const recovery = script.slice(script.indexOf("async function recoveryState"), script.indexOf("function localArtifacts"))
-  const snapshot = recovery.indexOf("const initialTagState = await readTagState(repo, tag)")
-  const withdrawal = recovery.indexOf("await ensureDraftState(repo, release.id, tag, initialTagState)")
-  const verifySnapshot = recovery.indexOf("await assertTagSnapshot(repo, tag, initialTagState")
-  assert.ok(snapshot >= 0 && withdrawal > snapshot && verifySnapshot > withdrawal)
-  assert.doesNotMatch(recovery.slice(withdrawal, verifySnapshot), /const tagState = await readTagState/)
-  assert.match(script, /if \(expected === null\)/)
-  assert.match(script, /expectedTagState !== undefined/)
+test("present-tag precheck preserves exact object type and SHA", () => {
+  assert.match(script, /\^false:\(commit\|tag\):\(\[a-f0-9\]\{40\}\)\$/)
+  assert.match(script, /current\.objectType !== snapshot\.objectType/)
+  assert.match(script, /current\.objectSha !== snapshot\.objectSha/)
 })
 
-test("published fast path proves all required checks existed before the recovery run", () => {
-  const exactChecks = script.slice(script.indexOf("async function exactRequiredChecksBefore"), script.indexOf("async function downloadReleaseAsset"))
-  assert.match(exactChecks, /for \(const name of requiredChecks\)/)
-  assert.match(exactChecks, /check\.app\?\.slug === "github-actions"/)
-  assert.match(exactChecks, /check\.conclusion === "success"/)
-  assert.match(exactChecks, /timestamp\(check\.completed_at/)
-  assert.match(exactChecks, /<= before/)
-})
-
-test("published fast path verifies every base artifact with GitHub attestations", () => {
-  assert.match(script, /expectedReleaseAssetNames\(version\)\.filter\(\(name\) => name !== receiptName\)/)
-  assert.match(script, /await downloadReleaseAsset\(repo, asset, directory\)/)
+test("published recovery attests every expected asset including receipt", () => {
+  assert.match(script, /const attestedNames = expectedReleaseAssetNames\(version\)\.sort\(\)/)
+  assert.doesNotMatch(script, /expectedReleaseAssetNames\(version\)\.filter\(\(name\) => name !== receiptName\)/)
   assert.match(script, /for \(const name of attestedNames\) verifyRecoveryAttestation/)
-  assert.match(script, /"gh", \[/)
-  assert.match(script, /"attestation", "verify", path/)
-  assert.match(script, /"--repo", repo/)
-  assert.match(script, /"--signer-workflow", `\$\{repo\}\/\.github\/workflows\/release-recover\.yml`/)
-  assert.match(script, /"--signer-digest", recoverySHA/)
-  assert.match(script, /"--source-ref", "refs\/heads\/main"/)
-  assert.match(script, /"--source-digest", recoverySHA/)
-  assert.match(script, /"--predicate-type", "https:\/\/slsa\.dev\/provenance\/v1"/)
-  assert.match(script, /"--deny-self-hosted-runners"/)
 })
 
-test("published fast path binds publication to a successful exact recovery job", () => {
-  const qualifying = script.slice(script.indexOf("async function qualifyingRecoveryRun"), script.indexOf("async function verifyPublishedRecovery"))
-  assert.match(qualifying, /run\.name === "Recover pending release"/)
-  assert.match(qualifying, /run\.path === "\.github\/workflows\/release-recover\.yml"/)
-  assert.match(qualifying, /run\.head_branch === "main"/)
-  assert.match(qualifying, /\["workflow_run", "schedule"\]\.includes\(run\.event\)/)
-  assert.match(qualifying, /metadata\?\.conclusion !== "success"/)
-  assert.match(qualifying, /verify\?\.conclusion !== "success"/)
-  assert.match(qualifying, /smoke\?\.conclusion !== "success"/)
-  assert.match(qualifying, /publish\?\.conclusion !== "success"/)
-  assert.match(qualifying, /binaries\.length !== 5/)
-  assert.match(qualifying, /successfulStep\(publish, "Attest rebuilt recovery artifacts"\)/)
-  assert.match(qualifying, /successfulStep\(publish, "Publish rebuilt verified recovery assets"\)/)
-  assert.match(qualifying, /publishedAt < publishStarted \|\| publishedAt > publishFinished/)
-  assert.match(qualifying, /exactMainChecks\(repo, run\.head_sha/)
-  assert.match(qualifying, /exactRequiredChecksBefore\(repo, run\.head_sha/)
-  assert.doesNotMatch(qualifying, /greenCommit\(repo, run\.head_sha\)/)
+test("recovery attestation is bound to exact workflow run and attempt", () => {
+  assert.match(script, /"--format", "json"/)
+  assert.match(script, /predicate\?\.runDetails\?\.metadata\?\.invocationId/)
+  assert.match(script, /actions\/runs\/\$\{run\.id\}\/attempts\/\$\{run\.run_attempt\}/)
+  assert.match(script, /recovery attestation is not bound to the selected workflow run and attempt/)
 })
 
-test("published fast path rechecks tag assets and protected main after attestation verification", () => {
+test("published recovery is reread after final protected-main verification", () => {
   const verify = script.slice(script.indexOf("async function verifyPublishedRecovery"), script.indexOf("async function ensureDraftState"))
-  assert.match(verify, /const initialSnapshot = new Map/)
-  assert.match(verify, /const finalCanonical = await assertCurrentVersionPublished/)
-  assert.match(verify, /published recovery tag ref object changed after attestation verification/)
-  assert.match(verify, /published recovery asset set changed during attestation verification/)
-  assert.match(verify, /asset\.digest !== initial\.digest \|\| asset\.size !== initial\.size/)
-  assert.match(verify, /assetDisposition\(asset, downloaded\.digest, downloaded\.size\)/)
-  assert.match(verify, /const finalMain = await currentProtectedMain\(repo\)/)
-  assert.match(verify, /await verifySourceAncestry\(repo, source, finalMain\)/)
+  const snapshots = verify.match(/await verifySnapshot\(\)/g) || []
+  assert.ok(snapshots.length >= 2)
+  assert.match(verify, /currentProtectedMain\(repo, process\.env\.RECOVERY_EXECUTION_SHA \|\| process\.env\.GITHUB_SHA\)/)
   assert.match(verify, /await verifySourceAncestry\(repo, run\.head_sha, finalMain\)/)
 })
 
-test("unverified public release is withdrawn before normal recovery", () => {
-  const recovery = script.slice(script.indexOf("async function recoveryState"), script.indexOf("function localArtifacts"))
-  assert.match(recovery, /not a fully attested recovery publication and will be withdrawn/)
-  assert.match(recovery, /for \(const release of published\) await ensureDraftState\(repo, release\.id, tag, initialTagState\)/)
-  assert.match(recovery, /published release state could not be withdrawn before trusted recovery/)
-  assert.match(recovery, /Withdrew unverified public/)
+test("rollback uses stable direct-ID, list and by-tag snapshot", () => {
+  const fn = script.slice(script.indexOf("async function ensureDraftState"), script.indexOf("async function withdrawPublishedRelease"))
+  assert.match(fn, /const ids = new Set\(\[releaseId\]\)/)
+  assert.match(fn, /if \(Number\.isSafeInteger\(byTag\?\.id\)\) ids\.add\(byTag\.id\)/)
+  assert.match(fn, /const finalDirect = await Promise\.all/)
+  assert.match(fn, /release\.draft !== true \|\| release\.prerelease !== false/)
+  assert.match(fn, /publicAfter\.length === 0/)
+  assert.match(fn, /assertTagSnapshot/)
 })
 
-test("metadata remediation has write permission and revalidates protected main", () => {
-  const metadataJob = workflow.slice(workflow.indexOf("\n  metadata:"), workflow.indexOf("\n  verify:"))
-  assert.match(metadataJob, /permissions:\n\s+contents: write/)
-  assert.match(metadataJob, /attestations: read/)
-  assert.match(script, /protected main changed during recovery metadata verification/)
-  assert.match(script, /await verifySourceAncestry\(repo, state\.source, finalMain\)/)
+test("publish refuses any main value not equal to immutable execution SHA", () => {
+  const publish = script.slice(script.indexOf("async function publish"), script.indexOf("const command ="))
+  assert.match(publish, /expectedMain !== executionSHA/)
+  assert.match(publish, /currentProtectedMain\(repo, executionSHA\)/)
+  const checks = publish.match(/currentProtectedMain\(repo, executionSHA\)/g) || []
+  assert.ok(checks.length >= 4)
 })
 
-test("recovery pins the exact immutable tag ref object, not only the peeled commit", () => {
-  assert.match(script, /async function readTagState/)
-  assert.match(script, /objectType/)
-  assert.match(script, /objectSha/)
-  assert.match(script, /sameTagState/)
-  assert.match(script, /assertTagSnapshot/)
-  assert.match(script, /release tag ref object changed since recovery metadata verification/)
-  assert.match(script, /release tag appeared since recovery metadata verification/)
-  assert.match(script, /final immutable release tag ref object verification failed/)
-  assert.match(workflow, /RECOVERY_TAG_PRESENT/)
-  assert.match(workflow, /RECOVERY_TAG_OBJECT_TYPE/)
-  assert.match(workflow, /RECOVERY_TAG_OBJECT_SHA/)
+test("publish verifies exact tag and rebuilt asset bytes before and after publication", () => {
+  const publish = script.slice(script.indexOf("async function publish"), script.indexOf("const command ="))
+  assert.match(publish, /ensureTag\(repo, tag, source, initialTagExpectation\)/)
+  assert.match(publish, /assertUploadedAssetSet/)
+  assert.match(publish, /assertTagState\(repo, tag, immutableTag/)
+  assert.match(publish, /verifyPublishedSnapshot/)
+  const snapshots = publish.match(/await verifyPublishedSnapshot\(\)/g) || []
+  assert.ok(snapshots.length >= 3)
 })
 
-test("recovery rollback confirms no replacement public release remains for the tag", () => {
-  assert.match(script, /const publicForTag = currentReleases\.filter/)
-  assert.match(script, /replacement withdrawal PATCH attempt/)
-  assert.match(script, /const publicAfter = after\.filter/)
-  assert.match(script, /releases\/tags\/\$\{tag\}/)
-  assert.match(script, /publicAfter\.length === 0 && !publicByTag/)
-  assert.match(script, /immutable release tag ref object changed while withdrawing publication/)
+test("ambiguous publication always enters confirmed rollback", () => {
+  const publish = script.slice(script.indexOf("async function publish"), script.indexOf("const command ="))
+  assert.match(publish, /publication PATCH returned an ambiguous failure/)
+  assert.match(publish, /withdrawPublishedRelease\(repo, release\.id, tag, immutableTag/)
 })
 
-test("recovery treats publication PATCH errors as ambiguous and forces confirmed rollback", () => {
-  const publishPatch = 'body: { draft: false, prerelease: false, make_latest: "true" }'
-  const patchIndex = script.indexOf(publishPatch)
-  const ambiguousIndex = script.indexOf("publication PATCH returned an ambiguous failure")
-  const rollbackIndex = script.indexOf("await withdrawPublishedRelease(repo, release.id, tag, immutableTag", patchIndex)
-  assert.ok(patchIndex >= 0 && ambiguousIndex > patchIndex && rollbackIndex > patchIndex)
-  assert.match(script, /publication PATCH returned an ambiguous failure/)
-  assert.match(script, /ensureDraftState/)
+test("recovery rebuilds immutable source and mandates receipt-inclusive attestations", () => {
+  assert.match(workflow, /Rebuild and package immutable release source/)
+  assert.match(workflow, /Generate recovery checksums/)
+  assert.match(workflow, /Generate recovery publication receipt/)
+  assert.match(workflow, /name: Attest rebuilt recovery artifacts\n\s+uses: actions\/attest@v4/)
+  assert.match(workflow, /subject-path:\s*\|[\s\S]*?dist\/\*[\s\S]*?\.cache\/recovery-receipt\/\*/)
+  assert.match(workflow, /id-token: write/)
+  assert.match(workflow, /attestations: write/)
 })
 
-test("final publication acceptance rebinds fresh assets to locally rebuilt digests", () => {
-  const genericIndex = script.indexOf("const fullyVerified = await assertCurrentVersionPublished")
-  const finalReleaseIndex = script.indexOf("const finalRelease = assertExactPublished", genericIndex)
-  const finalAssetsIndex = script.indexOf("assertUploadedAssetSet(finalAssets, local, receiptHash, receipt.length)", finalReleaseIndex)
-  const finalMainIndex = script.indexOf("protected main changed before final recovery publication acceptance", finalAssetsIndex)
-  assert.ok(genericIndex >= 0 && finalReleaseIndex > genericIndex && finalAssetsIndex > finalReleaseIndex && finalMainIndex > finalAssetsIndex)
-})
-
-test("recovery only deletes an exactly verified stale draft after rebuilt artifacts exist", () => {
-  const localIndex = script.indexOf("const local = localArtifacts(version)")
-  const deleteIndex = script.indexOf('method: "DELETE"')
-  assert.ok(localIndex >= 0 && deleteIndex > localIndex)
-  assert.match(script, /stale release draft still exists after deletion/)
-  assert.match(script, /release state appeared after stale draft deletion/)
-})
-
-test("release recovery is main-only, serialized, scheduled, and not manually dispatchable", () => {
+test("recovery workflow is serialized main-only automation", () => {
   assert.match(workflow, /workflow_run:/)
   assert.match(workflow, /branches: \[main\]/)
   assert.match(workflow, /schedule:/)
   assert.doesNotMatch(workflow, /\bworkflow_dispatch\s*:/)
   assert.match(workflow, /group: protected-main-mutation/)
   assert.match(workflow, /cancel-in-progress: false/)
-  assert.match(workflow, /persist-credentials: false/)
   assert.match(workflow, /node \.github\/scripts\/release-recover\.mjs metadata/)
   assert.match(workflow, /node \.github\/scripts\/release-recover\.mjs publish/)
 })

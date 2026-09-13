@@ -64,6 +64,15 @@ test("recovery withdraws publication if any post-publish invariant fails", () =>
   assert.match(script, /await withdrawPublishedRelease\(repo, release\.id, tag, source, error\)/)
 })
 
+test("recovery treats publication PATCH errors as ambiguous and rolls back", () => {
+  const publishPatch = 'body: { draft: false, prerelease: false, make_latest: "true" }'
+  const patchIndex = script.indexOf(publishPatch)
+  const ambiguousIndex = script.indexOf("publication PATCH returned an ambiguous failure")
+  const rollbackIndex = script.indexOf("await withdrawPublishedRelease(repo, release.id, tag, source", patchIndex)
+  assert.ok(patchIndex >= 0 && ambiguousIndex > patchIndex && rollbackIndex > patchIndex)
+  assert.match(script, /publication PATCH returned an ambiguous failure/)
+})
+
 test("recovery only deletes an exactly verified stale draft after rebuilt artifacts exist", () => {
   const localIndex = script.indexOf("const local = localArtifacts(version)")
   const deleteIndex = script.indexOf('method: "DELETE"')

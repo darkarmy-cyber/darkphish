@@ -1,9 +1,11 @@
-import { appendFileSync, readFileSync, readdirSync, statSync } from "node:fs"
+import { appendFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { execFileSync } from "node:child_process"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import {
   api, assertCurrentVersionPublished, assetDisposition, expectedReleaseAssetNames, generatedPath,
-  greenCommit, pages, peelTagToCommit, publicationReceiptName, repository, verifyChecksums, versionTag,
+  greenCommit, pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, verifyChecksums, versionTag,
 } from "../../scripts/release-lib.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
@@ -147,6 +149,165 @@ function assertExactPublished(release, version, source, expected) {
   return release
 }
 
+function timestamp(value, label) {
+  const parsed = Date.parse(value || "")
+  if (!Number.isFinite(parsed)) throw new Error(`${label} timestamp is invalid`)
+  return parsed
+}
+
+async function exactMainChecks(repo, source, before = Infinity) {
+  const runs = await pages(`repos/${repo}/actions/runs?head_sha=${source}`, "workflow_runs")
+  const successBefore = (run, name) => run.name === name && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success" && timestamp(run.updated_at, `${name} run`) <= before
+  if (!runs.some((run) => successBefore(run, "CI")) || !runs.some((run) => successBefore(run, "CodeQL"))) {
+    throw new Error("recovery workflow source lacks successful exact-SHA CI or CodeQL before publication")
+  }
+}
+
+async function exactRequiredChecksBefore(repo, source, before) {
+  const checks = await pages(`repos/${repo}/commits/${source}/check-runs?filter=all`, "check_runs")
+  for (const name of requiredChecks) {
+    const qualifying = checks.some((check) =>
+      check.name === name &&
+      check.app?.slug === "github-actions" &&
+      check.status === "completed" &&
+      check.conclusion === "success" &&
+      timestamp(check.completed_at, `${name} check`) <= before
+    )
+    if (!qualifying) throw new Error(`recovery workflow source lacks required successful check ${name} before publication`)
+  }
+}
+
+async function downloadReleaseAsset(repo, asset, directory) {
+  if (!Number.isSafeInteger(asset?.id) || asset.id < 1 || typeof asset?.name !== "string" || !/^(?:SHA256SUMS|darkphish-[A-Za-z0-9._-]+)$/.test(asset.name)) {
+    throw new Error("published recovery asset metadata is malformed")
+  }
+  const url = new URL(asset.url || "")
+  if (url.protocol !== "https:" || url.hostname !== "api.github.com" || url.pathname !== `/repos/${repo}/releases/assets/${asset.id}`) {
+    throw new Error("published recovery asset API URL is unexpected")
+  }
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { Accept: "application/octet-stream", Authorization: `Bearer ${process.env.GH_TOKEN || process.env.GITHUB_TOKEN}`, "X-GitHub-Api-Version": "2022-11-28" },
+    redirect: "follow",
+    signal: AbortSignal.timeout(30000),
+  })
+  if (!response.ok) throw new Error(`published recovery asset download failed with HTTP ${response.status}`)
+  const bytes = Buffer.from(await response.arrayBuffer())
+  const digest = createHash("sha256").update(bytes).digest("hex")
+  if (asset.digest !== `sha256:${digest}` || asset.size !== bytes.length) throw new Error("published recovery asset bytes do not match GitHub digest metadata")
+  const path = join(directory, asset.name)
+  writeFileSync(path, bytes, { flag: "wx" })
+  return { path, digest, size: bytes.length }
+}
+
+function verifyRecoveryAttestation(repo, path, recoverySHA) {
+  if (!sha40(recoverySHA)) throw new Error("recovery attestation source SHA is malformed")
+  execFileSync("gh", [
+    "attestation", "verify", path,
+    "--repo", repo,
+    "--signer-workflow", `${repo}/.github/workflows/release-recover.yml`,
+    "--signer-digest", recoverySHA,
+    "--source-ref", "refs/heads/main",
+    "--source-digest", recoverySHA,
+    "--predicate-type", "https://slsa.dev/provenance/v1",
+    "--deny-self-hosted-runners",
+  ], {
+    encoding: "utf8",
+    env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN || process.env.GITHUB_TOKEN },
+    stdio: ["ignore", "pipe", "pipe"],
+  })
+}
+
+async function qualifyingRecoveryRun(repo, release, version, main) {
+  const receiptName = publicationReceiptName(version)
+  const attestedNames = expectedReleaseAssetNames(version).filter((name) => name !== receiptName).sort()
+  const assets = await pages(`repos/${repo}/releases/${release.id}/assets`)
+  const selected = assets.filter((asset) => attestedNames.includes(asset?.name))
+  if (selected.length !== attestedNames.length || selected.map((asset) => asset.name).sort().join("\n") !== attestedNames.join("\n")) {
+    throw new Error("published recovery release is missing attested base artifacts")
+  }
+
+  const directory = mkdtempSync(join(tmpdir(), "darkphish-recovery-attest-"))
+  try {
+    const local = new Map()
+    for (const asset of selected) local.set(asset.name, await downloadReleaseAsset(repo, asset, directory))
+
+    const publishedAt = timestamp(release.published_at, "release publication")
+    const runs = await pages(`repos/${repo}/actions/workflows/release-recover.yml/runs?branch=main&status=success`, "workflow_runs")
+    const candidates = runs.filter((run) =>
+      run.name === "Recover pending release" &&
+      run.path === ".github/workflows/release-recover.yml" &&
+      run.head_branch === "main" &&
+      sha40(run.head_sha) &&
+      ["workflow_run", "schedule"].includes(run.event) &&
+      run.status === "completed" &&
+      run.conclusion === "success"
+    ).sort((a, b) => b.id - a.id)
+
+    for (const run of candidates) {
+      try {
+        const runStarted = timestamp(run.run_started_at || run.created_at, "recovery run start")
+        const runFinished = timestamp(run.updated_at, "recovery run completion")
+        if (publishedAt < runStarted || publishedAt > runFinished) continue
+        await verifySourceAncestry(repo, run.head_sha, main)
+        const recoveryCreated = timestamp(run.created_at, "recovery run creation")
+        await exactMainChecks(repo, run.head_sha, recoveryCreated)
+        await exactRequiredChecksBefore(repo, run.head_sha, recoveryCreated)
+
+        const jobs = await pages(`repos/${repo}/actions/runs/${run.id}/jobs`, "jobs")
+        const metadata = jobs.find((job) => job.name === "metadata")
+        const verify = jobs.find((job) => job.name === "verify")
+        const smoke = jobs.find((job) => job.name === "audit-smoke")
+        const publish = jobs.find((job) => job.name === "publish")
+        const binaries = jobs.filter((job) => job.name?.startsWith("binaries ("))
+        if (metadata?.conclusion !== "success" || verify?.conclusion !== "success" || smoke?.conclusion !== "success" || publish?.conclusion !== "success" || binaries.length !== 5 || binaries.some((job) => job.conclusion !== "success")) continue
+        if (!successfulStep(publish, "Attest rebuilt recovery artifacts") || !successfulStep(publish, "Publish rebuilt verified recovery assets")) continue
+        const publishStep = publish.steps?.find((step) => step.name === "Publish rebuilt verified recovery assets")
+        const publishStarted = timestamp(publishStep?.started_at, "recovery publish step start")
+        const publishFinished = timestamp(publishStep?.completed_at, "recovery publish step completion")
+        if (publishedAt < publishStarted || publishedAt > publishFinished) continue
+
+        for (const name of attestedNames) verifyRecoveryAttestation(repo, local.get(name).path, run.head_sha)
+        return { run, local }
+      } catch (error) {
+        console.warn(`Ignoring non-qualifying recovery run ${run.id}: ${error.message}`)
+      }
+    }
+    throw new Error("published release has no qualifying cryptographically attested recovery run")
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+}
+
+async function verifyPublishedRecovery(repo, release, version, main, tagState, expected) {
+  const source = release.target_commitish
+  assertExactPublished(release, version, source, expected)
+  const canonical = await assertCurrentVersionPublished(repo, { version })
+  if (canonical.id !== release.id) throw new Error("published recovery resolved a different release identity")
+  await assertTagState(repo, versionTag(version), tagState, "published recovery tag ref object changed before attestation verification")
+
+  const initialAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
+  const initialSnapshot = new Map(initialAssets.map((asset) => [asset.name, { digest: asset.digest, size: asset.size }]))
+  const { run, local } = await qualifyingRecoveryRun(repo, release, version, main)
+
+  const finalCanonical = await assertCurrentVersionPublished(repo, { version })
+  assertExactPublished(finalCanonical, version, source, expected)
+  if (finalCanonical.id !== release.id) throw new Error("published recovery release identity changed after attestation verification")
+  await assertTagState(repo, versionTag(version), tagState, "published recovery tag ref object changed after attestation verification")
+  const finalAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
+  if (finalAssets.length !== initialSnapshot.size) throw new Error("published recovery asset set changed during attestation verification")
+  for (const asset of finalAssets) {
+    const initial = initialSnapshot.get(asset.name)
+    if (!initial || asset.digest !== initial.digest || asset.size !== initial.size || !actionsBot(asset.uploader) || asset.state !== "uploaded") throw new Error("published recovery asset state changed during attestation verification")
+    const downloaded = local.get(asset.name)
+    if (downloaded) assetDisposition(asset, downloaded.digest, downloaded.size)
+  }
+  const finalMain = await currentProtectedMain(repo)
+  await verifySourceAncestry(repo, source, finalMain)
+  await verifySourceAncestry(repo, run.head_sha, finalMain)
+  return run
+}
+
 async function ensureDraftState(repo, releaseId, tag, expectedTagState = null) {
   let attempt = 0
   for (;;) {
@@ -196,20 +357,40 @@ async function recoveryState(repo, version, main) {
   let releases = await pages(`repos/${repo}/releases`)
   let tagged = releases.filter((release) => release?.tag_name === tag)
   let published = tagged.filter((release) => release.draft === false)
+  const initialTagState = await readTagState(repo, tag)
+
+  if (published.length === 1 && initialTagState && sha40(published[0]?.target_commitish) && initialTagState.commit === published[0].target_commitish) {
+    const candidate = published[0]
+    try {
+      const source = candidate.target_commitish
+      await verifySourceAncestry(repo, source, main)
+      await verifiedReleasePR(repo, source, version, tag)
+      const originalRun = await verifyOriginalNativeRelease(repo, source)
+      const expected = await expectedMetadata(repo, source, version)
+      const recoveryRun = await verifyPublishedRecovery(repo, candidate, version, main, initialTagState, expected)
+      const commit = await api(`repos/${repo}/commits/${source}`)
+      const builtAt = commit?.commit?.committer?.date
+      if (!builtAt || Number.isNaN(Date.parse(builtAt))) throw new Error("published recovery source commit timestamp is unavailable")
+      return { tag, source, published: candidate, recoveryRun, originalRun, expected, builtAt: new Date(builtAt).toISOString(), tagState: initialTagState }
+    } catch (error) {
+      console.warn(`Existing public ${tag} is not a fully attested recovery publication and will be withdrawn: ${error.message}`)
+    }
+  }
+
   if (published.length) {
     for (const release of published) await ensureDraftState(repo, release.id, tag)
     releases = await pages(`repos/${repo}/releases`)
     tagged = releases.filter((release) => release?.tag_name === tag)
     published = tagged.filter((release) => release.draft === false)
     if (published.length) throw new Error("published release state could not be withdrawn before trusted recovery")
-    console.warn(`Withdrew existing public ${tag}; recovery will rebuild and attest all assets before publication.`)
+    console.warn(`Withdrew unverified public ${tag}; recovery will rebuild and attest all assets before publication.`)
   }
 
   const drafts = tagged.filter((release) => release.draft === true)
   if (drafts.length > 1) throw new Error("multiple pending release drafts require manual investigation")
 
-  const initialTagState = await readTagState(repo, tag)
-  const tagSHA = initialTagState?.commit || null
+  const tagState = await readTagState(repo, tag)
+  const tagSHA = tagState?.commit || null
   const source = drafts[0]?.target_commitish || tagSHA
   if (!source) return null
   if (!sha40(source)) throw new Error("pending release source is malformed")
@@ -224,7 +405,7 @@ async function recoveryState(repo, version, main) {
   const commit = await api(`repos/${repo}/commits/${source}`)
   const builtAt = commit?.commit?.committer?.date
   if (!builtAt || Number.isNaN(Date.parse(builtAt))) throw new Error("pending release source commit timestamp is unavailable")
-  return { tag, source, draft: drafts[0] || null, originalRun, expected, builtAt: new Date(builtAt).toISOString(), tagState: initialTagState }
+  return { tag, source, draft: drafts[0] || null, originalRun, expected, builtAt: new Date(builtAt).toISOString(), tagState }
 }
 
 function localArtifacts(version) {
@@ -290,6 +471,11 @@ async function metadata() {
   if (!state) {
     output("ready", "false")
     console.log("No pending release recovery is required.")
+    return
+  }
+  if (state.published) {
+    output("ready", "false")
+    console.log(`Verified existing attested recovery publication ${state.tag} from recovery run ${state.recoveryRun.id}; no recovery action is required.`)
     return
   }
 

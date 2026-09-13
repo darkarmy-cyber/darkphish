@@ -36,15 +36,27 @@ async function sourceText(repo, path, source) {
   return Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf8")
 }
 
+function validProtectedRepository(metadata, branch) {
+  return metadata?.default_branch === "main" && metadata?.private === false && metadata?.fork === false && branch?.protected === true && sha40(branch?.commit?.sha)
+}
+
 async function currentProtectedMain(repo) {
   const metadata = await api(`repos/${repo}`)
   const branch = await api(`repos/${repo}/branches/main`)
-  if (metadata.default_branch !== "main" || metadata.private !== false || metadata.fork !== false || !branch.protected || !sha40(branch.commit?.sha)) {
-    throw new Error("expected standalone public repository with protected main")
+  if (!validProtectedRepository(metadata, branch)) throw new Error("expected standalone public repository with protected main")
+  const source = branch.commit.sha
+  if (!await greenCommit(repo, source)) throw new Error("current protected main is not green")
+  await verifyCodeQLBaseline(repo, source)
+
+  const finalMetadata = await api(`repos/${repo}`)
+  const finalBranch = await api(`repos/${repo}/branches/main`)
+  if (!validProtectedRepository(finalMetadata, finalBranch) || finalBranch.commit.sha !== source) {
+    throw new Error("protected main changed during CodeQL verification")
   }
-  if (!await greenCommit(repo, branch.commit.sha)) throw new Error("current protected main is not green")
-  await verifyCodeQLBaseline(repo, branch.commit.sha)
-  return branch.commit.sha
+  if (!await greenCommit(repo, source)) throw new Error("current protected main required checks changed during CodeQL verification")
+  const closingBranch = await api(`repos/${repo}/branches/main`)
+  if (!closingBranch?.protected || closingBranch.commit?.sha !== source) throw new Error("protected main changed after final required-check verification")
+  return source
 }
 
 async function readTagState(repo, tag) {
@@ -68,8 +80,14 @@ async function assertTagState(repo, tag, expected, message) {
   return current
 }
 
-async function tagCommit(repo, tag) {
-  return (await readTagState(repo, tag))?.commit || null
+async function assertTagSnapshot(repo, tag, expected, message) {
+  const current = await readTagState(repo, tag)
+  if (expected === null) {
+    if (current !== null) throw new Error(message)
+    return null
+  }
+  if (!sameTagState(current, expected)) throw new Error(message)
+  return current
 }
 
 async function verifySourceAncestry(repo, source, main) {
@@ -98,8 +116,8 @@ function successfulStep(job, name) {
 
 async function verifyOriginalNativeRelease(repo, source) {
   const runs = await pages(`repos/${repo}/actions/runs?head_sha=${source}`, "workflow_runs")
-  const ci = runs.filter((run) => run.name === "CI" && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.conclusion === "success")
-  const codeql = runs.filter((run) => run.name === "CodeQL" && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.conclusion === "success")
+  const ci = runs.filter((run) => run.name === "CI" && run.path === ".github/workflows/ci.yml" && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success")
+  const codeql = runs.filter((run) => run.name === "CodeQL" && run.path === ".github/workflows/codeql.yml" && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success")
   if (!ci.length || !codeql.length) throw new Error("historical release source lacks successful exact-SHA CI or CodeQL")
 
   const candidates = []
@@ -157,8 +175,8 @@ function timestamp(value, label) {
 
 async function exactMainChecks(repo, source, before = Infinity) {
   const runs = await pages(`repos/${repo}/actions/runs?head_sha=${source}`, "workflow_runs")
-  const successBefore = (run, name) => run.name === name && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success" && timestamp(run.updated_at, `${name} run`) <= before
-  if (!runs.some((run) => successBefore(run, "CI")) || !runs.some((run) => successBefore(run, "CodeQL"))) {
+  const successBefore = (run, name, path) => run.name === name && run.path === path && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success" && timestamp(run.updated_at, `${name} run`) <= before
+  if (!runs.some((run) => successBefore(run, "CI", ".github/workflows/ci.yml")) || !runs.some((run) => successBefore(run, "CodeQL", ".github/workflows/codeql.yml"))) {
     throw new Error("recovery workflow source lacks successful exact-SHA CI or CodeQL before publication")
   }
 }
@@ -308,7 +326,7 @@ async function verifyPublishedRecovery(repo, release, version, main, tagState, e
   return run
 }
 
-async function ensureDraftState(repo, releaseId, tag, expectedTagState = null) {
+async function ensureDraftState(repo, releaseId, tag, expectedTagState = undefined) {
   let attempt = 0
   for (;;) {
     attempt += 1
@@ -318,6 +336,7 @@ async function ensureDraftState(repo, releaseId, tag, expectedTagState = null) {
       console.warn(`withdrawal PATCH attempt ${attempt} was ambiguous: ${error.message}`)
     }
 
+    let confirmed = null
     try {
       const currentReleases = await pages(`repos/${repo}/releases`)
       const publicForTag = currentReleases.filter((release) => release?.tag_name === tag && release.draft === false)
@@ -334,14 +353,15 @@ async function ensureDraftState(repo, releaseId, tag, expectedTagState = null) {
       const publicAfter = after.filter((release) => release?.tag_name === tag && release.draft === false)
       const byTag = await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })
       const publicByTag = byTag && byTag.draft === false
-      if (withdrawn?.draft === true && withdrawn?.prerelease === false && publicAfter.length === 0 && !publicByTag) {
-        if (expectedTagState) await assertTagState(repo, tag, expectedTagState, "immutable release tag ref object changed while withdrawing publication")
-        return withdrawn
-      }
+      if (withdrawn?.draft === true && withdrawn?.prerelease === false && publicAfter.length === 0 && !publicByTag) confirmed = withdrawn
     } catch (error) {
       console.warn(`withdrawal probe attempt ${attempt} failed: ${error.message}`)
     }
 
+    if (confirmed) {
+      if (expectedTagState !== undefined) await assertTagSnapshot(repo, tag, expectedTagState, "immutable release tag ref object changed while withdrawing publication")
+      return confirmed
+    }
     await delay(Math.min(5000, 500 * attempt))
   }
 }
@@ -378,7 +398,7 @@ async function recoveryState(repo, version, main) {
   }
 
   if (published.length) {
-    for (const release of published) await ensureDraftState(repo, release.id, tag)
+    for (const release of published) await ensureDraftState(repo, release.id, tag, initialTagState)
     releases = await pages(`repos/${repo}/releases`)
     tagged = releases.filter((release) => release?.tag_name === tag)
     published = tagged.filter((release) => release.draft === false)
@@ -386,10 +406,10 @@ async function recoveryState(repo, version, main) {
     console.warn(`Withdrew unverified public ${tag}; recovery will rebuild and attest all assets before publication.`)
   }
 
+  const tagState = await assertTagSnapshot(repo, tag, initialTagState, "release tag ref object changed during recovery state verification")
   const drafts = tagged.filter((release) => release.draft === true)
   if (drafts.length > 1) throw new Error("multiple pending release drafts require manual investigation")
 
-  const tagState = await readTagState(repo, tag)
   const tagSHA = tagState?.commit || null
   const source = drafts[0]?.target_commitish || tagSHA
   if (!source) return null

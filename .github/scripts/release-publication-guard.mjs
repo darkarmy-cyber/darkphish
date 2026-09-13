@@ -13,6 +13,7 @@ import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const output = (name, value) => { if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`) }
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const timestamp = (value, label) => {
   const parsed = Date.parse(value || "")
   if (!Number.isFinite(parsed)) throw new Error(`${label} timestamp is invalid`)
@@ -205,11 +206,9 @@ async function verifyNativePublication(repo, release, version, main, tagState, c
         const publishStep = publish.steps.find((step) => step.name === "Publish verified assets without overwriting an existing release")
         const start = timestamp(publishStep.started_at, "native publish start"), end = timestamp(publishStep.completed_at, "native publish end")
         if (publishedAt < start || publishedAt > end) continue
-        const attestStep = publish.steps.find((step) => step.name === "Run actions/attest@v4")
-        if (attestStep?.conclusion === "success") {
-          const receipt = publicationReceiptName(version)
-          for (const asset of common.assets.filter((asset) => asset.name !== receipt)) verifyAttestation(repo, local.get(asset.name).path, ".github/workflows/release.yml", common.source)
-        } else if (attestStep?.conclusion !== "skipped") throw new Error("native artifact attestation step has an unexpected state")
+        const attestStep = publish.steps.find((step) => step.name === "Attest canonical native release artifacts" || step.name === "Run actions/attest@v4")
+        if (attestStep?.status !== "completed" || attestStep.conclusion !== "success") throw new Error("canonical Native release did not attest its complete published asset set")
+        for (const asset of common.assets) verifyAttestation(repo, local.get(asset.name).path, ".github/workflows/release.yml", common.source)
         const final = await assertCurrentVersionPublished(repo, { version })
         if (final.id !== release.id) throw new Error("canonical native release identity changed")
         await assertTagState(repo, versionTag(version), tagState, "native release tag object changed during provenance verification")
@@ -219,34 +218,69 @@ async function verifyNativePublication(repo, release, version, main, tagState, c
         return run
       } catch (error) { console.warn(`Ignoring non-qualifying native publication run ${run.id}: ${error.message}`) }
     }
-    throw new Error("public release has no qualifying canonical Native release publication run")
+    throw new Error("public release has no qualifying canonical fully attested Native release publication run")
   } finally { rmSync(directory, { recursive: true, force: true }) }
 }
-async function withdrawUnverified(repo, tag, tagState, releases) {
+async function withdrawUnverified(repo, tag, expectedTagState, releases) {
+  const ids = new Set(releases.filter((release) => Number.isSafeInteger(release?.id)).map((release) => release.id))
   for (let attempt = 1; ; attempt += 1) {
-    for (const release of releases) {
-      try { await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: true, prerelease: false, make_latest: "false" } }) }
-      catch (error) { console.warn(`withdrawal PATCH attempt ${attempt} for ${release.id} was ambiguous: ${error.message}`) }
+    const listed = (await pages(`repos/${repo}/releases`)).filter((release) => release?.tag_name === tag && release.draft === false)
+    for (const release of listed) ids.add(release.id)
+
+    for (const id of ids) {
+      try { await api(`repos/${repo}/releases/${id}`, { method: "PATCH", body: { draft: true, prerelease: false, make_latest: "false" } }) }
+      catch (error) { console.warn(`withdrawal PATCH attempt ${attempt} for ${id} was ambiguous: ${error.message}`) }
     }
-    const now = await pages(`repos/${repo}/releases`)
-    const publicNow = now.filter((release) => release?.tag_name === tag && release.draft === false)
-    if (!publicNow.length) {
-      await assertTagState(repo, tag, tagState, "immutable release tag object changed while withdrawing unverified publication")
+
+    const direct = await Promise.all([...ids].map((id) => api(`repos/${repo}/releases/${id}`, { missing: true })))
+    const after = await pages(`repos/${repo}/releases`)
+    const publicAfter = after.filter((release) => release?.tag_name === tag && release.draft === false)
+    for (const release of publicAfter) ids.add(release.id)
+    const byTag = await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })
+    const directPublic = direct.some((release) => release && release?.tag_name === tag && release.draft === false)
+    const publicByTag = Boolean(byTag && byTag.draft === false)
+
+    if (!directPublic && publicAfter.length === 0 && !publicByTag) {
+      if (expectedTagState !== undefined) {
+        const currentTag = await readTagState(repo, tag)
+        if (expectedTagState === null) {
+          if (currentTag !== null) throw new Error("release tag appeared while confirming withdrawal of an explicitly tagless publication")
+        } else if (!sameTagState(currentTag, expectedTagState)) {
+          throw new Error("immutable release tag object changed while withdrawing unverified publication")
+        }
+      }
       return
     }
-    releases = publicNow
-    await new Promise((resolve) => setTimeout(resolve, Math.min(5000, 500 * attempt)))
+    await delay(Math.min(5000, 500 * attempt))
   }
 }
 async function preflight() {
   const repo = repository(), version = readFileSync("VERSION", "utf8").trim(), tag = versionTag(version)
   const executionSHA = process.env.RECOVERY_EXECUTION_SHA
+  const precheck = process.env.RECOVERY_PRECHECK_TAG_ABSENT
+  if (!["true", "false"].includes(precheck)) throw new Error("missing-tag precheck result is unavailable or invalid")
+  const expectedAbsent = precheck === "true"
   const main = await executionMain(repo, executionSHA)
   const releases = await pages(`repos/${repo}/releases`)
   const publicReleases = releases.filter((release) => release?.tag_name === tag && release.draft === false)
-  if (!publicReleases.length) { output("verified", "false"); return }
   const tagState = await readTagState(repo, tag)
-  if (!tagState) throw new Error("public release exists without an immutable Git tag")
+
+  if (expectedAbsent && tagState) {
+    if (publicReleases.length) await withdrawUnverified(repo, tag, undefined, publicReleases)
+    throw new Error("release tag appeared after the explicit absent-tag precheck; refusing to establish a recovery trust baseline")
+  }
+
+  if (publicReleases.length && !tagState) {
+    await withdrawUnverified(repo, tag, expectedAbsent ? null : undefined, publicReleases)
+    throw new Error("public release became tagless before provenance preflight; publication was withdrawn and recovery failed closed")
+  }
+
+  if (!publicReleases.length) {
+    if (expectedAbsent && await readTagState(repo, tag)) throw new Error("release tag appeared after the absent-tag precheck")
+    output("verified", "false")
+    return
+  }
+
   if (publicReleases.length === 1) {
     const release = publicReleases[0]
     try {
@@ -259,11 +293,12 @@ async function preflight() {
       } catch (recoveryError) {
         const run = await verifyNativePublication(repo, release, version, main, tagState, common)
         output("verified", "true"); output("kind", "native")
-        console.log(`Verified existing canonical Native release publication ${tag} from run ${run.id}; leaving it public.`)
+        console.log(`Verified existing canonical fully attested Native release publication ${tag} from run ${run.id}; leaving it public.`)
         return
       }
     } catch (error) { console.warn(`Existing public ${tag} failed both trusted publication paths and will be withdrawn: ${error.message}`) }
   }
+
   await withdrawUnverified(repo, tag, tagState, publicReleases)
   output("verified", "false")
   console.warn(`Withdrew unverified public ${tag}; normal fail-closed recovery may proceed.`)
@@ -280,7 +315,11 @@ function generateReceipt() {
   writeFileSync(join(directory, name), receipt, { flag: "wx" })
   console.log(`Prepared immutable publication receipt ${name} for attestation.`)
 }
+async function verifyExecution() {
+  await executionMain(repository(), process.env.RECOVERY_EXECUTION_SHA)
+  console.log("Verified immutable current protected-main execution before release mutation.")
+}
 const command = process.argv[2] || "preflight"
-const runner = command === "preflight" ? preflight : command === "receipt" ? async () => generateReceipt() : null
+const runner = command === "preflight" ? preflight : command === "receipt" ? async () => generateReceipt() : command === "execution" ? verifyExecution : null
 if (!runner) throw new Error(`unknown publication guard command ${command}`)
 runner().catch((error) => { console.error(error.message); process.exitCode = 1 })

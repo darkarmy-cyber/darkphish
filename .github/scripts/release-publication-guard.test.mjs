@@ -46,17 +46,20 @@ test("unverified publication withdrawal uses direct release and by-tag confirmat
   assert.match(guard, /const direct = await Promise\.all/)
   assert.match(guard, /releases\/\$\{id\}/)
   assert.match(guard, /releases\/tags\/\$\{tag\}/)
-  assert.match(guard, /directPublic/)
+  assert.match(guard, /directNotWithdrawn/)
+  assert.match(guard, /release\.draft !== true \|\| release\.prerelease !== false/)
   assert.match(guard, /publicByTag/)
   assert.match(guard, /release tag appeared while confirming withdrawal of an explicitly tagless publication/)
 })
 
-test("absent-tag precheck cannot be silently re-baselined", () => {
+test("tag precheck cannot be silently re-baselined in either direction", () => {
   assert.match(workflow, /RECOVERY_PRECHECK_TAG_ABSENT: \$\{\{ steps\.missing_tag\.outputs\.tag_absent \}\}/)
   assert.match(workflow, /grep -qx 'tag_present=true'/)
   assert.match(guard, /expectedAbsent && tagState/)
+  assert.match(guard, /!expectedAbsent && !tagState/)
   assert.match(guard, /release tag appeared after the explicit absent-tag precheck/)
-  assert.match(guard, /public release became tagless before provenance preflight/)
+  assert.match(guard, /release tag disappeared after the tagged precheck/)
+  assert.match(guard, /tagless public release appeared after the absent-tag precheck/)
 })
 
 test("all trusted paths close with tag, assets, and protected-main TOCTOU rechecks", () => {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0 - 2026-09-13
+
+### Changed
+
+- Updated github.com/mattn/go-sqlite3 from 1.14.32 to 1.14.52.
+
 ## 0.7.1 - 2026-09-13
 
 ### Fixed

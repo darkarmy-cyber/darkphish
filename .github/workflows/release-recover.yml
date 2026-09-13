@@ -78,7 +78,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RECOVERY_EXECUTION_SHA: ${{ github.sha }}
           RECOVERY_PRECHECK_TAG_ABSENT: ${{ steps.missing_tag.outputs.tag_absent }}
-        run: node .github/scripts/release-recover.mjs metadata
+        shell: bash
+        run: |
+          node .github/scripts/release-recover.mjs metadata
+          if [ "$RECOVERY_PRECHECK_TAG_ABSENT" = "true" ] && grep -qx 'tag_present=true' "$GITHUB_OUTPUT"; then
+            echo "A tag appeared after the explicit absent-tag precheck; refusing to re-baseline recovery trust." >&2
+            exit 1
+          fi
 
   verify:
     needs: metadata

@@ -23,9 +23,7 @@ async function sourceText(repo, path, source) {
   if (file?.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") throw new Error(`release source ${path} is unavailable`)
   return Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf8")
 }
-async function expectedMetadata(repo, source, version) {
-  return { name: releaseName(version), body: releaseBody(notesForVersion(await sourceText(repo, "CHANGELOG.md", source), version), source) }
-}
+async function expectedMetadata(repo, source, version) { return { name: releaseName(version), body: releaseBody(notesForVersion(await sourceText(repo, "CHANGELOG.md", source), version), source) } }
 function assertExactPublished(release, version, source, expected) {
   if (!release || release.tag_name !== versionTag(version) || release.target_commitish !== source || release.name !== expected.name || release.body !== expected.body || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) throw new Error("published recovery metadata changed before attestation acceptance")
   return release
@@ -64,12 +62,16 @@ async function downloadAsset(repo, asset, directory) {
   if (!response.ok) throw new Error(`recovery asset download failed with HTTP ${response.status}`)
   const bytes = Buffer.from(await response.arrayBuffer()), digest = createHash("sha256").update(bytes).digest("hex")
   if (asset.digest !== `sha256:${digest}` || asset.size !== bytes.length || asset.state !== "uploaded" || !actionsBot(asset.uploader)) throw new Error("recovery asset bytes or uploader are not trusted")
-  const path = join(directory, asset.name)
-  writeFileSync(path, bytes, { flag: "wx" })
-  return { path, digest, size: bytes.length }
+  const path = join(directory, asset.name); writeFileSync(path, bytes, { flag: "wx" }); return { path, digest, size: bytes.length }
 }
 function verifyAttestation(repo, path, executionSHA) {
-  execFileSync("gh", ["attestation", "verify", path, "--repo", repo, "--signer-workflow", `${repo}/.github/workflows/release-recover.yml`, "--signer-digest", executionSHA, "--source-ref", "refs/heads/main", "--source-digest", executionSHA, "--predicate-type", "https://slsa.dev/provenance/v1", "--deny-self-hosted-runners"], { encoding: "utf8", env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN || process.env.GITHUB_TOKEN }, stdio: ["ignore", "pipe", "pipe"] })
+  const runId = Number(process.env.GITHUB_RUN_ID), runAttempt = Number(process.env.GITHUB_RUN_ATTEMPT)
+  if (!Number.isSafeInteger(runId) || runId < 1 || !Number.isSafeInteger(runAttempt) || runAttempt < 1) throw new Error("current recovery workflow invocation identity is invalid")
+  const stdout = execFileSync("gh", ["attestation", "verify", path, "--repo", repo, "--signer-workflow", `${repo}/.github/workflows/release-recover.yml`, "--signer-digest", executionSHA, "--source-ref", "refs/heads/main", "--source-digest", executionSHA, "--predicate-type", "https://slsa.dev/provenance/v1", "--deny-self-hosted-runners", "--format", "json"], { encoding: "utf8", env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN || process.env.GITHUB_TOKEN }, stdio: ["ignore", "pipe", "pipe"] })
+  let verified
+  try { verified = JSON.parse(stdout) } catch { throw new Error("verified recovery attestation JSON is malformed") }
+  const invocationId = `https://github.com/${repo}/actions/runs/${runId}/attempts/${runAttempt}`
+  if (!Array.isArray(verified) || !verified.some((entry) => entry?.verificationResult?.statement?.predicate?.runDetails?.metadata?.invocationId === invocationId)) throw new Error("recovery attestation is not bound to this workflow run and attempt")
 }
 function snapshot(assets) { return new Map(assets.map((asset) => [asset.name, { digest: asset.digest, size: asset.size, uploader: asset.uploader?.id, state: asset.state }])) }
 function assertSnapshot(assets, expected) {
@@ -87,20 +89,22 @@ async function assertPublishedSnapshot(repo, releaseId, tag, version, source, ex
   assertSnapshot(await pages(`repos/${repo}/releases/${releaseId}/assets`), expectedAssets)
 }
 async function withdraw(repo, releaseId, tag, tagState) {
+  const ids = new Set([releaseId])
   for (let attempt = 1; ; attempt += 1) {
-    try { await api(`repos/${repo}/releases/${releaseId}`, { method: "PATCH", body: { draft: true, prerelease: false, make_latest: "false" } }) } catch (error) { console.warn(`post-publication withdrawal PATCH ${attempt} was ambiguous: ${error.message}`) }
-    const all = await pages(`repos/${repo}/releases`)
-    const publicForTag = all.filter((release) => release?.tag_name === tag && release.draft === false)
-    for (const release of publicForTag) {
-      try { await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: true, prerelease: false, make_latest: "false" } }) } catch (error) { console.warn(`replacement withdrawal PATCH ${attempt} was ambiguous: ${error.message}`) }
+    for (const release of (await pages(`repos/${repo}/releases`)).filter((item) => item?.tag_name === tag && item.draft === false)) ids.add(release.id)
+    for (const id of ids) {
+      try { await api(`repos/${repo}/releases/${id}`, { method: "PATCH", body: { draft: true, prerelease: false, make_latest: "false" } }) }
+      catch (error) { console.warn(`post-publication withdrawal PATCH ${attempt} for release ${id} was ambiguous: ${error.message}`) }
     }
     const after = await pages(`repos/${repo}/releases`)
-    const current = await api(`repos/${repo}/releases/${releaseId}`, { missing: true })
+    const publicAfter = after.filter((release) => release?.tag_name === tag && release.draft === false)
+    for (const release of publicAfter) ids.add(release.id)
     const byTag = await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })
-    const currentTag = await readTagState(repo, tag)
-    const publicRemains = after.some((release) => release?.tag_name === tag && release.draft === false) || Boolean(byTag && byTag.draft === false)
-    if (current?.draft === true && !publicRemains) {
-      if (!sameTagState(currentTag, tagState)) throw new Error("CRITICAL: publication was withdrawn but immutable recovery tag state changed")
+    if (Number.isSafeInteger(byTag?.id)) ids.add(byTag.id)
+    const finalDirect = await Promise.all([...ids].map((id) => api(`repos/${repo}/releases/${id}`, { missing: true })))
+    const directNotWithdrawn = finalDirect.some((release) => release && (release.draft !== true || release.prerelease !== false))
+    if (!directNotWithdrawn && publicAfter.length === 0 && !(byTag && byTag.draft === false)) {
+      if (!sameTagState(await readTagState(repo, tag), tagState)) throw new Error("CRITICAL: publication was withdrawn but immutable recovery tag state changed")
       return
     }
     await delay(Math.min(5000, attempt * 500))
@@ -119,28 +123,18 @@ async function main() {
     assertExactPublished(release, version, source, expected)
     const canonical = await assertCurrentVersionPublished(repo, { version })
     if (canonical.id !== release.id) throw new Error("final recovery verification resolved a different release")
-    const actualTag = await readTagState(repo, tag)
-    if (!sameTagState(actualTag, expectedTag)) throw new Error("immutable recovery tag object differs from the metadata snapshot")
-    const assets = await pages(`repos/${repo}/releases/${release.id}/assets`), expectedNames = expectedReleaseAssetNames(version)
-    const names = assets.map((asset) => asset.name).sort()
+    if (!sameTagState(await readTagState(repo, tag), expectedTag)) throw new Error("immutable recovery tag object differs from the metadata snapshot")
+    const assets = await pages(`repos/${repo}/releases/${release.id}/assets`), expectedNames = expectedReleaseAssetNames(version), names = assets.map((asset) => asset.name).sort()
     if (names.join("\n") !== expectedNames.join("\n") || new Set(names).size !== names.length) throw new Error("final recovery asset set is incomplete or unexpected")
     const initial = snapshot(assets), directory = mkdtempSync(join(tmpdir(), "darkphish-recovery-final-"))
-    try {
-      for (const asset of assets) {
-        const local = await downloadAsset(repo, asset, directory)
-        verifyAttestation(repo, local.path, executionSHA)
-      }
-    } finally { rmSync(directory, { recursive: true, force: true }) }
-
+    try { for (const asset of assets) { const local = await downloadAsset(repo, asset, directory); verifyAttestation(repo, local.path, executionSHA) } }
+    finally { rmSync(directory, { recursive: true, force: true }) }
     await assertPublishedSnapshot(repo, release.id, tag, version, source, expected, expectedTag, initial)
     await assertExecutionMain(repo, executionSHA)
     await assertPublishedSnapshot(repo, release.id, tag, version, source, expected, expectedTag, initial)
     console.log(`Cryptographically verified published recovery ${tag}, including the attested publication receipt.`)
   } catch (error) {
-    if (releaseId) {
-      await withdraw(repo, releaseId, tag, expectedTag)
-      throw new Error(`published recovery was withdrawn after final attestation verification failed: ${error.message}`)
-    }
+    if (releaseId) { await withdraw(repo, releaseId, tag, expectedTag); throw new Error(`published recovery was withdrawn after final attestation verification failed: ${error.message}`) }
     throw error
   }
 }

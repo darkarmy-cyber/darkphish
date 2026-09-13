@@ -17,16 +17,18 @@ test("recovery binds metadata to the verified source", () => {
 })
 
 test("recovery proves historical release provenance without treating an ancestor as current CodeQL", () => {
-  assert.match(script, /historical release source lacks successful exact-SHA CI or CodeQL/)
-  assert.match(script, /Native release/)
-  assert.match(script, /Run node scripts\/release-publish\.mjs metadata/)
-  assert.match(script, /Run actions\/download-artifact@v8/)
-  assert.match(script, /Generate checksums/)
-  assert.match(script, /historical release provenance has no qualifying failed Native release run/)
-  assert.match(script, /candidates\.sort\(\(a, b\) => b\.id - a\.id\)/)
-  assert.match(script, /historical release provenance spans unexpected Native release workflows/)
-  assert.doesNotMatch(script, /verifyCodeQLBaseline\(repo, source\)/)
-  assert.match(script, /verifyCodeQLBaseline\(repo, source\)/)
+  const historical = script.slice(script.indexOf("async function verifyOriginalNativeRelease"), script.indexOf("async function expectedMetadata"))
+  assert.match(historical, /historical release source lacks successful exact-SHA CI or CodeQL/)
+  assert.match(historical, /Native release/)
+  assert.match(historical, /Run node scripts\/release-publish\.mjs metadata/)
+  assert.match(historical, /Run actions\/download-artifact@v8/)
+  assert.match(historical, /Generate checksums/)
+  assert.match(historical, /historical release provenance has no qualifying failed Native release run/)
+  assert.match(historical, /candidates\.sort\(\(a, b\) => b\.id - a\.id\)/)
+  assert.match(historical, /historical release provenance spans unexpected Native release workflows/)
+  assert.doesNotMatch(historical, /verifyCodeQLBaseline/)
+  const current = script.slice(script.indexOf("async function currentProtectedMain"), script.indexOf("async function readTagState"))
+  assert.match(current, /verifyCodeQLBaseline\(repo, source\)/)
 })
 
 test("historical CI and CodeQL evidence is pinned to canonical workflow paths", () => {

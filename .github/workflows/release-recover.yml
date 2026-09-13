@@ -278,3 +278,13 @@ jobs:
           RECOVERY_TAG_OBJECT_SHA: ${{ needs.metadata.outputs.tag_object_sha }}
           RECOVERY_SOURCE_DIR: .cache/source
         run: node .github/scripts/release-recover.mjs publish
+      - name: Verify published recovery including receipt attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_VERSION: ${{ needs.metadata.outputs.version }}
+          RECOVERY_SOURCE: ${{ needs.metadata.outputs.source }}
+          RECOVERY_EXECUTION_SHA: ${{ github.sha }}
+          RECOVERY_TAG_PRESENT: ${{ needs.metadata.outputs.tag_present }}
+          RECOVERY_TAG_OBJECT_TYPE: ${{ needs.metadata.outputs.tag_object_type }}
+          RECOVERY_TAG_OBJECT_SHA: ${{ needs.metadata.outputs.tag_object_sha }}
+        run: node .github/scripts/release-postpublish-verify.mjs

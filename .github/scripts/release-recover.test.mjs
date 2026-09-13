@@ -64,7 +64,7 @@ test("recovery rebuilds instead of adopting staged binaries and mandates attesta
   assert.match(workflow, /id-token: write/)
   assert.match(workflow, /attestations: write/)
   assert.match(workflow, /name: Attest rebuilt recovery artifacts\n\s+uses: actions\/attest@v4/)
-  assert.match(workflow, /subject-path: dist\/\*/)
+  assert.match(workflow, /subject-path:\s*\|[\s\S]*?dist\/\*[\s\S]*?\.cache\/recovery-receipt\/\*/)
   const attestBlock = workflow.slice(workflow.indexOf("name: Attest rebuilt recovery artifacts"), workflow.indexOf("name: Publish rebuilt verified recovery assets"))
   assert.doesNotMatch(attestBlock, /\bif:/)
   assert.match(script, /rebuilt recovery artifact set is incomplete or unexpected/)

@@ -126,3 +126,20 @@ test("recovery workflow is serialized main-only automation", () => {
   assert.match(workflow, /node \.github\/scripts\/release-recover\.mjs metadata/)
   assert.match(workflow, /node \.github\/scripts\/release-recover\.mjs publish/)
 })
+
+test("multiple pending drafts are accepted only after exact trusted metadata agreement and all are deleted before rebuilding publication", () => {
+  const state = script.slice(script.indexOf("async function recoveryState"), script.indexOf("function localArtifacts"))
+  const publish = script.slice(script.indexOf("async function publish"), script.indexOf("const command ="))
+
+  assert.doesNotMatch(state, /multiple pending release drafts require manual investigation/)
+  assert.match(state, /for \(const draft of drafts\) assertExactDraft\(draft, version, source, expected\)/)
+  assert.match(state, /new Set\(drafts\.map\(\(draft\) => draft\?\.target_commitish\)\)/)
+  assert.match(state, /pending release drafts disagree on immutable source/)
+  assert.match(state, /drafts/)
+
+  assert.match(publish, /for \(const draft of state\.drafts/)
+  assert.match(publish, /assertExactDraft\(await api\(`repos\/\$\{repo\}\/releases\/\$\{draft\.id\}`\), version, source, state\.expected\)/)
+  assert.match(publish, /method: "DELETE"/)
+  assert.match(publish, /stale release draft still exists after deletion/)
+  assert.ok(publish.indexOf("for (const draft of state.drafts") < publish.indexOf("repos/${repo}/git/refs"), "trusted stale drafts must be classified before immutable tag creation")
+})

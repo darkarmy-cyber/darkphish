@@ -1,0 +1,46 @@
+name: Recover pending release
+
+on:
+  workflow_run:
+    workflows: [CI, CodeQL]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '5,20,35,50 * * * *'
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+  pull-requests: read
+
+concurrency:
+  group: protected-main-mutation
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+      checks: read
+      pull-requests: read
+      issues: read
+      security-events: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.19.0
+      - name: Recover a fully verified trusted draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-recover.mjs

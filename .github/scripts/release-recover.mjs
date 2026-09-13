@@ -11,6 +11,7 @@ import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
 const output = (name, value) => { if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`) }
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function notesForVersion(changelog, version) {
   const start = changelog.indexOf(`## ${version} - `)
@@ -119,16 +120,77 @@ function assertExactDraft(release, version, source, expected) {
   return release
 }
 
+function assertExactPublished(release, version, source, expected) {
+  const tag = versionTag(version)
+  if (!release || release.tag_name !== tag || release.target_commitish !== source || release.name !== expected.name || release.body !== expected.body || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) {
+    throw new Error("published release metadata does not exactly match the verified source")
+  }
+  return release
+}
+
+async function ensureDraftState(repo, releaseId, tag, expectedSource = null) {
+  let attempt = 0
+  for (;;) {
+    attempt += 1
+    try {
+      await api(`repos/${repo}/releases/${releaseId}`, { method: "PATCH", body: { draft: true, prerelease: false, make_latest: "false" } })
+    } catch (error) {
+      console.warn(`withdrawal PATCH attempt ${attempt} was ambiguous: ${error.message}`)
+    }
+
+    try {
+      const withdrawn = await api(`repos/${repo}/releases/${releaseId}`)
+      if (withdrawn?.draft === true && withdrawn?.prerelease === false) {
+        if (expectedSource) {
+          const target = await tagCommit(repo, tag)
+          if (target !== expectedSource) throw new Error("immutable release tag changed while withdrawing publication")
+        }
+        return withdrawn
+      }
+    } catch (error) {
+      console.warn(`withdrawal probe attempt ${attempt} failed: ${error.message}`)
+    }
+
+    await delay(Math.min(5000, 500 * attempt))
+  }
+}
+
+async function withdrawPublishedRelease(repo, releaseId, tag, source, originalError) {
+  const withdrawn = await ensureDraftState(repo, releaseId, tag, source)
+  if (withdrawn?.draft !== true) throw new Error("CRITICAL: release withdrawal returned without confirmed draft state")
+  throw new Error(`release publication was withdrawn after verification failed: ${originalError.message}`)
+}
+
 async function recoveryState(repo, version, main) {
   const tag = versionTag(version)
   const releases = await pages(`repos/${repo}/releases`)
   const tagged = releases.filter((release) => release?.tag_name === tag)
   const published = tagged.filter((release) => release.draft === false)
   if (published.length) {
-    if (published.length !== 1 || tagged.length !== 1) throw new Error("release tag maps to ambiguous published state")
-    await assertCurrentVersionPublished(repo, { version })
-    return { published: true, tag }
+    if (published.length !== 1 || tagged.length !== 1) {
+      for (const release of published) await ensureDraftState(repo, release.id, tag)
+      throw new Error("ambiguous published release state was withdrawn for manual investigation")
+    }
+
+    const release = published[0]
+    const source = release.target_commitish
+    try {
+      if (!sha40(source)) throw new Error("published release source is malformed")
+      if (await tagCommit(repo, tag) !== source) throw new Error("published release tag does not resolve to its declared source")
+      await verifySourceAncestry(repo, source, main)
+      await verifiedReleasePR(repo, source, version, tag)
+      const originalRun = await verifyOriginalNativeRelease(repo, source)
+      const expected = await expectedMetadata(repo, source, version)
+      assertExactPublished(release, version, source, expected)
+      const fullyVerified = await assertCurrentVersionPublished(repo, { version })
+      assertExactPublished(fullyVerified, version, source, expected)
+      if (fullyVerified.id !== release.id) throw new Error("published release verification resolved a different release")
+      return { published: true, tag, source, originalRun, expected }
+    } catch (error) {
+      await withdrawPublishedRelease(repo, release.id, tag, sha40(source) ? source : null, new Error(`published release failed recovery provenance verification: ${error.message}`))
+    }
   }
+
   const drafts = tagged.filter((release) => release.draft === true)
   if (drafts.length > 1) throw new Error("multiple pending release drafts require manual investigation")
 
@@ -196,18 +258,6 @@ async function ensureTag(repo, tag, source) {
   if (current !== source) throw new Error("release tag does not resolve to the immutable verified source")
 }
 
-async function withdrawPublishedRelease(repo, releaseId, tag, source, originalError) {
-  try {
-    await api(`repos/${repo}/releases/${releaseId}`, { method: "PATCH", body: { draft: true, prerelease: false, make_latest: "false" } })
-    const withdrawn = await api(`repos/${repo}/releases/${releaseId}`)
-    if (withdrawn?.draft !== true || withdrawn?.prerelease !== false) throw new Error("withdrawn release did not return to draft state")
-    if (await tagCommit(repo, tag) !== source) throw new Error("immutable release tag changed while withdrawing publication")
-  } catch (withdrawError) {
-    throw new Error(`CRITICAL: post-publication verification failed and release withdrawal also failed: ${originalError.message}; withdrawal: ${withdrawError.message}`)
-  }
-  throw new Error(`release publication was withdrawn after post-publication verification failed: ${originalError.message}`)
-}
-
 async function metadata() {
   const repo = repository()
   const version = readFileSync("VERSION", "utf8").trim()
@@ -216,7 +266,7 @@ async function metadata() {
   const state = await recoveryState(repo, version, main)
   if (!state || state.published) {
     output("ready", "false")
-    console.log(state?.published ? `Release ${state.tag} is already fully published and verified.` : "No pending release recovery is required.")
+    console.log(state?.published ? `Release ${state.tag} is already fully published and recovery-provenance verified.` : "No pending release recovery is required.")
     return
   }
   output("ready", "true")
@@ -315,15 +365,14 @@ async function publish() {
     const postOriginalRun = await verifyOriginalNativeRelease(repo, source)
     if (postOriginalRun.id.toString() !== process.env.RECOVERY_ORIGINAL_RUN_ID) throw new Error("historical Native release provenance changed during publication")
 
-    const published = await api(`repos/${repo}/releases/${release.id}`)
-    const byTag = await api(`repos/${repo}/releases/tags/${tag}`)
-    if (published.id !== release.id || byTag.id !== release.id || published.draft !== false || byTag.draft !== false || published.target_commitish !== source || byTag.target_commitish !== source || published.name !== state.expected.name || published.body !== state.expected.body || !actionsBot(published.author) || !actionsBot(byTag.author)) {
-      throw new Error("post-publication release metadata verification failed")
-    }
+    const published = assertExactPublished(await api(`repos/${repo}/releases/${release.id}`), version, source, state.expected)
+    const byTag = assertExactPublished(await api(`repos/${repo}/releases/tags/${tag}`), version, source, state.expected)
+    if (published.id !== release.id || byTag.id !== release.id) throw new Error("post-publication release identity verification failed")
     if (await tagCommit(repo, tag) !== source) throw new Error("post-publication tag verification failed")
     const publishedAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
     assertUploadedAssetSet(publishedAssets, local, receiptHash, receipt.length)
     const fullyVerified = await assertCurrentVersionPublished(repo, { version })
+    assertExactPublished(fullyVerified, version, source, state.expected)
     if (fullyVerified.id !== release.id) throw new Error("published release verification resolved a different release")
   } catch (error) {
     await withdrawPublishedRelease(repo, release.id, tag, source, error)

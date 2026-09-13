@@ -21,17 +21,23 @@ test("recovery proves historical release provenance without treating an ancestor
   assert.match(script, /Run node scripts\/release-publish\.mjs metadata/)
   assert.match(script, /Run actions\/download-artifact@v8/)
   assert.match(script, /Generate checksums/)
-  assert.match(script, /historical release provenance does not map to exactly one failed Native release run/)
+  assert.match(script, /historical release provenance has no qualifying failed Native release run/)
+  assert.match(script, /candidates\.sort\(\(a, b\) => b\.id - a\.id\)/)
+  assert.match(script, /historical release provenance spans unexpected Native release workflows/)
   assert.doesNotMatch(script, /verifyCodeQLBaseline\(repo, source\)/)
   assert.match(script, /verifyCodeQLBaseline\(repo, branch\.commit\.sha\)/)
 })
 
-test("recovery rebuilds instead of adopting staged binaries", () => {
+test("recovery rebuilds instead of adopting staged binaries and attests rebuilt bytes", () => {
   assert.match(workflow, /Rebuild and package immutable release source/)
   assert.match(workflow, /ref: \$\{\{ needs\.metadata\.outputs\.source \}\}/)
   assert.match(workflow, /recovery-\$\{\{ needs\.metadata\.outputs\.tag \}\}-\$\{\{ matrix\.goos \}\}-\$\{\{ matrix\.goarch \}\}/)
   assert.match(workflow, /Generate recovery checksums/)
   assert.match(workflow, /audit-binary-smoke/)
+  assert.match(workflow, /id-token: write/)
+  assert.match(workflow, /attestations: write/)
+  assert.match(workflow, /uses: actions\/attest@v4/)
+  assert.match(workflow, /subject-path: dist\/\*/)
   assert.match(script, /rebuilt recovery artifact set is incomplete or unexpected/)
   assert.match(script, /verifyChecksums/)
 })
@@ -45,6 +51,17 @@ test("recovery makes the tag immutable before publication and verifies publicati
   assert.match(script, /post-publication release metadata verification failed/)
   assert.match(script, /post-publication tag verification failed/)
   assert.match(script, /assertCurrentVersionPublished/)
+})
+
+test("recovery withdraws publication if any post-publish invariant fails", () => {
+  assert.match(script, /withdrawPublishedRelease/)
+  assert.match(script, /body: \{ draft: true, prerelease: false, make_latest: "false" \}/)
+  assert.match(script, /withdrawn release did not return to draft state/)
+  assert.match(script, /CRITICAL: post-publication verification failed and release withdrawal also failed/)
+  assert.match(script, /release publication was withdrawn after post-publication verification failed/)
+  assert.match(script, /protected main changed during the publication window/)
+  assert.match(script, /const postMain = await currentProtectedMain\(repo\)/)
+  assert.match(script, /await withdrawPublishedRelease\(repo, release\.id, tag, source, error\)/)
 })
 
 test("recovery only deletes an exactly verified stale draft after rebuilt artifacts exist", () => {

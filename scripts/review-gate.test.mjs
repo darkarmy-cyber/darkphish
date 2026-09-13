@@ -367,6 +367,6 @@ test("all automated merge paths use protected-main code and the same review inte
   assert.match(workflow, /run: node scripts\/automerge\.mjs/)
   assert.match(prepare, /if \(created\) await api\([^\n]+labels/)
   assert.match(prepare, /await mergeReviewedPullRequest/)
-  assert.match(publish, /await verifyPullRequestReviews/)
+  assert.match(publish, /await verifyReleaseMaintainerReview/)
   assert.match(publish, /const finalSource = await source\(\)/)
 })

@@ -1,12 +1,13 @@
 # Changelog
 
-## 0.7.1 - 2026-09-12
+## 0.7.1 - 2026-09-13
 
 ### Fixed
 
 - Report exact rule and source-location identities for trusted generated-release CodeQL results while preserving fail-closed behavior, so blocked releases can be diagnosed without suppressing findings.
 - Preserve an existing protected IMAP password when administrators update other reporting settings without entering a replacement password.
 - Recover generated release checks that GitHub marks `action_required` before any job executes, while preserving fail-closed behavior for real CI or CodeQL failures and bounding each exact-head recovery dispatch to a single attempt.
+- Reproduce historical generated-release changelog dates from the existing GitHub release PR creation timestamp so safe release recovery remains deterministic across calendar days without trusting branch-controlled date content.
 - Fetch release tags before native patch-release validation so the publication workflow recognizes the already-published current version instead of failing on a shallow checkout.
 - Keep development-version regression tests valid when a generated patch release advances `VERSION` within the same minor line.
 
@@ -15,6 +16,7 @@
 - Require authenticated, completed code and explicit security reviews of the current head and resolved review threads before automated engineering or generated-release merges; fail closed on stale, edited, ambiguous or unavailable evidence.
 - Replace queued merge permissions with a single protected squash merge matching the complete head SHA, preserve label-removal pauses during release recovery, and recheck pre-merge review evidence before native publication.
 - Reconcile trusted generated-release full-head CodeQL results only against the unchanged protected-main baseline for generated-only release PRs, preserving local SARIF evidence while continuing to fail closed on unresolved alerts, unexpected files, or target/base changes.
+- Allow generated release publication to use an exact-head, exact-base maintainer approval from the repository owner instead of Codex review evidence, while preserving generated-file scope, protected-main checks, CodeQL baseline verification and fail-closed review semantics.
 
 ## 0.7.0 - 2026-09-07
 

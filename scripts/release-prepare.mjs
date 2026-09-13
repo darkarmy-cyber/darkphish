@@ -1,10 +1,28 @@
 import { execFileSync } from "node:child_process"
-import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs"
+import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { api, assertCurrentVersionPublished, assertGeneratedCommits, mergeReviewedPullRequest, git, greenCommit, nextPatchVersion, pages, protectedMain, repository, versionTag } from "./release-lib.mjs"
 import { dispatchChecks } from "./check-refresh.mjs"
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
+
+function trustedGeneratedReleasePR(repo, branch, version, pr) {
+  if (!pr || pr.state !== "open" || pr.draft !== false || pr.base?.ref !== "main" ||
+    pr.head?.ref !== branch || pr.head?.repo?.full_name !== repo ||
+    pr.title !== `release: Darkphish ${version}` ||
+    pr.user?.login !== "github-actions[bot]" || pr.user?.id !== 41898282 || pr.user?.type !== "Bot") {
+    throw new Error("existing release PR is not the trusted generated release pull request")
+  }
+  return pr
+}
+
+function trustedReleaseDate(pr) {
+  const value = typeof pr?.created_at === "string" ? pr.created_at.slice(0, 10) : ""
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) {
+    throw new Error("existing release PR is missing a valid server creation date")
+  }
+  return value
+}
 
 async function prepare() {
   const repo = repository()
@@ -46,11 +64,21 @@ async function prepare() {
     const base = git("merge-base", sha, oldSHA)
     const commits = git("log", "--format=%an%x09%s", `${sha}..${oldSHA}`).split("\n").filter(Boolean).map((line) => { const [author, subject] = line.split("\t"); return { author, subject } })
     assertGeneratedCommits(commits, git("diff", "--name-only", `${base}..${oldSHA}`).split("\n").filter(Boolean), version)
+    const existingPR = trustedGeneratedReleasePR(repo, branch, version, prs[0])
+    const releaseDate = trustedReleaseDate(existingPR)
     const temporary = mkdtempSync(join(tmpdir(), "darkphish-release-check-"))
     try {
       git("worktree", "add", "--detach", temporary, base)
       copyFileSync("scripts/changelog.mjs", join(temporary, "scripts/changelog.mjs"))
       execFileSync(process.execPath, [join(temporary, "scripts/changelog.mjs"), "prepare"], { cwd: temporary, stdio: "pipe" })
+      const changelogPath = join(temporary, "CHANGELOG.md")
+      const generated = readFileSync(changelogPath, "utf8").replace(/\r\n/g, "\n")
+      const heading = `## ${version} - `
+      const lines = generated.split("\n")
+      const headingIndex = lines.findIndex((line) => line.startsWith(heading))
+      if (headingIndex < 0) throw new Error("trusted generated release output is missing the expected changelog heading")
+      lines[headingIndex] = `${heading}${releaseDate}`
+      writeFileSync(changelogPath, lines.join("\n"))
       const expected = execFileSync("git", ["diff", "--", "VERSION", "CHANGELOG.md", "changes"], { cwd: temporary, encoding: "utf8" }).replace(/\r\n/g, "\n")
       const actual = execFileSync("git", ["diff", base, oldSHA, "--", "VERSION", "CHANGELOG.md", "changes"], { encoding: "utf8" }).replace(/\r\n/g, "\n")
       if (expected !== actual) throw new Error("release branch differs from trusted generated output; refusing to overwrite it")

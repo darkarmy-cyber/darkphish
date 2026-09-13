@@ -1,9 +1,16 @@
-import { api, expectedReleaseAssetNames, pages, peelTagToCommit, verifyPublicationReceipt, verifyPublishedAssetManifest, versionTag } from "./release-lib.mjs"
+import { createHash } from "node:crypto"
+import { api, expectedReleaseAssetNames, pages, peelTagToCommit, publicationReceiptName, versionTag } from "./release-lib.mjs"
 import { releaseBody } from "./release-notes.mjs"
 
 const bot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const semver = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const sha40 = (value) => /^[a-f0-9]{40}$/.test(value || "")
+
+function versionAtLeast(version, floor) {
+  const a = version.split(".").map(Number), b = floor.split(".").map(Number)
+  for (let i = 0; i < 3; i += 1) if (a[i] !== b[i]) return a[i] > b[i]
+  return true
+}
 
 async function sourceText(repo, source) {
   const file = await api(`repos/${repo}/contents/CHANGELOG.md?ref=${source}`)
@@ -29,18 +36,64 @@ function assertAssetMetadata(release, version) {
   }
 }
 
+async function downloadAsset(repo, asset) {
+  const expected = `https://api.github.com/repos/${repo}/releases/assets/${asset.id}`
+  if (asset?.url !== expected || !Number.isSafeInteger(asset?.id) || asset.id < 1) throw new Error("release asset API identity is malformed")
+  const response = await fetch(asset.url, {
+    headers: {
+      Accept: "application/octet-stream",
+      Authorization: `Bearer ${process.env.GH_TOKEN || process.env.GITHUB_TOKEN}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    redirect: "follow",
+    signal: AbortSignal.timeout(30000),
+  })
+  if (!response.ok) throw new Error(`${asset.name}: release asset download failed with HTTP ${response.status}`)
+  const bytes = Buffer.from(await response.arrayBuffer())
+  const digest = createHash("sha256").update(bytes).digest("hex")
+  if (asset.digest !== `sha256:${digest}` || asset.size !== bytes.length) throw new Error(`${asset.name}: downloaded bytes differ from GitHub digest metadata`)
+  return bytes
+}
+
+async function verifyArtifactProofs(repo, release, version) {
+  assertAssetMetadata(release, version)
+  const manifest = release.assets.find((asset) => asset.name === "SHA256SUMS")
+  const manifestText = (await downloadAsset(repo, manifest)).toString("utf8")
+  const expected = new Map()
+  for (const line of manifestText.trim().split(/\r?\n/)) {
+    const match = line.match(/^([a-f0-9]{64})  (darkphish-[A-Za-z0-9._-]+)$/)
+    if (!match || expected.has(match[2])) throw new Error(`${release.tag_name}: checksum manifest is malformed`)
+    expected.set(match[2], match[1])
+  }
+  const payloads = release.assets.filter((asset) => asset.name !== "SHA256SUMS" && !asset.name.endsWith(".release.json"))
+  if (expected.size !== payloads.length) throw new Error(`${release.tag_name}: checksum manifest is incomplete`)
+  for (const asset of payloads) if (expected.get(asset.name) !== asset.digest.replace(/^sha256:/, "")) throw new Error(`${release.tag_name}: checksum manifest does not bind ${asset.name}`)
+
+  const receiptName = publicationReceiptName(version)
+  if (!receiptName) return
+  const receiptAsset = release.assets.find((asset) => asset.name === receiptName)
+  let receipt
+  try { receipt = JSON.parse((await downloadAsset(repo, receiptAsset)).toString("utf8")) } catch { throw new Error(`${release.tag_name}: publication receipt is malformed`) }
+  const expectedReceipt = {
+    schema: "darkphish-release-publication-receipt/v1",
+    tag: release.tag_name,
+    source_sha: release.target_commitish,
+    checksums_sha256: manifest.digest.replace(/^sha256:/, ""),
+  }
+  if (Object.keys(receipt).sort().join("\n") !== Object.keys(expectedReceipt).sort().join("\n") || Object.entries(expectedReceipt).some(([key, value]) => receipt[key] !== value)) throw new Error(`${release.tag_name}: publication receipt does not bind the release source and manifest`)
+}
+
 async function verifyTrustedRelease(repo, summary) {
   const match = semver.exec(summary?.tag_name || "")
   if (!match || !Number.isSafeInteger(summary?.id) || summary.id < 1 || summary.prerelease !== false || !bot(summary.author) || !sha40(summary.target_commitish)) return null
   const version = summary.tag_name.slice(1)
+  if (!versionAtLeast(version, "0.5.0")) return null
   if (versionTag(version) !== summary.tag_name) throw new Error("release tag canonicalization failed")
   const source = summary.target_commitish
   if (await tagCommit(repo, summary.tag_name) !== source) throw new Error(`${summary.tag_name}: immutable tag does not match release source`)
   const release = await api(`repos/${repo}/releases/${summary.id}`)
   if (release.tag_name !== summary.tag_name || release.target_commitish !== source || release.prerelease !== false || !bot(release.author)) throw new Error(`${summary.tag_name}: release identity changed during reconciliation`)
-  assertAssetMetadata(release, version)
-  await verifyPublishedAssetManifest(release)
-  await verifyPublicationReceipt(release, version)
+  await verifyArtifactProofs(repo, release, version)
   const changelog = await sourceText(repo, source)
   const body = releaseBody(changelog, version, source)
   const name = `Darkphish ${version.split(".").slice(0, 2).join(".")}`
@@ -64,9 +117,7 @@ async function reconcile(repo, summary) {
     make_latest: release.tag_name === "v0.7.1" ? "true" : "legacy",
   } })
   if (patched.id !== release.id || patched.tag_name !== release.tag_name || patched.target_commitish !== release.target_commitish || patched.draft !== false || patched.prerelease !== false || patched.body !== body || patched.name !== name || !bot(patched.author)) throw new Error(`${release.tag_name}: reconciled release metadata failed verification`)
-  assertAssetMetadata(patched, trusted.version)
-  await verifyPublishedAssetManifest(patched)
-  await verifyPublicationReceipt(patched, trusted.version)
+  await verifyArtifactProofs(repo, patched, trusted.version)
   console.log(`${release.tag_name}: ${republish ? "republished" : "notes reconciled"}`)
   return true
 }
@@ -79,7 +130,7 @@ async function run() {
   if (metadata.default_branch !== "main" || metadata.private !== false || metadata.fork !== false || main.protected !== true) throw new Error("release reconciliation requires standalone public protected main")
   const releases = await pages(`repos/${repo}/releases`)
   let changed = 0
-  for (const release of releases.sort((a, b) => a.id - b.id)) if (await reconcile(repo, release)) changed += 1
+  for (const release of releases.sort((a, b) => b.id - a.id)) if (await reconcile(repo, release)) changed += 1
   console.log(`Release reconciliation complete; ${changed} release(s) updated.`)
 }
 

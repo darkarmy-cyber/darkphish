@@ -231,10 +231,17 @@ jobs:
       - name: Generate checksums
         working-directory: dist
         run: sha256sum -- *.zip *.tar.gz *.spdx.json > SHA256SUMS
-      - uses: actions/attest@v4
-        if: vars.RELEASE_ATTESTATIONS_SUPPORTED == 'true'
+      - name: Generate canonical native publication receipt
+        env:
+          RECOVERY_VERSION: ${{ needs.metadata.outputs.version }}
+          RECOVERY_SOURCE: ${{ needs.metadata.outputs.sha }}
+        run: node .github/scripts/release-publication-guard.mjs receipt
+      - name: Attest canonical native release artifacts
+        uses: actions/attest@v4
         with:
-          subject-path: dist/*
+          subject-path: |
+            dist/*
+            .cache/recovery-receipt/*
       - name: Publish verified assets without overwriting an existing release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -40,6 +40,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24.19.0
+      - name: Test trusted draft recovery invariants
+        run: node --test .github/scripts/release-recover.test.mjs
       - name: Recover a fully verified trusted draft release
         env:
           GH_TOKEN: ${{ github.token }}

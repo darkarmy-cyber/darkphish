@@ -130,4 +130,10 @@ test("resumption workflow runs immutable main code in the shared serialization g
   assert.match(workflow, /ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/)
   assert.match(workflow, /group: protected-main-mutation\n\s+cancel-in-progress: false/)
   assert.match(workflow, /persist-credentials: false/)
+  for (const file of ["release-resume.yml", "release-reconcile.yml"]) {
+    const text = readFileSync(new URL(`../.github/workflows/${file}`, import.meta.url), "utf8")
+    assert.match(text, /github\.event\.workflow_run\.event == 'push'/)
+    assert.match(text, /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/)
+    assert.ok(text.indexOf("github.event.workflow_run.event == 'push'") < text.indexOf("uses: actions/checkout"))
+  }
 })

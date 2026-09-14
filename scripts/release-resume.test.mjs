@@ -7,8 +7,8 @@ const main = "e".repeat(40), bot = { login: "github-actions[bot]", id: 41898282,
 function fixture() {
   const f = { release: { id: 388329244, tag_name: "v0.7.1", target_commitish: "73bf5948ed19cd918638453d478ef3f1cbe83d89",
     name: "Darkphish 0.7", draft: true, prerelease: false, author: bot, published_at: "2026-09-14T11:01:32Z", body: "canonical" },
-  pr: { number: 58, state: "closed", merged_at: "2026-09-14T14:00:00Z", merge_commit_sha: main,
-    base: { ref: "main" }, head: { repo: { full_name: "darkarmy-cyber/darkphish" }, ref: "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-finalize" } },
+  pr: { number: 59, state: "closed", merged_at: "2026-09-14T14:00:00Z", merge_commit_sha: main,
+    base: { ref: "main" }, head: { repo: { full_name: "darkarmy-cyber/darkphish" }, ref: "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-timestamp" } },
   writes: [], verifies: 0, reviews: 0, executions: 0, tagReads: 0 }
   f.assets = Array.from({ length: 8 }, (_, i) => ({ id: i + 1, name: i ? `asset-${i}` : "SHA256SUMS", size: 1,
     digest: i ? `sha256:${"a".repeat(64)}` : "sha256:d41dea173bb71a7230b26bd10b60209285a9e9892a07e7267dd8e46c63a8e7b7", state: "uploaded", uploader: bot }))
@@ -19,10 +19,10 @@ function fixture() {
       f.writes.push(options.body)
       if (options.body.draft && f.withdrawFailures > 0) { f.withdrawFailures--; throw new Error("Transient withdrawal failure") }
       f.release.draft = options.body.draft
-      if (!options.body.draft && f.changePublicationTime) f.release.published_at = "2026-09-14T15:00:00Z"
+      if (!options.body.draft && f.changePublicationTime) f.release.published_at = f.changePublicationTime
       return structuredClone(f.release)
     }
-    if (path.endsWith("/pulls/58")) return structuredClone(f.pr)
+    if (path.endsWith("/pulls/59")) return structuredClone(f.pr)
     if (path.endsWith("/branches/main")) return { protected: true, commit: { sha: f.currentMain || main } }
     if (path.endsWith("/releases?per_page=100")) return [structuredClone(f.release)]
     if (path.includes("/git/ref/tags/")) {
@@ -36,10 +36,11 @@ function fixture() {
     }
     throw new Error(`Unexpected request ${path}`)
   }
-  f.deps = { request: f.request, hold: () => f.hold || null, log: () => {}, delay: async () => {},
+  f.deps = { request: f.request, hold: () => f.hold || null, log: () => {}, delay: async () => {}, now: () => Date.parse("2026-09-14T15:00:00Z"),
     execution: async () => { f.executions++; if (f.badMain) throw new Error("Main changed") },
     reviews: async () => { f.reviews++; if (f.badReviews) throw new Error("Missing review") },
     verify: async () => { f.verifies++; if (f.badProvenance || (f.failPost && f.verifies > 1)) throw new Error("Invalid provenance")
+      if (f.changeClosingTime && f.verifies > 1) f.release.published_at = "2026-09-14T15:00:01Z"
       return { body: "canonical", assets: new Map(f.assets.map(a => [a.name, a])), tagState: { objectType: "commit", objectSha: f.release.target_commitish } } } }
   f.run = () => resumeRelease(main, f.deps)
   return f
@@ -57,7 +58,7 @@ test("already verified public release is never republished", async () => {
 })
 
 test("retry after runner termination withdraws an already-public unverified selected release", async () => {
-  for (const change of [f => { f.release.published_at = "2026-09-14T15:00:00Z" },
+  for (const change of [f => { f.release.published_at = "2026-09-14T16:00:00Z" },
     f => { f.badProvenance = true }, f => { f.badReviews = true }, f => { f.badMain = true },
     f => { f.release.body = "changed" }]) {
     const f = fixture(); f.release.draft = false; change(f)
@@ -116,10 +117,31 @@ test("both generic publishers cannot rebuild the held original v0.7.1 artifact s
 })
 
 test("post-publication failures withdraw the same release without replacing or deleting assets", async () => {
-  for (const change of [f => { f.failPost = true }, f => { f.changePublicationTime = true }, f => { f.badPostTag = true }]) {
+  for (const change of [f => { f.failPost = true }, f => { f.changePublicationTime = "2026-09-14T16:00:00Z" }, f => { f.badPostTag = true }, f => { f.changeClosingTime = true }]) {
     const f = fixture(); change(f); await assert.rejects(f.run())
     assert.deepEqual(f.writes, [{ draft: false, prerelease: false, make_latest: "true" }, { draft: true, prerelease: false, make_latest: "false" }])
     assert.equal(f.release.draft, true)
+  }
+})
+
+test("GitHub publication timestamp updates preserve original artifact authorization", async () => {
+  const f = fixture(); f.changePublicationTime = "2026-09-14T15:00:00Z"
+  await f.run(); assert.equal(f.release.draft, false); assert.equal(f.writes.length, 1)
+  assert.equal(f.verifies, 2); assert.equal(f.reviews, 3)
+  const retry = fixture(); retry.release.draft = false; retry.release.published_at = "2026-09-14T14:45:24Z"
+  await retry.run(); assert.equal(retry.writes.length, 0); assert.equal(retry.verifies, 2)
+  const draftRetry = fixture(); draftRetry.release.published_at = "2026-09-14T14:45:24Z"; draftRetry.changePublicationTime = "2026-09-14T15:00:00Z"
+  await draftRetry.run(); assert.equal(draftRetry.release.draft, false)
+})
+
+test("invalid or stale publication transitions fail closed", async () => {
+  for (const value of [null, "garbage", "2026-02-30T15:00:00Z", "2026-09-14T11:00:00Z", "2026-09-14T16:00:00Z"]) {
+    const f = fixture(); f.release.published_at = value
+    await assert.rejects(f.run()); assert.equal(f.writes.length, 0)
+  }
+  for (const value of ["2026-09-14T14:00:00Z", "2026-09-14T11:00:00Z"]) {
+    const f = fixture(); f.changePublicationTime = value
+    await assert.rejects(f.run()); assert.equal(f.release.draft, true)
   }
 })
 

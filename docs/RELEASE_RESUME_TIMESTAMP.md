@@ -1,0 +1,13 @@
+# Verified release resumption timestamp correction
+
+The maintainer approved narrow, reviewed recovery of v0.7.1 without protection bypasses or replacement artifacts. PR58 merged as 697fe42eb20f3f5197be9545ed5b3bf835b730c0 with all ten checks and both authentic reviews. Main CI and CodeQL passed.
+
+Run 34857439793 attempt 2 then verified the original release and published it. GitHub changed `published_at` from 2026-09-14T11:01:32Z to 2026-09-14T14:45:24Z. The fixed-time assertion failed; withdrawal succeeded and release 388329244 is draft again. No asset or tag was changed.
+
+The timestamp is mutable publication metadata, not artifact authorization. The selected eight original assets remain authorized only by their immutable identities, pinned manifest, receipt, full original recovery-run attestations, source PR proof, current-main checks and authentic reviews. This correction must accept GitHub's legitimate publication timestamp transition while rejecting malformed/backdated/future timestamps and changes during closing validation. It must never fabricate or backdate API metadata.
+
+The repair remains a one-shot exact-base, exact-branch, allowlisted-path operation. All main protections, ten checks, zero-alert gate and both authentic exact-head reviews remain mandatory. No production deployment, tag movement, new artifacts, or other release mutation is authorized.
+
+PR59 is bound to base 697fe42eb20f3f5197be9545ed5b3bf835b730c0 and branch `codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-timestamp`. Only the two resumption files, two repair-policy files, this evidence document and its changelog fragment may change. VERSION stays 0.7.1 and the reviewed absence of the temporary hold is checked at both base and head. No workflow changes are permitted. Execution accepts only the protected merge commit of PR59 with fresh authentic code/security reviews.
+
+Timestamp validation requires canonical UTC seconds, no value before the original 11:01:32 publication, and no future time beyond a five-minute clock-skew allowance. Only the deliberate draft-to-public transition may adopt a new timestamp, bounded by the PATCH interval with that same skew allowance; the previous timestamp may also remain unchanged. All later direct, tag and final lookups must retain the adopted timestamp exactly. A public retry requires full provenance validation without republishing. The current withdrawn draft's 14:45:24 timestamp is legitimate metadata, not proof of artifact authorization. Regression coverage includes changed timestamps, draft/public retries, invalid dates, backdating, stale transitions and closing metadata mutation.

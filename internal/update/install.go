@@ -252,6 +252,9 @@ func (t Transaction) Install(stage string) error {
 	if err := verifyBackup(filepath.Join(t.Directory, "backup")); err != nil {
 		return errors.New("completed backup required before install")
 	}
+	if err := syncTreeDirectories(stage); err != nil {
+		return err
+	}
 	if err := os.Mkdir(filepath.Join(t.Directory, "original"), 0700); err != nil {
 		return err
 	}

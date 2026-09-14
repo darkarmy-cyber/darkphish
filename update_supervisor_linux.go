@@ -248,13 +248,15 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 	}
 	transaction := update.Transaction{Layout: l, Directory: active}
 	recovered := false
+	var saved updateCompletion
 	if _, err = os.Lstat(active); err == nil {
+		completed, completionErr := completedUpdate(active)
+		if completionErr != nil {
+			return true, completionErr
+		}
+		saved = completed
 		if _, started := os.Lstat(filepath.Join(active, "install-started.json")); started == nil {
-			completed, completionErr := completedUpdate(active)
-			if completionErr != nil {
-				return true, completionErr
-			}
-			if !completed {
+			if completed.Result == "" {
 				if err = transaction.Rollback(); err != nil {
 					return true, err
 				}
@@ -272,7 +274,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 	}
 	binary := filepath.Join(l.Root, "darkphish")
 	if pending {
-		result, tag := "", ""
+		result, tag := saved.Result, saved.Tag
 		if recovered {
 			result, tag = "rollback", "interrupted"
 		}
@@ -369,7 +371,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 				err = transaction.Install(stage)
 			}
 			if err == nil {
-				child, err = startSupervised(binary, "applied", latest.Tag)
+				child, err = startSupervised(binary)
 				if err == nil {
 					err = child.ready()
 					if err != nil {
@@ -377,20 +379,19 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 					}
 				}
 			}
-			outcome := "success"
+			outcome := "applied"
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "update failed:", err)
-				outcome = "failure"
+				outcome = "rollback"
 				if _, started := os.Stat(filepath.Join(active, "install-started.json")); started == nil {
 					if rollbackErr := transaction.Rollback(); rollbackErr != nil {
 						return true, rollbackErr
 					}
 				}
-				failureKind := "rollback"
 				if !backedUp {
-					failureKind = "backup_failed"
+					outcome = "backup_failed"
 				}
-				child, err = startSupervised(binary, failureKind, latest.Tag)
+				child, err = startSupervised(binary, outcome, latest.Tag)
 				if err != nil {
 					return true, err
 				}
@@ -400,7 +401,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 				}
 			}
 			// Outcome remains durable in the retained backup directory, without secrets.
-			if err = durableUpdateResult(filepath.Join(active, "completed.json"), outcome); err != nil {
+			if err = durableUpdateResult(filepath.Join(active, "completed.json"), outcome, latest.Tag); err != nil {
 				return true, errors.Join(err, child.stop())
 			}
 			retained := filepath.Join(state, "backup-"+time.Now().UTC().Format("20060102T150405.000000000"))
@@ -410,7 +411,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			if err = syncUpdateDirectory(state); err != nil {
 				return true, errors.Join(err, child.stop())
 			}
-			if outcome == "success" {
+			if outcome == "applied" {
 				// Reload the supervisor too, preserving systemd's main PID. A later
 				// update must never use the old version's database or backup code.
 				if err = child.stop(); err != nil {
@@ -548,27 +549,42 @@ func updateResultEnvironment(result, tag string) []string {
 	return env
 }
 
-func completedUpdate(active string) (bool, error) {
+type updateCompletion struct {
+	Result string `json:"result"`
+	Tag    string `json:"tag"`
+}
+
+func completedUpdate(active string) (updateCompletion, error) {
 	path := filepath.Join(active, "completed.json")
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
-		return false, nil
+		return updateCompletion{}, nil
 	}
 	if err != nil {
-		return false, err
+		return updateCompletion{}, err
 	}
 	if !info.Mode().IsRegular() || info.Size() > 4096 {
-		return false, errors.New("invalid update completion marker")
+		return updateCompletion{}, errors.New("invalid update completion marker")
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return false, err
+		return updateCompletion{}, err
 	}
-	var result struct {
-		Result string `json:"result"`
-	}
+	var result updateCompletion
 	// An interrupted marker write is not a committed update; restore the backup.
-	return json.Unmarshal(data, &result) == nil && (result.Result == "success" || result.Result == "failure"), nil
+	if json.Unmarshal(data, &result) != nil {
+		return updateCompletion{}, nil
+	}
+	if result.Result != "applied" && result.Result != "rollback" && result.Result != "backup_failed" {
+		return updateCompletion{}, nil
+	}
+	if !strings.HasPrefix(result.Tag, "v") {
+		return updateCompletion{}, nil
+	}
+	if _, err := update.Compare(strings.TrimPrefix(result.Tag, "v"), strings.TrimPrefix(result.Tag, "v")); err != nil {
+		return updateCompletion{}, nil
+	}
+	return result, nil
 }
 
 func cWrite(c *supervisedChild, message string) (int, error) {
@@ -582,12 +598,16 @@ func syncUpdateDirectory(path string) error {
 	return errors.Join(f.Sync(), f.Close())
 }
 
-func durableUpdateResult(path, result string) error {
+func durableUpdateResult(path, result, tag string) error {
+	data, err := json.Marshal(updateCompletion{Result: result, Tag: tag})
+	if err != nil {
+		return err
+	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return err
 	}
-	_, err = f.WriteString("{\"result\":\"" + result + "\"}\n")
+	_, err = f.Write(append(data, '\n'))
 	if err = errors.Join(err, f.Sync(), f.Close()); err != nil {
 		return err
 	}

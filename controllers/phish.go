@@ -119,7 +119,11 @@ func (ps *PhishingServer) Start() {
 
 // Shutdown attempts to gracefully shutdown the server.
 func (ps *PhishingServer) Shutdown() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx := context.Background()
+	cancel := func() {}
+	if update.WaitServing == nil {
+		ctx, cancel = context.WithTimeout(ctx, time.Second*10)
+	}
 	defer cancel()
 	return ps.server.Shutdown(ctx)
 }

@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/darkarmy-cyber/darkphish/logger"
@@ -28,13 +29,20 @@ var resultIDRegex = regexp.MustCompile(`((\?|%3F)rid(=|%3D)(3D)?([A-Za-z0-9]{7})
 
 // Monitor is a worker that monitors IMAP servers for reported campaign emails
 type Monitor struct {
-	cancel func()
+	mu      sync.Mutex
+	cancel  context.CancelFunc
+	done    chan struct{}
+	stopped bool
+	users   func() ([]models.User, error)
+	poll    func(int64, context.Context)
 }
 
 // Monitor.start() checks for campaign emails
 // As each account can have its own polling frequency set we need to run one Go routine for
 // each, as well as keeping an eye on newly created user accounts.
 func (im *Monitor) start(ctx context.Context) {
+	var polls sync.WaitGroup
+	defer polls.Wait()
 	usermap := make(map[int64]int) // Keep track of running go routines, one per user. We assume incrementing non-repeating UIDs (for the case where users are deleted and re-added).
 
 	for {
@@ -42,7 +50,7 @@ func (im *Monitor) start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			dbusers, err := models.GetUsers() //Slice of all user ids. Each user gets their own IMAP monitor routine.
+			dbusers, err := im.users() //Slice of all user ids. Each user gets their own IMAP monitor routine.
 			if err != nil {
 				log.Error(err)
 				break
@@ -51,10 +59,13 @@ func (im *Monitor) start(ctx context.Context) {
 				if _, ok := usermap[dbuser.Id]; !ok { // If we don't currently have a running Go routine for this user, start one.
 					log.Info("Starting new IMAP monitor for user ", dbuser.Username)
 					usermap[dbuser.Id] = 1
-					go monitor(dbuser.Id, ctx)
+					polls.Add(1)
+					go func(uid int64) { defer polls.Done(); im.poll(uid, ctx) }(dbuser.Id)
 				}
 			}
-			time.Sleep(10 * time.Second) // Every ten seconds we check if a new user has been created
+			if !waitPoll(ctx, 10*time.Second) {
+				return
+			}
 		}
 	}
 }
@@ -85,34 +96,70 @@ func monitor(uid int64, ctx context.Context) {
 				if im.Enabled {
 					log.Debug("Checking IMAP for user ", uid, ": ", im.Username, " -> ", im.Host)
 					checkForNewEmails(im)
-					time.Sleep((time.Duration(im.IMAPFreq) - 10) * time.Second) // Subtract 10 to compensate for the default sleep of 10 at the bottom
+					if !waitPoll(ctx, (time.Duration(im.IMAPFreq)-10)*time.Second) {
+						return
+					}
 				}
 			}
 		}
-		time.Sleep(10 * time.Second)
+		if !waitPoll(ctx, 10*time.Second) {
+			return
+		}
 	}
 }
 
 // NewMonitor returns a new instance of imap.Monitor
 func NewMonitor() *Monitor {
-	im := &Monitor{}
+	im := &Monitor{users: models.GetUsers, poll: monitor}
 	return im
 }
 
 // Start launches the IMAP campaign monitor
 func (im *Monitor) Start() error {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	if im.stopped || im.done != nil {
+		return nil
+	}
+	if im.users == nil {
+		im.users = models.GetUsers
+	}
+	if im.poll == nil {
+		im.poll = monitor
+	}
 	log.Info("Starting IMAP monitor manager")
 	ctx, cancel := context.WithCancel(context.Background()) // ctx is the derivedContext
 	im.cancel = cancel
-	go im.start(ctx)
+	im.done = make(chan struct{})
+	go func() { im.start(ctx); close(im.done) }()
 	return nil
 }
 
 // Shutdown attempts to gracefully shutdown the IMAP monitor.
 func (im *Monitor) Shutdown() error {
 	log.Info("Shutting down IMAP monitor manager")
-	im.cancel()
+	im.mu.Lock()
+	im.stopped = true
+	if im.cancel != nil {
+		im.cancel()
+	}
+	done := im.done
+	im.mu.Unlock()
+	if done != nil {
+		<-done
+	}
 	return nil
+}
+
+func waitPoll(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 // checkForNewEmails logs into an IMAP account and checks unread emails for the

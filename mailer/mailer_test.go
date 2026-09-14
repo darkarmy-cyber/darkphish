@@ -64,6 +64,31 @@ func TestCancellationWaitsForSMTPResultPersistence(t *testing.T) {
 	}
 }
 
+func TestCancelledReconnectDoesNotFailUnattemptedMail(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mw := NewMailWorker()
+	done := make(chan struct{})
+	go func() { mw.Start(ctx); close(done) }()
+	sender := newMockSender()
+	sender.setSend(func(*mockMessage) error { cancel(); return io.ErrUnexpectedEOF })
+	dialer := newMockDialer()
+	dialer.setDial(func() (Sender, error) { return sender, nil })
+	mail := generateMessages(dialer)
+	mw.Queue(mail)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("mailer did not stop after cancelled reconnect")
+	}
+	for _, message := range mail {
+		m := message.(*mockMessage)
+		if m.finished || m.err != nil {
+			t.Fatal("shutdown permanently failed an unattempted recipient")
+		}
+	}
+}
+
 func generateMessages(dialer Dialer) []Mail {
 	to := []string{"to@example.com"}
 

@@ -56,8 +56,21 @@ func TestPendingRecoveryFailsClosedBeforeEligibility(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(active, "completed.json"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if completed, err := completedUpdate(active); err != nil || completed {
+	if completed, err := completedUpdate(active); err != nil || completed.Result != "" {
 		t.Fatal("interrupted completion marker bypassed rollback")
+	}
+}
+
+func TestCompletedRecoveryRetainsResultAndTag(t *testing.T) {
+	for _, outcome := range []string{"applied", "rollback", "backup_failed"} {
+		active := t.TempDir()
+		if err := durableUpdateResult(filepath.Join(active, "completed.json"), outcome, "v0.8.0"); err != nil {
+			t.Fatal(err)
+		}
+		completed, err := completedUpdate(active)
+		if err != nil || completed.Result != outcome || completed.Tag != "v0.8.0" {
+			t.Fatal("completed crash recovery lost outcome or audit tag")
+		}
 	}
 }
 

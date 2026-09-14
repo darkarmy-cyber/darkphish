@@ -136,7 +136,11 @@ func (as *AdminServer) Start() {
 
 // Shutdown attempts to gracefully shutdown the server.
 func (as *AdminServer) Shutdown() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx := context.Background()
+	cancel := func() {}
+	if update.WaitServing == nil {
+		ctx, cancel = context.WithTimeout(ctx, time.Second*10)
+	}
 	defer cancel()
 	err := as.server.Shutdown(ctx)
 	if background, ok := as.worker.(interface{ Shutdown() }); ok {

@@ -69,7 +69,9 @@ The supervising process stops and reaps the application and all its workers
 before taking a SQLite `VACUUM INTO` snapshot and checking its integrity. It
 also cancels campaign scheduling and waits for active SMTP sends and their
 database results to finish. It never force-kills a delivery to advance an update;
-a hung SMTP operation leaves apply waiting for operator intervention. It
+a hung SMTP/IMAP operation or active HTTP request leaves apply waiting for
+operator intervention. IMAP shutdown joins its manager and per-user polling
+goroutines, including report persistence and unread restoration. It
 backs up the original config, binary, migrations, templates, static runtime
 files and release metadata. Backups are owner-only, with a manifest containing
 file checksums. Resolved environment secrets and Vault tokens are never
@@ -78,9 +80,11 @@ external secrets must be restored from the authoritative secret store.
 
 A completed backup is required before installation can rename any runtime
 entry. A durable transaction journal supports recovery after interruption.
-The state directory is synced before runtime mutation, and executable replacement
+The state and all nested staged directories are synced before runtime mutation, and executable replacement
 is atomic. Startup recovers a pending journal before new-update eligibility
 checks, even when the external signature verifier is no longer available.
+Completed recovery restores the saved transaction outcome and release tag for
+status and audit reporting, including a crash before supervisor reload.
 Replacement listeners are bound but do not serve traffic until the transaction
 is committed. Failed startup restores the previous application and database
 snapshot, including recovery from migration changes, before traffic resumes.

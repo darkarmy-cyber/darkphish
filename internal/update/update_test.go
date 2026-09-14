@@ -224,6 +224,43 @@ func TestArchiveTraversalAndLinks(t *testing.T) {
 	}
 }
 
+func TestExtractCompleteNestedRuntime(t *testing.T) {
+	var data bytes.Buffer
+	gz := gzip.NewWriter(&data)
+	tw := tar.NewWriter(gz)
+	prefix := "darkphish-v0.8.0-linux-amd64/"
+	for _, name := range runtimeEntries {
+		content := []byte("fixture")
+		if name == "VERSION" {
+			content = []byte("0.8.0\n")
+		}
+		if name == "db" || name == "templates" || name == "static" {
+			name += "/nested/file"
+		}
+		if err := tw.WriteHeader(&tar.Header{Name: prefix + name, Typeflag: tar.TypeReg, Mode: 0600, Size: int64(len(content))}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write(content); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	dest := t.TempDir()
+	if err := Extract(data.Bytes(), dest, "0.8.0", "amd64"); err != nil {
+		t.Fatal(err)
+	}
+	for _, root := range []string{"db", "templates", "static"} {
+		if _, err := os.Stat(filepath.Join(dest, root, "nested", "file")); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestBackupBeforeInstall(t *testing.T) {
 	root := t.TempDir()
 	dir := t.TempDir()

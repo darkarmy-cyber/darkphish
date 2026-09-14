@@ -228,6 +228,11 @@ func sendMail(ctx context.Context, dialer Dialer, ms []Mail) {
 				origErr := err
 				sender, err = dialHost(ctx, dialer)
 				if err != nil {
+					if ctx.Err() != nil {
+						// Shutdown is not a permanent delivery failure. Leave the
+						// current and unattempted logs eligible for a later retry.
+						return
+					}
 					errorMail(err, ms[i:])
 					break
 				}

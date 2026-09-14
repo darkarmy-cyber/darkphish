@@ -114,5 +114,26 @@ func Extract(data []byte, dest, version, arch string) error {
 	if err != nil || strings.TrimSpace(string(v)) != version {
 		return errors.New("archive version mismatch")
 	}
+	return syncTreeDirectories(dest)
+}
+
+func syncTreeDirectories(root string) error {
+	var directories []string
+	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			directories = append(directories, path)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	for i := len(directories) - 1; i >= 0; i-- {
+		if err := syncDir(directories[i]); err != nil {
+			return err
+		}
+	}
 	return nil
 }

@@ -300,6 +300,10 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			}
 		} else if !os.IsNotExist(started) {
 			return true, started
+		} else if completed.Result == "" {
+			if err := reclaimPreparationFiles(active, false); err != nil {
+				return true, err
+			}
 		}
 		if recovered {
 			saved = updateCompletion{Result: "rollback", Tag: "interrupted"}
@@ -382,6 +386,9 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 				err = update.ExtractContext(stopContext, archive, stage, latest.Version(), runtime.GOARCH)
 			}
 			if err == nil {
+				err = update.ValidateReplacement(stopContext, l.Root, stage)
+			}
+			if err == nil {
 				probeContext, stopProbe := context.WithTimeout(stopContext, 10*time.Second)
 				output, probeErr := exec.CommandContext(probeContext, filepath.Join(stage, "darkphish"), "version").Output()
 				stopProbe()
@@ -392,7 +399,9 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "update archive rejected:", err)
 				_, _ = cWrite(child, "failed")
-				_ = os.Rename(active, filepath.Join(state, "rejected-"+time.Now().UTC().Format("20060102T150405.000000000")))
+				if cleanupErr := discardPreparedUpdate(active); cleanupErr != nil {
+					return true, errors.Join(cleanupErr, child.stop())
+				}
 				continue
 			}
 			if err = child.stop(); err != nil {
@@ -499,6 +508,31 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 	}
 }
 
+func reclaimPreparationFiles(active string, keepBackup bool) error {
+	names := []string{"stage", "rollback-reserve", "original", "restore"}
+	if !keepBackup {
+		names = append(names, "backup")
+	}
+	for _, name := range names {
+		if err := os.RemoveAll(filepath.Join(active, name)); err != nil {
+			return err
+		}
+	}
+	return syncUpdateDirectory(active)
+}
+
+func discardPreparedUpdate(active string) error {
+	if _, err := os.Lstat(filepath.Join(active, "install-started.json")); !os.IsNotExist(err) {
+		return errors.New("refusing to discard a possibly started installation")
+	}
+	// No runtime mutation has occurred. Remove potentially large partial files
+	// before resuming service on the same filesystem as the SQLite database.
+	if err := os.RemoveAll(active); err != nil {
+		return err
+	}
+	return syncUpdateDirectory(filepath.Dir(active))
+}
+
 func prepareSupervisorState(root string, pending bool, syncDirectory func(string) error) (bool, error) {
 	state := filepath.Join(root, ".darkphish-updates")
 	if err := os.MkdirAll(state, 0700); err != nil {
@@ -525,6 +559,9 @@ func recoverFailedApply(transaction update.Transaction, backedUp bool) (string, 
 		}
 		return "rollback", nil
 	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+	if err := reclaimPreparationFiles(transaction.Directory, backedUp); err != nil {
 		return "", err
 	}
 	if !backedUp {

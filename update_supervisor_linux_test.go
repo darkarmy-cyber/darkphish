@@ -31,6 +31,37 @@ func (s *failingCompletionStore) Append(event audit.Event) (int64, error) {
 	return 0, s.err
 }
 
+func TestRejectedPreparationReleasesStagingFiles(t *testing.T) {
+	state := t.TempDir()
+	active := filepath.Join(state, "active")
+	stage := filepath.Join(active, "stage")
+	if err := os.MkdirAll(stage, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stage, "partial"), make([]byte, 1<<20), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := discardPreparedUpdate(active); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(active); !os.IsNotExist(err) {
+		t.Fatal("rejected stage still consumes runtime filesystem space")
+	}
+	if err := os.Mkdir(active, 0700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(active, "install-started.json")
+	if err := os.WriteFile(marker, []byte(`{}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := discardPreparedUpdate(active); err == nil {
+		t.Fatal("cleanup discarded a recoverable transaction")
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatal("cleanup removed recovery marker")
+	}
+}
+
 func TestPreInstallFailureDoesNotReportRollback(t *testing.T) {
 	state := t.TempDir()
 	transaction := update.Transaction{Directory: t.TempDir()}

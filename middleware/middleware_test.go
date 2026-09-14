@@ -378,6 +378,30 @@ func TestSessionAuthentication(t *testing.T) {
 	}
 }
 
+func TestSettingsTabSurvivesAuthenticationRedirect(t *testing.T) {
+	for _, reset := range []bool{false, true} {
+		for _, tab := range []string{"account", "ui", "reporting", "api", "users", "webhooks", "audit", "update", "invalid"} {
+			req := httptest.NewRequest(http.MethodGet, "/settings?tab="+tab, nil)
+			if reset {
+				req = ctx.Set(req, "user", models.User{PasswordChangeRequired: true})
+			}
+			response := httptest.NewRecorder()
+			RequireLogin(successHandler).ServeHTTP(response, req)
+			location, err := response.Result().Location()
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "/settings?tab=" + tab
+			if tab == "invalid" {
+				want = "/settings"
+			}
+			if got := location.Query().Get("next"); got != want {
+				t.Fatal("settings tab lost or unvalidated", got, want)
+			}
+		}
+	}
+}
+
 func TestPasswordResetRequired(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req = ctx.Set(req, "user", models.User{

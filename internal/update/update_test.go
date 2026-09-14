@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -75,6 +76,9 @@ func TestUpdateOutcomeSurvivesReleaseChecks(t *testing.T) {
 }
 
 func TestSQLiteBackupAndRollback(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("native apply requires Linux rollback allocation")
+	}
 	root := t.TempDir()
 	dir := t.TempDir()
 	l := Layout{Root: root, Config: "config.json", Database: "darkphish.db"}
@@ -118,6 +122,11 @@ func TestSQLiteBackupAndRollback(t *testing.T) {
 		t.Fatal("missing external-secret recovery notice")
 	}
 	stage := t.TempDir()
+	for _, entry := range runtimeEntries {
+		if err = copyTree(filepath.Join(root, entry), filepath.Join(stage, entry)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err = os.WriteFile(filepath.Join(stage, "darkphish"), []byte("replacement"), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -138,8 +147,8 @@ func TestSQLiteBackupAndRollback(t *testing.T) {
 	if err = os.Remove(reserve); err != nil {
 		t.Fatal(err)
 	}
-	if err = tx.Install(stage); err == nil {
-		t.Fatal("expected incomplete stage to fail after first replacement")
+	if err = tx.Install(stage); err != nil {
+		t.Fatal("installation failed", err)
 	}
 	if err = tx.Rollback(); err != nil {
 		t.Fatal(err)
@@ -167,6 +176,27 @@ func TestSQLiteBackupAndRollback(t *testing.T) {
 	var value string
 	if err = db.QueryRow("SELECT value FROM fixture").Scan(&value); err != nil || value != "before" {
 		t.Fatalf("database not restored: %s %v", value, err)
+	}
+}
+
+func TestReplacementRejectsUnbundledRuntimeFiles(t *testing.T) {
+	root, stage := t.TempDir(), t.TempDir()
+	for _, base := range []string{root, stage} {
+		for _, entry := range []string{"db", "templates", "static"} {
+			if err := os.Mkdir(filepath.Join(base, entry), 0700); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	custom := filepath.Join(root, "static", "custom-payload")
+	if err := os.WriteFile(custom, []byte("campaign asset"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateReplacement(context.Background(), root, stage); err == nil {
+		t.Fatal("replacement would discard a campaign asset")
+	}
+	if data, err := os.ReadFile(custom); err != nil || string(data) != "campaign asset" {
+		t.Fatal("rejected replacement changed custom file")
 	}
 }
 

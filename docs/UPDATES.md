@@ -116,6 +116,11 @@ an interrupted or failed write is retried on startup and may replay earlier even
 Failures before installation are reported separately and never emit a successful
 rollback event. Unsupported initial directory syncing disables one-click apply
 without preventing normal startup; pending recovery still fails closed.
+Rejected preparation removes partial staging data before the application continues.
+Local files absent from the incoming runtime trees require manual update, including
+custom campaign assets and files removed upstream. Linux file capabilities are
+also unsupported: use manual updates or systemd ambient capabilities. These checks
+prevent silent removal of custom files and loss of privileges during rollback.
 The Update tab retains backup-failure and rollback outcomes across release
 checks, so the restart watcher reports what happened. Apply is also unavailable
 with custom file logging or migrations outside the bundled SQLite directory.

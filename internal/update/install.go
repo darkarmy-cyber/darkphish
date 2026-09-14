@@ -89,6 +89,11 @@ func (l Layout) Validate() error {
 		if d.Type()&os.ModeSymlink != 0 || (!d.IsDir() && !d.Type().IsRegular()) {
 			return errors.New("runtime links or special files are unsupported")
 		}
+		if !d.IsDir() {
+			if err := validateFileMetadata(p); err != nil {
+				return err
+			}
+		}
 		root := strings.Split(rel, string(filepath.Separator))[0]
 		allowed := root == l.Config || root == l.Database || root == l.Database+"-wal" || root == l.Database+"-shm" || root == "config.json"
 		for _, entry := range runtimeEntries {
@@ -103,6 +108,34 @@ func (l Layout) Validate() error {
 
 func copyTree(src, dst string) error {
 	return copyTreeContext(context.Background(), src, dst)
+}
+
+// ValidateReplacement refuses to discard local files absent from the verified
+// release. Removed upstream files also require manual update in this iteration.
+func ValidateReplacement(ctx context.Context, root, stage string) error {
+	for _, entry := range []string{"db", "static", "templates"} {
+		err := filepath.WalkDir(filepath.Join(root, entry), func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			replacement, err := os.Lstat(filepath.Join(stage, rel))
+			if err != nil || replacement.IsDir() != d.IsDir() || (!replacement.IsDir() && !replacement.Mode().IsRegular()) {
+				return errors.New("runtime contains files absent from the release; preserve custom files with a manual update")
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func copyTreeContext(ctx context.Context, src, dst string) error {
@@ -279,6 +312,12 @@ func (t Transaction) InstallContext(ctx context.Context, stage string) error {
 	}
 	if err := verifyBackupContext(ctx, filepath.Join(t.Directory, "backup")); err != nil {
 		return errors.New("completed backup required before install")
+	}
+	if err := t.Layout.Validate(); err != nil {
+		return err
+	}
+	if err := ValidateReplacement(ctx, t.Layout.Root, stage); err != nil {
+		return err
 	}
 	if err := syncTreeDirectoriesContext(ctx, stage); err != nil {
 		return err

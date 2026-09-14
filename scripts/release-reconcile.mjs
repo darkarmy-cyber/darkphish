@@ -7,6 +7,7 @@ import {
   api, expectedReleaseAssetNames, generatedPath, greenCommit, pages, peelTagToCommit,
   requiredChecks, versionTag,
 } from "./release-lib.mjs"
+import { matchesTrustedReleaseBody } from "./release-body-match.mjs"
 import { releaseBody } from "./release-notes.mjs"
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "./release-maintainer-review.mjs"
@@ -211,7 +212,7 @@ async function verifyTrustedRelease(repo, summary, main) {
   const changelog = await sourceText(repo, source)
   const body = releaseBody(changelog, version, source)
   const legacy = legacyReleaseBody(changelog, version, source)
-  if (release.body !== body && release.body !== legacy) throw new Error(`${release.tag_name}: current release body is not a recognized source-derived format`)
+  if (!matchesTrustedReleaseBody(release.body, body, legacy)) throw new Error(`${release.tag_name}: current release body is not a recognized source-derived format`)
   await verifyPublicationProvenance(repo, release, version, source, main, assets)
   return { release, version, source, body, tagState, assets: assetSnapshot(assets) }
 }

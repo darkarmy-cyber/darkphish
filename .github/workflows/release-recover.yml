@@ -33,7 +33,7 @@ jobs:
       security-events: read
       attestations: read
     outputs:
-      ready: ${{ steps.publication.outputs.verified == 'true' && 'false' || steps.recovery.outputs.ready }}
+      ready: ${{ steps.hold.outputs.active == 'true' && 'false' || (steps.publication.outputs.verified == 'true' && 'false' || steps.recovery.outputs.ready) }}
       source: ${{ steps.recovery.outputs.source }}
       main: ${{ steps.recovery.outputs.main }}
       version: ${{ steps.recovery.outputs.version }}
@@ -52,19 +52,25 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24.19.0
+      - id: hold
+        name: Enforce release normalization hold
+        run: node scripts/release-normalization-hold.mjs check
       - name: Test trusted recovery invariants
-        run: node --test .github/scripts/release-recover.test.mjs .github/scripts/release-publication-guard.test.mjs .github/scripts/release-missing-tag-guard.test.mjs .github/scripts/release-create-consistency.test.mjs
+        run: node --test .github/scripts/release-recover.test.mjs .github/scripts/release-publication-guard.test.mjs .github/scripts/release-missing-tag-guard.test.mjs .github/scripts/release-create-consistency.test.mjs scripts/release-normalization-hold.test.mjs
       - name: Verify immutable recovery execution before any release mutation
+        if: steps.hold.outputs.active != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RECOVERY_EXECUTION_SHA: ${{ github.sha }}
         run: node .github/scripts/release-publication-guard.mjs execution
       - id: missing_tag
+        if: steps.hold.outputs.active != 'true'
         name: Withdraw tagless public release fail closed
         env:
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/release-missing-tag-guard.mjs
       - id: publication
+        if: steps.hold.outputs.active != 'true'
         name: Preserve only cryptographically verified public releases
         env:
           GH_TOKEN: ${{ github.token }}
@@ -72,7 +78,7 @@ jobs:
           RECOVERY_PRECHECK_TAG_ABSENT: ${{ steps.missing_tag.outputs.tag_absent }}
         run: node .github/scripts/release-publication-guard.mjs preflight
       - id: recovery
-        if: steps.publication.outputs.verified != 'true'
+        if: steps.hold.outputs.active != 'true' && steps.publication.outputs.verified != 'true'
         name: Verify historical release provenance and recovery source
         env:
           GH_TOKEN: ${{ github.token }}

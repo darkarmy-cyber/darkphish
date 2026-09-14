@@ -7,6 +7,11 @@ const cleanMessages = {
   code: "Codex Review: Didn't find any major issues.",
   security: "Security review completed. No security issues were found in this pull request.",
 }
+// Observed connector security result since 2026-09-14. Preserve the original
+// body for GraphQL provenance; recognize only this exact optional heading.
+const cleanResult = (body, kind) => typeof body === "string" &&
+  (body.startsWith(cleanMessages[kind]) || (kind === "security" &&
+    body.startsWith("### 🛡️ Codex Security Review\n\n" + cleanMessages.security)))
 const connectorActor = user => user?.login === "chatgpt-codex-connector[bot]" && user.id === 199175422 && user.type === "Bot"
 const connectorClaim = user => user?.id === 199175422 || user?.login === "chatgpt-codex-connector[bot]"
 
@@ -86,8 +91,8 @@ export function reviewEvidence(repo, pr, comments, now = Date.now()) {
   requireReview(timestamp(summary.created_at) <= Math.min(...Object.values(completed)) &&
     timestamp(summary.updated_at) >= Math.max(...Object.values(completed)), "Inconsistent review summary timestamps")
   const clean = {}
-  for (const [kind, message] of Object.entries(cleanMessages)) {
-    const candidates = trusted.filter(comment => typeof comment.body === "string" && comment.body.startsWith(message))
+  for (const kind of Object.keys(cleanMessages)) {
+    const candidates = trusted.filter(comment => cleanResult(comment.body, kind))
       .sort((a, b) => b.id - a.id)
     // Never fall back to a historical clean result when the newest one is for
     // another head or is malformed. Formal reviews with findings are checked
@@ -103,7 +108,7 @@ export function reviewEvidence(repo, pr, comments, now = Date.now()) {
   }
   const firstClean = Math.min(...Object.values(clean).map(item => timestamp(item.createdAt)))
   for (const comment of trusted) {
-    if (comment.id === summary.id || Object.values(cleanMessages).some(message => comment.body?.startsWith(message))) continue
+    if (comment.id === summary.id || Object.keys(cleanMessages).some(kind => cleanResult(comment.body, kind))) continue
     requireReview(timestamp(comment.created_at) < firstClean, "A later unrecognized connector result supersedes clean review evidence")
   }
   const records = [{ id: summary.id, nodeID: summary.node_id, body: summary.body, updatedAt: summary.updated_at }, ...Object.values(clean)]

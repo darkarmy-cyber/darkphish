@@ -6,6 +6,7 @@ const allowed = new Set([
   "scripts/release-maintainer-review.mjs", "scripts/release-maintainer-review-legacy.test.mjs",
   "scripts/release-lib.mjs", "scripts/release-repair-policy.mjs", "scripts/release-repair-policy.test.mjs",
   "changes/historical-release-review-provenance.md", "docs/RELEASE_REPAIR_56.md",
+  "scripts/review-gate.mjs", "scripts/review-gate.test.mjs",
 ])
 
 export async function verifyReleaseRepair(repo, pr, request) {

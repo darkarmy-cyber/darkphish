@@ -13,6 +13,18 @@ test("detached draft repair is narrowly scoped and fail closed", () => {
   assert.match(script, /historical rollback state/)
 })
 
+test("repair distinguishes stale detached aliases from real canonical conflicts", () => {
+  assert.match(script, /releases\/tags\/\$\{tag\}/)
+  assert.match(script, /canonical && canonical\.id !== summary\.id/)
+  assert.match(script, /function staleDetachedAlias/)
+  assert.match(script, /release\.tag_name !== tag/)
+  assert.match(script, /release\.target_commitish !== source/)
+  assert.match(script, /release\.name !== recoveryName/)
+  assert.match(script, /url\.hostname !== "github\.com"/)
+  assert.match(script, /detachedTag\.test\(url\.pathname\.slice\(prefix\.length\)\)/)
+  assert.match(script, /conflicting release identity requires manual forensic review/)
+})
+
 test("repair revalidates immutable tag, canonical body and exact assets", () => {
   assert.match(script, /await tagCommit\(repo, tag\) !== source/)
   assert.match(script, /releaseBody\(changelog, version, source\)/)

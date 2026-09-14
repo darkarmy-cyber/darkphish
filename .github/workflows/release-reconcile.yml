@@ -2,8 +2,9 @@ name: Reconcile release metadata
 
 on:
   workflow_run:
-    workflows: [CodeQL]
+    workflows: [CI, CodeQL]
     types: [completed]
+    branches: [main]
 
 permissions:
   contents: read

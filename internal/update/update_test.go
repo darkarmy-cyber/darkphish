@@ -79,9 +79,15 @@ func TestSQLiteBackupAndRollback(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("native apply requires Linux rollback allocation")
 	}
+	for _, database := range []string{"darkphish.db", "campaign%2Farchive.db"} {
+		t.Run(database, func(t *testing.T) { testSQLiteBackupAndRollback(t, database) })
+	}
+}
+
+func testSQLiteBackupAndRollback(t *testing.T, database string) {
 	root := t.TempDir()
 	dir := t.TempDir()
-	l := Layout{Root: root, Config: "config.json", Database: "darkphish.db"}
+	l := Layout{Root: root, Config: "config.json", Database: database}
 	for _, name := range runtimeEntries {
 		p := filepath.Join(root, name)
 		if name == "db" || name == "static" || name == "templates" {

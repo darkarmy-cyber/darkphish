@@ -247,7 +247,8 @@ func Backup(ctx context.Context, l Layout, dest string) error {
 	if err = errors.Join(err, closeErr); err != nil {
 		return err
 	}
-	snapshot, err := sql.Open("sqlite3", "file:"+filepath.ToSlash(filepath.Join(dest, l.Database))+"?mode=ro")
+	snapshotURL := url.URL{Scheme: "file", Path: filepath.Join(dest, l.Database), RawQuery: "mode=ro"}
+	snapshot, err := sql.Open("sqlite3", snapshotURL.String())
 	if err != nil {
 		return err
 	}

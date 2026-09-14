@@ -31,6 +31,31 @@ func (s *failingCompletionStore) Append(event audit.Event) (int64, error) {
 	return 0, s.err
 }
 
+func TestReadOnlyEmptyStateDisablesApplyWithoutBlockingStartup(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory write permissions")
+	}
+	state := t.TempDir()
+	if err := os.Chmod(state, 0500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(state, 0700)
+	lock, err := openSupervisorLock(state, false)
+	if lock != nil {
+		lock.Close()
+		t.Fatal("read-only directory unexpectedly allowed lock creation")
+	}
+	if err != nil {
+		t.Fatal("empty read-only state prevented normal startup", err)
+	}
+	if lock, err := openSupervisorLock(state, true); err == nil {
+		if lock != nil {
+			lock.Close()
+		}
+		t.Fatal("pending recovery bypassed a lock failure")
+	}
+}
+
 func TestRejectedPreparationReleasesStagingFiles(t *testing.T) {
 	state := t.TempDir()
 	active := filepath.Join(state, "active")

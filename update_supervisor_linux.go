@@ -274,9 +274,12 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 	if err != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
 		return true, errors.New("unsafe update state directory")
 	}
-	lock, err := os.OpenFile(filepath.Join(state, "lock"), os.O_CREATE|os.O_RDWR, 0600)
+	lock, err := openSupervisorLock(state, pending)
 	if err != nil {
 		return true, err
+	}
+	if lock == nil {
+		return false, nil
 	}
 	defer lock.Close()
 	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
@@ -506,6 +509,20 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			}
 		}
 	}
+}
+
+func openSupervisorLock(state string, pending bool) (*os.File, error) {
+	lock, err := os.OpenFile(filepath.Join(state, "lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil && !pending && (os.IsPermission(err) || errors.Is(err, syscall.EROFS)) {
+		// An unwritable empty state directory must not disable normal service.
+		// An existing lock or journal is ambiguous and still fails closed.
+		_, lockErr := os.Lstat(filepath.Join(state, "lock"))
+		_, activeErr := os.Lstat(filepath.Join(state, "active"))
+		if os.IsNotExist(lockErr) && os.IsNotExist(activeErr) {
+			return nil, nil
+		}
+	}
+	return lock, err
 }
 
 func reclaimPreparationFiles(active string, keepBackup bool) error {

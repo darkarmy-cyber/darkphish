@@ -1,4 +1,6 @@
 import { pathToFileURL } from "node:url"
+import { appendFileSync, readFileSync } from "node:fs"
+import { setTimeout as pause } from "node:timers/promises"
 import { api } from "./release-lib.mjs"
 import { executionMain, verifyTrustedRelease } from "./release-reconcile.mjs"
 import { verifyPullRequestReviews } from "./review-gate.mjs"
@@ -18,8 +20,33 @@ function assertManifest(trusted) {
   if (!trusted || trusted.assets?.size !== 8 || trusted.assets.get("SHA256SUMS")?.digest !== manifest) throw new Error("Resumption artifact set changed")
 }
 
+export function rebuildRestricted(version) {
+  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error("Invalid rebuild VERSION")
+  return version === "0.7.1"
+}
+
+async function withdrawRelease(request, delay) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try { await request(`repos/${repo}/releases/${releaseID}`, { method: "PATCH", body: { draft: true, prerelease: false, make_latest: "false" } }) } catch {}
+    try {
+      const direct = await request(`repos/${repo}/releases/${releaseID}`)
+      const byTag = await request(`repos/${repo}/releases/tags/v0.7.1`, { missing: true })
+      const releases = await request(`repos/${repo}/releases?per_page=100`)
+      if (direct?.id === releaseID && direct.draft === true && byTag?.draft !== false && Array.isArray(releases) &&
+        releases.some(r => r.id === releaseID && r.draft === true) && !releases.some(r => r.tag_name === "v0.7.1" && r.draft === false)) return
+    } catch {}
+    if (attempt < 4) await delay(250 * (attempt + 1))
+  }
+  throw new Error("CRITICAL: could not confirm failed resumption withdrawal through direct, collection and tag lookups")
+}
+
 export async function resumeRelease(main, { request = api, execution = executionMain, verify = verifyTrustedRelease,
-  reviews = verifyPullRequestReviews, hold = normalizationHold, log = console.log } = {}) {
+  reviews = verifyPullRequestReviews, hold = normalizationHold, log = console.log, delay = pause } = {}) {
+  const candidate = await request(`repos/${repo}/pulls/58`)
+  if (candidate?.number !== 58 || !/^[a-f0-9]{40}$/.test(main || "")) throw new Error("Invalid resumption target")
+  if (candidate.state !== "closed" || !candidate.merged_at || candidate.merge_commit_sha !== main) {
+    log("Not the one-shot PR58 merge; no resumption mutation."); return
+  }
   if (hold()) throw new Error("Release normalization hold remains active")
   await execution(repo, main)
   const checkAuthorization = async () => {
@@ -80,14 +107,19 @@ export async function resumeRelease(main, { request = api, execution = execution
   } catch (error) {
     // The write may have succeeded despite a transport error. Withdraw only the
     // precisely authorized release; never delete or replace any artifact.
-    await request(`repos/${repo}/releases/${releaseID}`, { method: "PATCH", body: { draft: true, prerelease: false, make_latest: "false" } })
-    const withdrawn = await request(`repos/${repo}/releases/${releaseID}`)
-    if (withdrawn?.id !== releaseID || withdrawn.draft !== true) throw new Error("CRITICAL: could not verify failed resumption withdrawal")
+    await withdrawRelease(request, delay)
     throw error
   }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (process.env.GITHUB_REPOSITORY !== repo) throw new Error("Unexpected resumption repository")
-  resumeRelease(process.env.RESUME_EXECUTION_SHA).catch(error => { console.error(error.message); process.exitCode = 1 })
+  if (process.argv[2] === "guard-rebuild") {
+    const restricted = rebuildRestricted(readFileSync(new URL("../VERSION", import.meta.url), "utf8").trim())
+    const active = Boolean(normalizationHold()) || restricted
+    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `active=${active}\n`)
+    console.log(active ? "Generic publication is held; v0.7.1 must reuse the selected original artifacts." : "No generic publication hold.")
+  } else {
+    if (process.env.GITHUB_REPOSITORY !== repo) throw new Error("Unexpected resumption repository")
+    resumeRelease(process.env.RESUME_EXECUTION_SHA).catch(error => { console.error(error.message); process.exitCode = 1 })
+  }
 }

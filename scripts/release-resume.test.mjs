@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
-import { resumeRelease } from "./release-resume.mjs"
+import { rebuildRestricted, resumeRelease } from "./release-resume.mjs"
 
 const main = "e".repeat(40), bot = { login: "github-actions[bot]", id: 41898282, type: "Bot" }
 function fixture() {
@@ -16,11 +16,14 @@ function fixture() {
     if (options.method) {
       assert.equal(options.method, "PATCH")
       assert.equal(path, "repos/darkarmy-cyber/darkphish/releases/388329244")
-      f.writes.push(options.body); f.release.draft = options.body.draft
+      f.writes.push(options.body)
+      if (options.body.draft && f.withdrawFailures > 0) { f.withdrawFailures--; throw new Error("Transient withdrawal failure") }
+      f.release.draft = options.body.draft
       if (!options.body.draft && f.changePublicationTime) f.release.published_at = "2026-09-14T15:00:00Z"
       return structuredClone(f.release)
     }
     if (path.endsWith("/pulls/58")) return structuredClone(f.pr)
+    if (path.endsWith("/releases?per_page=100")) return [structuredClone(f.release)]
     if (path.includes("/git/ref/tags/")) {
       f.tagReads++
       return { object: { type: "commit", sha: f.badTag || (f.badPostTag && f.tagReads > 1) ? main : f.release.target_commitish } }
@@ -29,7 +32,7 @@ function fixture() {
     if (path.includes("/releases/")) return structuredClone(f.release)
     throw new Error(`Unexpected request ${path}`)
   }
-  f.deps = { request: f.request, hold: () => f.hold || null, log: () => {},
+  f.deps = { request: f.request, hold: () => f.hold || null, log: () => {}, delay: async () => {},
     execution: async () => { f.executions++; if (f.badMain) throw new Error("Main changed") },
     reviews: async () => { f.reviews++; if (f.badReviews) throw new Error("Missing review") },
     verify: async () => { f.verifies++; if (f.badProvenance || (f.failPost && f.verifies > 1)) throw new Error("Invalid provenance")
@@ -50,12 +53,37 @@ test("already verified public release is never republished", async () => {
 
 test("hold, wrong main/PR, missing review, provenance and changed identity prevent publication", async () => {
   for (const change of [f => { f.hold = {} }, f => { f.badMain = true }, f => { f.badReviews = true },
-    f => { f.badProvenance = true }, f => { f.pr.merge_commit_sha = "b".repeat(40) },
-    f => { f.pr.state = "open" }, f => { f.release.id = 388031151 },
+    f => { f.badProvenance = true }, f => { f.release.id = 388031151 },
     f => { f.release.target_commitish = "b".repeat(40) }, f => { f.release.author = { ...bot, id: 1 } },
     f => { f.release.body = "changed" }, f => { f.assets[0].digest = "sha256:" + "b".repeat(64) },
     f => { f.changedAssets = f.assets.slice(1) }, f => { f.release.published_at = null }, f => { f.badTag = true }]) {
     const f = fixture(); change(f); await assert.rejects(f.run()); assert.equal(f.writes.length, 0)
+  }
+})
+
+test("future main commits skip one-shot resumption without errors or writes", async () => {
+  const f = fixture(); f.pr.merge_commit_sha = "b".repeat(40)
+  await f.run(); assert.equal(f.writes.length, 0); assert.equal(f.verifies, 0)
+})
+
+test("ambiguous withdrawal failures are retried until private state is proven", async () => {
+  const f = fixture(); f.failPost = true; f.withdrawFailures = 2
+  await assert.rejects(f.run(), /Invalid provenance/)
+  assert.equal(f.writes.filter(w => w.draft).length, 3)
+  assert.equal(f.release.draft, true)
+  const g = fixture(); g.failPost = true; g.withdrawFailures = 10
+  await assert.rejects(g.run(), /CRITICAL/)
+  assert.equal(g.writes.filter(w => w.draft).length, 5)
+})
+
+test("both generic publishers cannot rebuild the held original v0.7.1 artifact set", () => {
+  assert.equal(rebuildRestricted("0.7.1"), true)
+  assert.equal(rebuildRestricted("0.7.2"), false)
+  assert.throws(() => rebuildRestricted("unknown"))
+  for (const name of ["release.yml", "release-recover.yml"]) {
+    const workflow = readFileSync(new URL(`../.github/workflows/${name}`, import.meta.url), "utf8")
+    assert.match(workflow, /id: hold[\s\S]*?run: node scripts\/release-resume\.mjs guard-rebuild/)
+    assert.match(workflow, /ready: \$\{\{ steps\.hold\.outputs\.active == 'true' && 'false'/)
   }
 })
 

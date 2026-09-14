@@ -9,6 +9,7 @@ const allowed = new Set([
   "scripts/review-gate.mjs", "scripts/review-gate.test.mjs",
 ])
 const resumeAllowed = new Set([
+  ".github/workflows/release.yml", ".github/workflows/release-recover.yml",
   ".github/release-normalization-hold.json", ".github/workflows/release-reconcile.yml", ".github/workflows/release-resume.yml",
   "scripts/release-normalization-hold.test.mjs", "scripts/release-reconcile.mjs",
   "scripts/release-resume.mjs", "scripts/release-resume.test.mjs",

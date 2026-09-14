@@ -48,7 +48,7 @@ jobs:
       - run: node scripts/changelog.mjs validate
       - id: hold
         name: Enforce release normalization hold
-        run: node scripts/release-normalization-hold.mjs check
+        run: node scripts/release-resume.mjs guard-rebuild
       - id: version
         if: steps.hold.outputs.active != 'true'
         env:

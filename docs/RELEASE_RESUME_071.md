@@ -36,3 +36,9 @@ existing downstream publication-provenance guards remain authoritative. If
 GitHub changes that timestamp or any other post-publication check fails, the
 workflow withdraws this exact release back to draft and fails closed. It does
 not invent historical timing evidence or relax any existing provenance check.
+
+Both generic native/recovery publishers are explicitly held while VERSION is
+0.7.1; they cannot race resumption by rebuilding another draft. Normal behavior
+returns for the next version. Later main commits skip the one-shot resumption.
+Failed publication withdrawal retries PATCH plus direct-ID, release collection
+and tag probes, with a critical failure if private state cannot be confirmed.

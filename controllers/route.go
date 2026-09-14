@@ -4,7 +4,9 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/tls"
+	"errors"
 	"html/template"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -17,6 +19,7 @@ import (
 	ctx "github.com/darkarmy-cyber/darkphish/context"
 	"github.com/darkarmy-cyber/darkphish/controllers/api"
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
+	"github.com/darkarmy-cyber/darkphish/internal/update"
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	mid "github.com/darkarmy-cyber/darkphish/middleware"
 	"github.com/darkarmy-cyber/darkphish/middleware/ratelimit"
@@ -36,6 +39,7 @@ type AdminServerOption func(*AdminServer)
 // AdminServer is an HTTP server that implements the administrative Darkphish
 // handlers, including the dashboard and REST API.
 type AdminServer struct {
+	updates *update.Service
 	server  *http.Server
 	worker  worker.Worker
 	config  config.AdminServer
@@ -100,22 +104,34 @@ func NewAdminServer(conf config.AdminServer, options ...AdminServerOption) *Admi
 
 // Start launches the admin server, listening on the configured address.
 func (as *AdminServer) Start() {
+	if as.config.UseTLS {
+		as.server.TLSConfig = defaultTLSConfig
+		if err := util.CheckAndCreateSSL(as.config.CertPath, as.config.KeyPath); err != nil {
+			log.Fatal(err)
+		}
+		// Parse key material before reporting readiness.
+		if _, err := tls.LoadX509KeyPair(as.config.CertPath, as.config.KeyPath); err != nil {
+			log.Fatal(err)
+		}
+	}
+	listener, err := net.Listen("tcp", as.server.Addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if update.ListenerReady != nil {
+		update.ListenerReady("admin")
+	}
 	if as.worker != nil {
 		go as.worker.Start()
 	}
 	if as.config.UseTLS {
-		// Only support TLS 1.2 and above - ref #1691, #1689
-		as.server.TLSConfig = defaultTLSConfig
-		err := util.CheckAndCreateSSL(as.config.CertPath, as.config.KeyPath)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Infof("Starting admin server at https://%s", as.config.ListenURL)
-		log.Fatal(as.server.ListenAndServeTLS(as.config.CertPath, as.config.KeyPath))
+		err = as.server.ServeTLS(listener, as.config.CertPath, as.config.KeyPath)
+	} else {
+		err = as.server.Serve(listener)
 	}
-	// If TLS isn't configured, just listen on HTTP
-	log.Infof("Starting admin server at http://%s", as.config.ListenURL)
-	log.Fatal(as.server.ListenAndServe())
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
 }
 
 // Shutdown attempts to gracefully shutdown the server.
@@ -149,6 +165,7 @@ func (as *AdminServer) registerRoutes() {
 	router.HandleFunc("/impersonate", mid.Use(as.Impersonate, mid.RequirePermission(models.PermissionModifySystem), mid.RequireLogin))
 	// Create the API routes
 	api := api.NewServer(
+		api.WithUpdates(as.updates),
 		api.WithWorker(as.worker),
 		api.WithLimiter(as.limiter),
 		api.WithAllowedOrigins(as.config.CORSAllowedOrigins),
@@ -216,6 +233,7 @@ func (as *AdminServer) Ready(w http.ResponseWriter, _ *http.Request) {
 }
 
 type templateParams struct {
+	SettingsTab     string
 	Title           string
 	Flashes         []interface{}
 	User            models.User
@@ -299,6 +317,22 @@ func (as *AdminServer) Settings(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "GET":
 		params := newTemplateParams(r)
 		params.Title = "Settings"
+		params.SettingsTab = r.URL.Query().Get("tab")
+		if params.SettingsTab == "" {
+			params.SettingsTab = "account"
+		}
+		if !settingsTabAllowed(params.SettingsTab) {
+			http.NotFound(w, r)
+			return
+		}
+		if adminSettingsTab(params.SettingsTab) && !params.ModifySystem {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		if adminSettingsTab(params.SettingsTab) {
+			getTemplate(w, params.SettingsTab).ExecuteTemplate(w, "base", params)
+			return
+		}
 		session := ctx.Get(r, "session").(*sessions.Session)
 		session.Save(r, w)
 		getTemplate(w, "settings").ExecuteTemplate(w, "base", params)
@@ -339,9 +373,7 @@ func (as *AdminServer) Settings(w http.ResponseWriter, r *http.Request) {
 // UserManagement is an admin-only handler that allows for the registration
 // and management of user accounts within Darkphish.
 func (as *AdminServer) UserManagement(w http.ResponseWriter, r *http.Request) {
-	params := newTemplateParams(r)
-	params.Title = "User Management"
-	getTemplate(w, "users").ExecuteTemplate(w, "base", params)
+	http.Redirect(w, r, "/settings?tab=users", http.StatusSeeOther)
 }
 
 func (as *AdminServer) nextOrIndex(w http.ResponseWriter, r *http.Request) {
@@ -370,6 +402,9 @@ func administrativeReturnPath(raw string) string {
 	case "/sending_profiles":
 		return "/sending_profiles"
 	case "/settings":
+		if tab := parsed.Query().Get("tab"); settingsTabAllowed(tab) {
+			return "/settings?tab=" + tab
+		}
 		return "/settings"
 	case "/users":
 		return "/users"
@@ -415,15 +450,11 @@ func recordBrowserAudit(r *http.Request, actor string, actorID int64, action, ta
 
 // Webhooks is an admin-only handler that handles webhooks
 func (as *AdminServer) Webhooks(w http.ResponseWriter, r *http.Request) {
-	params := newTemplateParams(r)
-	params.Title = "Webhooks"
-	getTemplate(w, "webhooks").ExecuteTemplate(w, "base", params)
+	http.Redirect(w, r, "/settings?tab=webhooks", http.StatusSeeOther)
 }
 
 func (as *AdminServer) Audit(w http.ResponseWriter, r *http.Request) {
-	params := newTemplateParams(r)
-	params.Title = "Audit Log"
-	getTemplate(w, "audit").ExecuteTemplate(w, "base", params)
+	http.Redirect(w, r, "/settings?tab=audit", http.StatusSeeOther)
 }
 
 // Impersonate allows an admin to login to a user account without needing the password
@@ -609,7 +640,7 @@ func (as *AdminServer) ResetPassword(w http.ResponseWriter, r *http.Request) {
 // TODO: Make this execute the template, too
 func getTemplate(w http.ResponseWriter, tmpl string) *template.Template {
 	templates := template.New("template")
-	_, err := templates.ParseFiles("templates/base.html", "templates/nav.html", "templates/"+tmpl+".html", "templates/flashes.html")
+	_, err := templates.ParseFiles("templates/base.html", "templates/nav.html", "templates/settings_tabs.html", "templates/"+tmpl+".html", "templates/flashes.html")
 	if err != nil {
 		log.Error(err)
 	}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/darkarmy-cyber/darkphish/internal/update"
 	"net/http"
 
 	mid "github.com/darkarmy-cyber/darkphish/middleware"
@@ -18,6 +19,7 @@ type ServerOption func(*Server)
 // stopped. Rather, it's meant to be used as an http.Handler in the
 // AdminServer.
 type Server struct {
+	updates          *update.Service
 	handler          http.Handler
 	worker           worker.Worker
 	limiter          *ratelimit.PostLimiter
@@ -70,6 +72,9 @@ func (as *Server) registerRoutes() {
 	router.Use(mid.EnforcePATScopes)
 	router.Use(mid.AuditAPI)
 	router.Use(mid.EnforceViewOnly)
+	router.HandleFunc("/updates", mid.Use(as.UpdateStatus, mid.RequirePermission(models.PermissionModifySystem))).Methods(http.MethodGet)
+	router.HandleFunc("/updates/check", mid.Use(as.UpdateStatus, mid.RequirePermission(models.PermissionModifySystem), as.limitSensitive)).Methods(http.MethodPost)
+	router.HandleFunc("/updates/apply", mid.Use(as.UpdateApply, mid.RequirePermission(models.PermissionModifySystem), as.limitSensitive)).Methods(http.MethodPost)
 	router.HandleFunc("/imap/", as.IMAPServer)
 	router.HandleFunc("/imap/validate", as.IMAPServerValidate)
 	router.HandleFunc("/reset", as.Reset)

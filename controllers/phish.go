@@ -3,6 +3,7 @@ package controllers
 import (
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"github.com/darkarmy-cyber/darkphish/config"
 	ctx "github.com/darkarmy-cyber/darkphish/context"
 	"github.com/darkarmy-cyber/darkphish/controllers/api"
+	"github.com/darkarmy-cyber/darkphish/internal/update"
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/darkarmy-cyber/darkphish/util"
@@ -88,18 +90,31 @@ func WithContactAddress(addr string) PhishingServerOption {
 // Start launches the phishing server, listening on the configured address.
 func (ps *PhishingServer) Start() {
 	if ps.config.UseTLS {
-		// Only support TLS 1.2 and above - ref #1691, #1689
 		ps.server.TLSConfig = defaultTLSConfig
-		err := util.CheckAndCreateSSL(ps.config.CertPath, ps.config.KeyPath)
-		if err != nil {
+		if err := util.CheckAndCreateSSL(ps.config.CertPath, ps.config.KeyPath); err != nil {
 			log.Fatal(err)
 		}
-		log.Infof("Starting phishing server at https://%s", ps.config.ListenURL)
-		log.Fatal(ps.server.ListenAndServeTLS(ps.config.CertPath, ps.config.KeyPath))
+		// Parse key material before reporting readiness.
+		if _, err := tls.LoadX509KeyPair(ps.config.CertPath, ps.config.KeyPath); err != nil {
+			log.Fatal(err)
+		}
 	}
-	// If TLS isn't configured, just listen on HTTP
-	log.Infof("Starting phishing server at http://%s", ps.config.ListenURL)
-	log.Fatal(ps.server.ListenAndServe())
+	listener, err := net.Listen("tcp", ps.server.Addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if update.ListenerReady != nil {
+		update.ListenerReady("phish")
+	}
+
+	if ps.config.UseTLS {
+		err = ps.server.ServeTLS(listener, ps.config.CertPath, ps.config.KeyPath)
+	} else {
+		err = ps.server.Serve(listener)
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
 }
 
 // Shutdown attempts to gracefully shutdown the server.

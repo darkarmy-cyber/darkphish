@@ -37,6 +37,12 @@
             </div>
             <div class="navbar-collapse collapse">
                 <ul class="nav navbar-nav navbar-right">
+                    {{if .ModifySystem}}
+                    <li class="dropdown" id="adminNotifications">
+                        <a href="#" class="dropdown-toggle" data-toggle="dropdown" aria-label="Admin notifications" aria-expanded="false"><i class="fa fa-bell" aria-hidden="true"></i> <span id="adminNotificationBadge" class="badge" hidden></span></a>
+                        <ul class="dropdown-menu"><li><a id="adminReleaseNotification" href="/settings?tab=update">Check release information</a></li></ul>
+                    </li>
+                    {{end}}
                     <li>
                         {{if .User}}
                         <div class="btn-group" id="navbar-dropdown">
@@ -60,6 +66,7 @@
     <!-- Placed at the end of the document so the pages load faster -->
     <script src="/js/dist/vendor.min.js"></script>
     <script src="/js/dist/app/darkphish.min.js"></script>
+    {{if .ModifySystem}}<script src="/js/dist/app/notifications.min.js"></script>{{end}}
     {{template "scripts" .}}
 </body>
 

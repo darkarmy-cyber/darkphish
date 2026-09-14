@@ -44,6 +44,7 @@ import (
 	"github.com/darkarmy-cyber/darkphish/imap"
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	"github.com/darkarmy-cyber/darkphish/internal/migrationcheck"
+	"github.com/darkarmy-cyber/darkphish/internal/update"
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/middleware"
 	"github.com/darkarmy-cyber/darkphish/models"
@@ -190,6 +191,14 @@ func main() {
 
 	// Provide the option to disable the built-in mailer
 	// Setup the global variables and settings
+	if command == serveCommand.FullCommand() {
+		if handled, supervisorErr := superviseUpdates(conf); handled {
+			if supervisorErr != nil {
+				log.Fatal(supervisorErr)
+			}
+			return
+		}
+	}
 	err = models.Setup(conf)
 	if err != nil {
 		log.Fatal(err)
@@ -278,6 +287,7 @@ func main() {
 
 	// Create our servers
 	adminOptions := []controllers.AdminServerOption{}
+	adminOptions = append(adminOptions, controllers.WithUpdates(configureUpdates(conf)))
 	if *disableMailer {
 		adminOptions = append(adminOptions, controllers.WithWorker(nil))
 	}
@@ -290,7 +300,12 @@ func main() {
 	imapMonitor := imap.NewMonitor()
 	if *mode == "admin" || *mode == "all" {
 		go adminServer.Start()
-		go imapMonitor.Start()
+		go func() {
+			if update.WaitServing != nil {
+				update.WaitServing()
+			}
+			imapMonitor.Start()
+		}()
 	}
 	if *mode == "phish" || *mode == "all" {
 		go phishServer.Start()

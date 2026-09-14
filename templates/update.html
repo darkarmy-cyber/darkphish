@@ -1,0 +1,14 @@
+{{define "body"}}
+<div class="col-sm-9 col-sm-offset-3 col-md-10 col-md-offset-2 main">
+    <h1 class="page-header">Settings</h1>
+    {{template "settings_tabs" .}}
+    <h2>Update Darkphish</h2>
+    <div id="updateStatus" role="status" aria-live="polite">Checking release information…</div>
+    <dl><dt>Current version</dt><dd id="updateCurrent"></dd><dt>Latest stable version</dt><dd id="updateLatest"></dd><dt>Published</dt><dd id="updatePublished"></dd></dl>
+    <button type="button" class="btn btn-default" id="updateCheck">Check now</button>
+    <button type="button" class="btn btn-primary" id="updateApply" disabled>Update now</button>
+    <p>A verified update stops the application, backs it up, and restarts it. External secrets must be restored from the authoritative secret store.</p>
+    <h3>Release notes</h3><pre id="updateNotes"></pre>
+</div>
+{{end}}
+{{define "scripts"}}<script src="/js/dist/app/update.min.js"></script>{{end}}

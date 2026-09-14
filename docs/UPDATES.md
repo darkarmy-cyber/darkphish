@@ -69,9 +69,11 @@ The supervising process stops and reaps the application and all its workers
 before taking a SQLite `VACUUM INTO` snapshot and checking its integrity. It
 also cancels campaign scheduling and waits for active SMTP sends and their
 database results to finish. It never force-kills a delivery to advance an update;
-a hung IMAP operation or active HTTP request leaves apply waiting for
-operator intervention. IMAP shutdown joins its manager and per-user polling
-goroutines, including report persistence and unread restoration. It
+IMAP sessions have a 30-second deadline and close when polling is cancelled.
+IMAP shutdown joins its manager and per-user polling goroutines. Fetch uses
+BODY.PEEK; stable UIDs are marked read only after report persistence, leaving
+failed or cancelled reports unread. UIDVALIDITY changes reject acknowledgements.
+The supervisor
 also joins accepted webhook deliveries after their event producers stop, and
 archive extraction and backup copying observe service-stop cancellation. It
 backs up the original config, binary, migrations, templates, static runtime

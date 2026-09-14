@@ -95,7 +95,7 @@ func monitor(uid int64, ctx context.Context) {
 				// 3. Check if IMAP is enabled
 				if im.Enabled {
 					log.Debug("Checking IMAP for user ", uid, ": ", im.Username, " -> ", im.Host)
-					checkForNewEmails(im)
+					checkForNewEmails(ctx, im)
 					if !waitPoll(ctx, (time.Duration(im.IMAPFreq)-10)*time.Second) {
 						return
 					}
@@ -164,9 +164,10 @@ func waitPoll(ctx context.Context, delay time.Duration) bool {
 
 // checkForNewEmails logs into an IMAP account and checks unread emails for the
 // rid campaign identifier.
-func checkForNewEmails(im models.IMAP) {
+func checkForNewEmails(ctx context.Context, im models.IMAP) {
 	im.Host = im.Host + ":" + strconv.Itoa(int(im.Port)) // Append port
 	mailServer := Mailbox{
+		ctx:              ctx,
 		Host:             im.Host,
 		TLS:              im.TLS,
 		IgnoreCertErrors: im.IgnoreCertErrors,
@@ -187,15 +188,19 @@ func checkForNewEmails(im models.IMAP) {
 
 	if len(msgs) > 0 {
 		log.Debugf("%d new emails for %s", len(msgs), im.Username)
-		var reportingFailed []uint32 // SeqNums of emails that were unable to be reported to phishing server, mark as unread
+		var processed []uint32 // UIDs acknowledged only after report persistence.
 		var deleteEmails []uint32    // SeqNums of campaign emails. If DeleteReportedCampaignEmail is true, we will delete these
 		for _, m := range msgs {
 			// Check if sender is from company's domain, if enabled. TODO: Make this an IMAP filter
 			if im.RestrictDomain != "" { // e.g domainResitct = widgets.com
 				splitEmail := strings.Split(m.Email.From, "@")
+				if len(splitEmail) < 2 {
+					continue
+				}
 				senderDomain := splitEmail[len(splitEmail)-1]
 				if senderDomain != im.RestrictDomain {
 					log.Debug("Ignoring email as not from company domain: ", senderDomain)
+					processed = append(processed, m.UID)
 					continue
 				}
 			}
@@ -210,31 +215,37 @@ func checkForNewEmails(im models.IMAP) {
 				// In the future this should be an alert in Darkphish
 				log.Infof("User '%s' reported email with subject '%s'. This is not a Darkphish campaign; you should investigate it.", m.Email.From, m.Email.Subject)
 			}
+			succeeded := true
 			for rid := range rids {
 				log.Infof("User '%s' reported email with rid %s", m.Email.From, rid)
 				result, err := models.GetResult(rid)
 				if err != nil {
 					log.Error("Error reporting Darkphish email with rid ", rid, ": ", err.Error())
-					reportingFailed = append(reportingFailed, m.SeqNum)
+					succeeded = false
 					continue
 				}
-				err = result.HandleEmailReport(models.EventDetails{})
+				if !result.Reported {
+					err = result.HandleEmailReport(models.EventDetails{})
+				}
 				if err != nil {
 					log.Error("Error updating Darkphish email with rid ", rid, ": ", err.Error())
+					succeeded = false
 					continue
 				}
-				if im.DeleteReportedCampaignEmail {
-					deleteEmails = append(deleteEmails, m.SeqNum)
+			}
+			if succeeded {
+				processed = append(processed, m.UID)
+				if im.DeleteReportedCampaignEmail && len(rids) > 0 {
+					deleteEmails = append(deleteEmails, m.UID)
 				}
 			}
 
 		}
-		// Check if any emails were unable to be reported, so we can mark them as unread
-		if len(reportingFailed) > 0 {
-			log.Debugf("Marking %d emails as unread as failed to report", len(reportingFailed))
-			err := mailServer.MarkAsUnread(reportingFailed) // Set emails as unread that we failed to report to Darkphish
+		// PEEK leaves failed/cancelled reports unread; acknowledge persisted work.
+		if len(processed) > 0 {
+			err := mailServer.MarkAsRead(processed)
 			if err != nil {
-				log.Error("Unable to mark emails as unread: ", err.Error())
+				log.Error("Unable to acknowledge processed emails: ", err.Error())
 			}
 		}
 		// If the DeleteReportedCampaignEmail flag is set, delete reported Darkphish campaign emails

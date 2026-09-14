@@ -56,6 +56,17 @@ func TestReadinessCancelledBySupervisorStop(t *testing.T) {
 	}
 }
 
+func TestReservedDatabaseDoesNotPreventNormalStartup(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv(childEnvironment, "")
+	if err := os.WriteFile(".darkphish-updates", []byte("SQLite file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if handled, err := recoverPendingUpdate(); handled || err != nil {
+		t.Fatal("reserved database name prevented normal startup", err)
+	}
+}
+
 func TestRecoveryLayoutDoesNotRequireNewUpdateEligibility(t *testing.T) {
 	root, err := os.Getwd()
 	if err != nil {

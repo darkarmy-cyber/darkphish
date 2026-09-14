@@ -199,12 +199,34 @@ func recoverPendingUpdate() (bool, error) {
 	if os.Getenv(childEnvironment) == "1" {
 		return false, nil
 	}
-	if _, err := os.Lstat(filepath.Join(".darkphish-updates", "active")); os.IsNotExist(err) {
-		return false, nil
-	} else if err != nil {
+	pending, err := pendingUpdate(".")
+	if err != nil {
 		return true, err
 	}
+	if !pending {
+		return false, nil
+	}
 	return superviseUpdates(nil)
+}
+
+func pendingUpdate(root string) (bool, error) {
+	state := filepath.Join(root, ".darkphish-updates")
+	info, err := os.Lstat(state)
+	if os.IsNotExist(err) || (err == nil && info.Mode().IsRegular()) {
+		// An existing SQLite file with the reserved name only disables apply.
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.IsDir() || info.Mode().Perm()&0077 != 0 {
+		return false, errors.New("unsafe update state directory")
+	}
+	_, err = os.Lstat(filepath.Join(state, "active"))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // superviseUpdates keeps the systemd main PID alive across replacement. All
@@ -221,9 +243,8 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 	}
 	state := filepath.Join(root, ".darkphish-updates")
 	active := filepath.Join(state, "active")
-	_, activeErr := os.Lstat(active)
-	pending := activeErr == nil
-	if activeErr != nil && !os.IsNotExist(activeErr) {
+	pending, activeErr := pendingUpdate(root)
+	if activeErr != nil {
 		return true, activeErr
 	}
 	var l update.Layout

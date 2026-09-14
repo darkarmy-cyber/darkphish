@@ -140,6 +140,9 @@ func updateLayout(conf *config.Config) (update.Layout, error) {
 	if binary != filepath.Join(root, "darkphish") {
 		return update.Layout{}, errors.New("one-click update requires a native release directory")
 	}
+	if err = syscall.Access(root, 2); err != nil {
+		return update.Layout{}, errors.New("one-click update requires a writable native release directory")
+	}
 	if conf.DBName != "sqlite3" {
 		return update.Layout{}, errors.New("one-click update is unsupported for MySQL/PostgreSQL; a consistent backup is not guaranteed")
 	}
@@ -204,6 +207,12 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 	}
 	state := filepath.Join(l.Root, ".darkphish-updates")
 	if err = os.MkdirAll(state, 0700); err != nil {
+		// A read-only native installation remains usable with manual updates.
+		// There cannot be a pending transaction in a state directory we could
+		// not create; configureUpdates will disable apply without a supervisor.
+		if _, stateErr := os.Lstat(state); os.IsNotExist(stateErr) {
+			return false, nil
+		}
 		return true, err
 	}
 	info, err := os.Lstat(state)

@@ -70,6 +70,7 @@ jobs:
           EXPECTED_SHA: ${{ needs.verify.outputs.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Enforce trusted normalization hold
+        if: hashFiles('.github/release-normalization-hold.json') != ''
         env:
           GH_TOKEN: ${{ github.token }}
           RECOVERY_EXECUTION_SHA: ${{ needs.verify.outputs.sha }}

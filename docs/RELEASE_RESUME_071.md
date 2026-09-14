@@ -16,3 +16,23 @@ CI and CodeQL completed before the recovery run. The Windows archive reports
 version 0.7.1 and the exact release source; release PR31 maintainer review was
 independently verified. This recorded evidence is not itself permission to
 publish: the finalizer must revalidate the live state.
+
+PR58 is the sole finalization exception, tied to base
+`88377d6951ede7352acb257777250bdfecd2052b` and its named branch. It removes only
+the temporary normalization hold while leaving the pending-publication freeze
+for ordinary engineering and dependency merges intact. All existing review,
+CI, CodeQL and protected synchronous merge gates remain mandatory.
+
+The resumption workflow executes only immutable protected-main code after CI or
+CodeQL completion and uses the shared `protected-main-mutation` concurrency
+group. It additionally requires main to be the exact reviewed PR58 merge and
+verifies release PR31, source/tag identity, canonical notes, receipt, all asset
+bytes and their original workflow attestations. It repeats checks before and
+after changing only the selected release's draft state. No artifact is uploaded
+or replaced. Historical draft 388031151 remains untouched.
+
+The original publication timestamp must remain `2026-09-14T11:01:32Z`, so all
+existing downstream publication-provenance guards remain authoritative. If
+GitHub changes that timestamp or any other post-publication check fails, the
+workflow withdraws this exact release back to draft and fails closed. It does
+not invent historical timing evidence or relax any existing provenance check.

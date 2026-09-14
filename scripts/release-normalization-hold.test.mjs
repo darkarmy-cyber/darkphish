@@ -8,11 +8,9 @@ const nativeWorkflow = readFileSync(new URL("../.github/workflows/release.yml", 
 const recoveryWorkflow = readFileSync(new URL("../.github/workflows/release-recover.yml", import.meta.url), "utf8")
 const reconcileWorkflow = readFileSync(new URL("../.github/workflows/release-reconcile.yml", import.meta.url), "utf8")
 
-test("normalization hold is active and bound to current VERSION", () => {
-  const hold = normalizationHold()
-  assert.equal(hold.version, "0.7.1")
-  assert.equal(hold.tag, "v0.7.1")
-  assert.equal(hold.source, "73bf5948ed19cd918638453d478ef3f1cbe83d89")
+test("reviewed v0.7.1 resumption removes the temporary normalization hold", () => {
+  assert.equal(normalizationHold(), null)
+  assert.match(reconcileWorkflow, /if: hashFiles\('\.github\/release-normalization-hold\.json'\) != ''/)
 })
 
 test("normalization hold fails closed on schema, fields and source identity", () => {

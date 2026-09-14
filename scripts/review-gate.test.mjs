@@ -68,6 +68,23 @@ test("observed trusted clean reviews certify a complete SHA and pre-merge chrono
   assert.equal(f.writes.length, 0)
 })
 
+test("observed security heading retains original body and all identity/head/chronology checks", async () => {
+  const f = fixture()
+  f.comments[2].body = "### 🛡️ Codex Security Review\n\n" + f.comments[2].body
+  assert.equal((await f.verify()).clean.security.body, f.comments[2].body)
+  for (const change of [
+    g => { g.comments[2].user.id = 1 },
+    g => { g.comments[2].performed_via_github_app.id = 1 },
+    g => { g.comments[2].body = g.comments[2].body.replace(sha.slice(0, 10), "b".repeat(10)) },
+    g => { g.comments[2].body = "Unknown heading\n" + g.comments[2].body },
+    g => { g.comments[2].created_at = at(12) },
+    g => { g.nodes = () => [] },
+  ]) {
+    const g = fixture(); g.comments[2].body = "### 🛡️ Codex Security Review\n\n" + g.comments[2].body; change(g)
+    await assert.rejects(g.verify(), ReviewGateError)
+  }
+})
+
 test("missing, forged, stale, running, failed or malformed evidence always blocks", () => {
   const mutations = [
     f => { f.comments = [] },

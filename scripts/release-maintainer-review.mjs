@@ -1,4 +1,5 @@
 import { generatedPath } from "./release-lib.mjs"
+import { verifyPullRequestReviews } from "./review-gate.mjs"
 
 export class ReleaseMaintainerReviewError extends Error {}
 
@@ -120,6 +121,32 @@ async function verifyResolvedThreads(get, repo, pr) {
   throw new ReleaseMaintainerReviewError("Release review thread pagination limit reached; manual investigation required")
 }
 
+async function verifyLegacyProtectedAutoMerge(get, repo, pr) {
+  requireReview(pr.state === "closed" && pr.merged_at && /^[a-f0-9]{40}$/.test(pr.merge_commit_sha || ""), "Historical release PR lacks immutable merge provenance")
+  // One audited pre-attestation merge, not a general alternative to maintainer
+  // approval. Prepare run 34100513780 queued this exact head through protected
+  // native auto-merge; the PR merge event records the Actions actor and digest.
+  // Changing this tuple requires a new reviewed policy change.
+  requireReview(repo === "darkarmy-cyber/darkphish" && pr.number === 20 &&
+    pr.head.ref === "release/v0.7.0" && pr.head.sha === "67848d4dcd25023899fa587e5d6b2dbd6f78b55b" &&
+    pr.base.sha === "38504372fb5f59ce989e15228fef70f0709f5e48" &&
+    pr.merge_commit_sha === "355d2881a4d5eea162d46a1c155998b1fb8c9f36" &&
+    pr.merged_at === "2026-09-07T08:29:08Z" && trustedActionsActor(pr.merged_by),
+  "Historical release is not the audited pre-attestation protected merge")
+  // Old releases predate maintainer attestations, not review itself. Authenticate
+  // both original exact-head results, their editors and pre-merge chronology.
+  // Source-code substrings (including dead code/comments) prove no execution.
+  const evidence = await verifyPullRequestReviews(repo, pr, {
+    get, query: (body) => get("graphql", { method: "POST", body }),
+  })
+  const finalPR = await get(`repos/${repo}/pulls/${pr.number}`)
+  requireReview(finalPR.number === pr.number && finalPR.head?.repo?.full_name === repo && finalPR.head?.ref === pr.head.ref &&
+    finalPR.head?.sha === pr.head.sha && finalPR.base?.ref === "main" && finalPR.base?.sha === pr.base.sha && finalPR.title === pr.title &&
+    finalPR.state === pr.state && finalPR.merged_at === pr.merged_at && finalPR.merge_commit_sha === pr.merge_commit_sha && trustedActionsActor(finalPR.merged_by),
+  "Historical release PR changed during protected auto-merge verification")
+  return { ...evidence, historicalConnectorReviews: true, mergeCommit: pr.merge_commit_sha }
+}
+
 export function releaseReviewBody(repo, pr) {
   requireReview(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) && Number.isSafeInteger(pr?.number) && pr.number > 0 &&
     /^[a-f0-9]{40}$/.test(pr?.head?.sha || "") && /^[a-f0-9]{40}$/.test(pr?.base?.sha || ""), "Invalid release review body target")
@@ -159,7 +186,9 @@ export async function verifyReleaseMaintainerReview(repo, pr, { get }) {
   requireReview(![...opinions.values()].includes("CHANGES_REQUESTED"), "A reviewer still requests changes on the release PR")
 
   const trusted = reviews.filter((review) => trustedReleaseReviewer(review.user))
-  requireReview(trusted.length > 0, "Missing trusted maintainer generated-release review")
+  if (trusted.length === 0) {
+    return verifyLegacyProtectedAutoMerge(get, repo, pr)
+  }
   const latest = trusted.reduce((current, review) => !current || review.id > current.id ? review : current, null)
   requireReview(latest.state === "APPROVED" && latest.commit_id === pr.head.sha, "Trusted maintainer review is not an approval of the exact release head")
   parseAttestation(repo, pr, latest)

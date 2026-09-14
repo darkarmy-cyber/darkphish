@@ -4,26 +4,20 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { api, assertCurrentVersionPublished, expectedReleaseAssetNames, greenCommit, pages, peelTagToCommit, repository, versionTag } from "../../scripts/release-lib.mjs"
+import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-function notesForVersion(changelog, version) {
-  const start = changelog.indexOf(`## ${version} - `)
-  if (start < 0) throw new Error("release source changelog is missing the release section")
-  const end = changelog.indexOf("\n## ", start + 1)
-  return changelog.slice(start, end < 0 ? undefined : end).trim()
-}
 function releaseName(version) { return `Darkphish ${version.split(".").slice(0, 2).join(".")}` }
-function releaseBody(notes, source) { return `${notes}\n\nSource commit: ${source}\n\n<!-- darkphish-release-source:${source} -->\n\nNative binaries, SHA-256 checksums and SPDX SBOM are attached.` }
 async function sourceText(repo, path, source) {
   const file = await api(`repos/${repo}/contents/${path}?ref=${source}`)
   if (file?.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") throw new Error(`release source ${path} is unavailable`)
   return Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf8")
 }
-async function expectedMetadata(repo, source, version) { return { name: releaseName(version), body: releaseBody(notesForVersion(await sourceText(repo, "CHANGELOG.md", source), version), source) } }
+async function expectedMetadata(repo, source, version) { return { name: releaseName(version), body: canonicalReleaseBody(await sourceText(repo, "CHANGELOG.md", source), version, source) } }
 function assertExactPublished(release, version, source, expected) {
   if (!release || release.tag_name !== versionTag(version) || release.target_commitish !== source || release.name !== expected.name || release.body !== expected.body || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) throw new Error("published recovery metadata changed before attestation acceptance")
   return release
@@ -73,12 +67,12 @@ function verifyAttestation(repo, path, executionSHA) {
   const invocationId = `https://github.com/${repo}/actions/runs/${runId}/attempts/${runAttempt}`
   if (!Array.isArray(verified) || !verified.some((entry) => entry?.verificationResult?.statement?.predicate?.runDetails?.metadata?.invocationId === invocationId)) throw new Error("recovery attestation is not bound to this workflow run and attempt")
 }
-function snapshot(assets) { return new Map(assets.map((asset) => [asset.name, { digest: asset.digest, size: asset.size, uploader: asset.uploader?.id, state: asset.state }])) }
+function snapshot(assets) { return new Map(assets.map((asset) => [asset.name, { id: asset.id, digest: asset.digest, size: asset.size, uploader: asset.uploader?.id, state: asset.state }])) }
 function assertSnapshot(assets, expected) {
   if (assets.length !== expected.size) throw new Error("recovery asset set changed during final attestation verification")
   for (const asset of assets) {
     const prior = expected.get(asset.name)
-    if (!prior || asset.digest !== prior.digest || asset.size !== prior.size || asset.uploader?.id !== prior.uploader || asset.state !== prior.state) throw new Error("recovery asset state changed during final attestation verification")
+    if (!prior || asset.id !== prior.id || asset.digest !== prior.digest || asset.size !== prior.size || asset.uploader?.id !== prior.uploader || asset.state !== prior.state) throw new Error("recovery asset state changed during final attestation verification")
   }
 }
 async function assertPublishedSnapshot(repo, releaseId, tag, version, source, expected, expectedTag, expectedAssets) {

@@ -7,9 +7,9 @@ const workflow = readFileSync(new URL("../workflows/release-recover.yml", import
 const guard = readFileSync(new URL("./release-missing-tag-guard.mjs", import.meta.url), "utf8")
 
 test("recovery metadata and publication stay bound to canonical source metadata", () => {
-  assert.match(script, /notesForVersion/)
+  assert.match(script, /releaseBody as canonicalReleaseBody/)
   assert.match(script, /releaseName/)
-  assert.match(script, /releaseBody/)
+  assert.match(script, /body: canonicalReleaseBody\(await sourceText\(repo, "CHANGELOG\.md", source\), version, source\)/)
   assert.match(script, /pending release draft metadata does not exactly match the verified source/)
   assert.match(script, /published release metadata does not exactly match the verified source/)
   assert.match(script, /verifyReleaseMaintainerReview/)

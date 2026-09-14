@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -9,6 +9,7 @@ import {
 } from "./release-lib.mjs"
 import { matchesTrustedReleaseBody } from "./release-body-match.mjs"
 import { releaseBody } from "./release-notes.mjs"
+import { recoveryJobsProveStagedArtifacts, verifyReceiptBackedArtifacts } from "./release-staged-provenance.mjs"
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "./release-maintainer-review.mjs"
 
@@ -177,11 +178,42 @@ async function verifyRecoveryPublication(repo, release, main, assets, local) {
   throw new Error(`${release.tag_name}: no qualifying fully attested recovery publication run`)
 }
 
+async function verifyReceiptBackedRecovery(repo, release, version, source, main, assets, local) {
+  const receiptName = `darkphish-v${version}.release.json`
+  const manifest = local.get("SHA256SUMS"), receipt = local.get(receiptName)
+  if (!manifest || !receipt) throw new Error(`${release.tag_name}: receipt-backed release evidence is incomplete`)
+  verifyReceiptBackedArtifacts({
+    version,
+    source,
+    assets,
+    local,
+    manifestText: readFileSync(manifest.path, "utf8"),
+    receiptText: readFileSync(receipt.path, "utf8"),
+  })
+  const runs = await pages(`repos/${repo}/actions/workflows/release-recover.yml/runs?branch=main&status=success`, "workflow_runs")
+  for (const run of runs.sort((a, b) => b.id - a.id)) {
+    try {
+      if (run.name !== "Recover pending release" || run.path !== ".github/workflows/release-recover.yml" || run.head_branch !== "main" || !sha40(run.head_sha) || !["workflow_run", "schedule"].includes(run.event) || run.status !== "completed" || run.conclusion !== "success") continue
+      await verifySourceAncestry(repo, run.head_sha, main)
+      await exactChecksBefore(repo, run.head_sha, timestamp(run.created_at, "staged recovery run creation"))
+      const jobs = await pages(`repos/${repo}/actions/runs/${run.id}/jobs`, "jobs")
+      if (!recoveryJobsProveStagedArtifacts(jobs)) continue
+      for (const asset of assets) verifyAttestation(repo, local.get(asset.name), ".github/workflows/release-recover.yml", run.head_sha, run)
+      return run
+    } catch (error) { console.warn(`${release.tag_name}: ignoring non-qualifying receipt-backed recovery run ${run.id}: ${error.message}`) }
+  }
+  throw new Error(`${release.tag_name}: no qualifying fully attested receipt-backed recovery run`)
+}
+
 async function verifyPublicationProvenance(repo, release, version, source, main, assets) {
   await verifySourceAncestry(repo, source, main)
   await verifiedReleasePR(repo, source, version, release.tag_name)
   const { directory, local } = await downloadAssets(repo, assets, release.tag_name)
   try {
+    if (assets.some((asset) => asset.name === `darkphish-v${version}.release.json`)) {
+      try { return await verifyReceiptBackedRecovery(repo, release, version, source, main, assets, local) }
+      catch (stagedError) { console.warn(`${release.tag_name}: receipt-backed staged provenance did not qualify: ${stagedError.message}`) }
+    }
     try { return await verifyNativePublication(repo, release, source, assets, local) }
     catch (nativeError) { return await verifyRecoveryPublication(repo, release, main, assets, local) }
   } finally { rmSync(directory, { recursive: true, force: true }) }

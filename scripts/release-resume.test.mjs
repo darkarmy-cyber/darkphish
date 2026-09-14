@@ -127,7 +127,11 @@ test("resumption workflow runs immutable main code in the shared serialization g
   const workflow = readFileSync(new URL("../.github/workflows/release-resume.yml", import.meta.url), "utf8")
   assert.match(workflow, /workflow_run:/)
   assert.doesNotMatch(workflow, /workflow_dispatch:|pull_request_target:/)
-  assert.match(workflow, /ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/)
+  const immutable = "${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}"
+  assert.ok(workflow.includes(`ref: ${immutable}`))
+  assert.ok(workflow.includes(`RESUME_EXECUTION_SHA: ${immutable}`))
+  assert.match(workflow, /schedule:\n\s+- cron: '11,26,41,56 \* \* \* \*'/)
+  assert.match(workflow, /github\.ref == 'refs\/heads\/main'/)
   assert.match(workflow, /group: protected-main-mutation\n\s+cancel-in-progress: false/)
   assert.match(workflow, /persist-credentials: false/)
   for (const file of ["release-resume.yml", "release-reconcile.yml"]) {

@@ -42,3 +42,8 @@ Both generic native/recovery publishers are explicitly held while VERSION is
 returns for the next version. Later main commits skip the one-shot resumption.
 Failed publication withdrawal retries PATCH plus direct-ID, release collection
 and tag probes, with a critical failure if private state cannot be confirmed.
+
+A staggered 15-minute default-main schedule is the durable retry path if GitHub
+replaces a pending concurrency-group member. It uses immutable `github.sha`,
+the same authorization/verification rules and the same serialization group;
+later main commits no-op. There is no branch-dispatchable privileged entry point.

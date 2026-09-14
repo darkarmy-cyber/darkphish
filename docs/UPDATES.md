@@ -21,6 +21,13 @@ multi-instance configurations and external database engines are unsupported.
 The Update tab explains why apply is unavailable; it never falls back to a
 live copy of a MySQL or PostgreSQL database.
 
+An administrator must separately install GitHub CLI 2.100.0 or newer as
+`/usr/bin/gh`. The executable and its parent directories must be root-owned,
+not symlinks, and not group/world writable. Missing or outdated verifiers make
+apply unavailable. Darkphish never downloads its own verifier. No GitHub login
+or token is required: public attestation bundles are fetched without credentials
+and verified offline against the embedded Sigstore Public Good trust root.
+
 Keep environment files and secret mounts outside managed runtime directories.
 Configured external secret/certificate files beside the binary are explicitly
 excluded and listed in the backup manifest. Configured secret files may not
@@ -40,6 +47,16 @@ The trust boundary requires the canonical GitHub Actions bot identity, the
 complete expected native artifact set, GitHub SHA-256 digests, SHA256SUMS,
 and the publication receipt binding the checksum manifest, tag and immutable
 source commit. The tag must resolve to that commit before and after download.
+Before downloading or probing the replacement executable, the checksum manifest
+must pass Sigstore signature, certificate transparency, Rekor log and timestamp
+verification. Certificate policy pins the GitHub OIDC issuer, this repository's
+`release.yml@refs/heads/main`, GitHub-hosted runners, and the exact source and
+signer commit. A release-write credential alone cannot forge this evidence.
+The verifier receives an isolated environment/config directory without inherited
+secrets or credentials. Missing attestations, unknown signing keys and every
+verification failure stop apply before the application is stopped or changed.
+Trust-root rotation requires a reviewed application change; it is never accepted
+from update metadata. Operators must keep the independent verifier patched.
 The extracted VERSION and executable build identity must agree. Archive links,
 traversal, duplicate paths, unknown roots and oversized payloads are rejected.
 
@@ -66,5 +83,5 @@ against this SQLite installation. Update backups and results remain under
 `update.check`, `update.backup`, `update.apply` and `update.rollback`.
 
 No release, CI, CodeQL, branch protection or PR review gate is relaxed by this
-feature. Runtime receipt verification relies on the repository's existing
-trusted publication workflow and GitHub's authenticated HTTPS metadata.
+feature. Runtime verification requires both publication metadata and independent
+Sigstore evidence produced by the trusted publication workflow.

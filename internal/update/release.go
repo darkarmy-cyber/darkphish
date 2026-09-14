@@ -287,6 +287,12 @@ func (c *Client) VerifiedArchive(ctx context.Context, r Release, arch string) ([
 	if err = VerifyEvidence(r, manifest, receipt); err != nil {
 		return nil, err
 	}
+	// A receipt and GitHub asset digests alone are reproducible by a release
+	// writer. Require independently signed workflow evidence before returning
+	// any executable bytes to the supervisor (including its version probe).
+	if err = c.verifyAttestation(ctx, r, manifest); err != nil {
+		return nil, err
+	}
 	b, err := c.asset(ctx, r, "darkphish-"+r.Tag+"-linux-"+arch+".tar.gz", 512<<20)
 	if err != nil {
 		return nil, err

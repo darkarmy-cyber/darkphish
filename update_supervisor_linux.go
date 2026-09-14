@@ -152,6 +152,9 @@ func updateLayout(conf *config.Config) (update.Layout, error) {
 	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
 		return update.Layout{}, errors.New("one-click update supports Linux amd64/arm64 only")
 	}
+	if err := update.AttestationSupport(); err != nil {
+		return update.Layout{}, err
+	}
 	configAbs, err := filepath.Abs(*configPath)
 	if err != nil {
 		return update.Layout{}, err

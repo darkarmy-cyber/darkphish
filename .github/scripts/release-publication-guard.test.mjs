@@ -76,3 +76,16 @@ test("all trusted paths close with release, tag, assets, and protected-main TOCT
   const finalMainChecks = guard.match(/await executionMain\(repo, process\.env\.RECOVERY_EXECUTION_SHA\)/g) || []
   assert.ok(finalMainChecks.length >= 2)
 })
+
+test("normalization hold verifies trusted provenance before withdrawing publication", () => {
+  const hold = guard.slice(guard.indexOf("async function holdPublication"), guard.indexOf("function generateReceipt"))
+  assert.match(hold, /normalizationHold\(\)/)
+  assert.match(hold, /releases\/tags\/\$\{hold\.tag\}/)
+  assert.match(hold, /commonPublishedState\(/)
+  assert.match(hold, /verifyRecoveryPublication\(/)
+  assert.match(hold, /verifyNativePublication\(/)
+  assert.match(hold, /withdrawUnverified\(/)
+  assert.match(hold, /assertSameAssets\(/)
+  assert.match(hold, /immutable release tag changed while entering normalization hold/)
+  assert.match(guard, /command === "hold" \? holdPublication/)
+})

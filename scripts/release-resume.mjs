@@ -47,42 +47,45 @@ export async function resumeRelease(main, { request = api, execution = execution
   if (candidate.state !== "closed" || !candidate.merged_at || candidate.merge_commit_sha !== main) {
     log("Not the one-shot PR58 merge; no resumption mutation."); return
   }
-  if (hold()) throw new Error("Release normalization hold remains active")
-  await execution(repo, main)
-  const checkAuthorization = async () => {
-    const pr = await request(`repos/${repo}/pulls/58`)
-    if (pr.number !== 58 || pr.state !== "closed" || !pr.merged_at || pr.merge_commit_sha !== main || pr.base?.ref !== "main" ||
-      pr.head?.repo?.full_name !== repo || pr.head.ref !== "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-finalize") {
-      throw new Error("Current main is not the reviewed resumption PR58 merge")
-    }
-    await reviews(repo, pr, { get: request, query: body => request("graphql", { method: "POST", body }) })
-  }
-  await checkAuthorization()
   let release = await request(`repos/${repo}/releases/${releaseID}`)
-  assertIdentity(release)
-  const trusted = await verify(repo, release, main)
-  assertManifest(trusted)
-  const checkTag = async () => {
-    const ref = await request(`repos/${repo}/git/ref/tags/v0.7.1`)
-    if (!trusted.tagState || ref?.object?.type !== trusted.tagState.objectType || ref.object.sha !== trusted.tagState.objectSha) {
-      throw new Error("Immutable tag object changed during resumption")
-    }
-  }
-  if (release.body !== trusted.body) throw new Error("Source-derived release notes must be reconciled before resumption")
-  if (release.draft === false) { log("Verified v0.7.1 is already public; no mutation."); return }
-  if (release.draft !== true) throw new Error("Unexpected resumption draft state")
-  await execution(repo, main)
-  await checkAuthorization()
-  const closing = await request(`repos/${repo}/releases/${releaseID}`)
-  assertIdentity(closing)
-  if (closing.draft !== true || closing.body !== release.body) throw new Error("Draft changed before resumption")
-  const assets = await request(`repos/${repo}/releases/${releaseID}/assets?per_page=100`)
-  if (!Array.isArray(assets) || assets.length !== trusted.assets.size || new Set(assets.map(a => a.name)).size !== assets.length || assets.some(a => {
-    const old = trusted.assets.get(a.name)
-    return !old || a.id !== old.id || a.digest !== old.digest || a.size !== old.size || a.state !== "uploaded" || !actor(a.uploader)
-  })) throw new Error("Draft assets changed before resumption")
-  await checkTag()
+  let mayBePublic = release?.draft === false
   try {
+    if (hold()) throw new Error("Release normalization hold remains active")
+    await execution(repo, main)
+    const checkAuthorization = async () => {
+      const pr = await request(`repos/${repo}/pulls/58`)
+      if (pr.number !== 58 || pr.state !== "closed" || !pr.merged_at || pr.merge_commit_sha !== main || pr.base?.ref !== "main" ||
+        pr.head?.repo?.full_name !== repo || pr.head.ref !== "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-finalize") {
+        throw new Error("Current main is not the reviewed resumption PR58 merge")
+      }
+      await reviews(repo, pr, { get: request, query: body => request("graphql", { method: "POST", body }) })
+    }
+    await checkAuthorization()
+    assertIdentity(release)
+    const trusted = await verify(repo, release, main)
+    assertManifest(trusted)
+    const checkTag = async () => {
+      const ref = await request(`repos/${repo}/git/ref/tags/v0.7.1`)
+      if (!trusted.tagState || ref?.object?.type !== trusted.tagState.objectType || ref.object.sha !== trusted.tagState.objectSha) {
+        throw new Error("Immutable tag object changed during resumption")
+      }
+    }
+    if (release.body !== trusted.body) throw new Error("Source-derived release notes must be reconciled before resumption")
+    if (release.draft === false) { log("Verified v0.7.1 is already public; no mutation."); return }
+    if (release.draft !== true) throw new Error("Unexpected resumption draft state")
+    await execution(repo, main)
+    await checkAuthorization()
+    const closing = await request(`repos/${repo}/releases/${releaseID}`)
+    if (closing?.draft === false) mayBePublic = true
+    assertIdentity(closing)
+    if (closing.draft !== true || closing.body !== release.body) throw new Error("Draft changed before resumption")
+    const assets = await request(`repos/${repo}/releases/${releaseID}/assets?per_page=100`)
+    if (!Array.isArray(assets) || assets.length !== trusted.assets.size || new Set(assets.map(a => a.name)).size !== assets.length || assets.some(a => {
+      const old = trusted.assets.get(a.name)
+      return !old || a.id !== old.id || a.digest !== old.digest || a.size !== old.size || a.state !== "uploaded" || !actor(a.uploader)
+    })) throw new Error("Draft assets changed before resumption")
+    await checkTag()
+    mayBePublic = true // A transport error does not prove the publish PATCH failed.
     await request(`repos/${repo}/releases/${releaseID}`, { method: "PATCH", body: { draft: false, prerelease: false, make_latest: "true" } })
     release = await request(`repos/${repo}/releases/${releaseID}`)
     assertIdentity(release)
@@ -107,7 +110,7 @@ export async function resumeRelease(main, { request = api, execution = execution
   } catch (error) {
     // The write may have succeeded despite a transport error. Withdraw only the
     // precisely authorized release; never delete or replace any artifact.
-    await withdrawRelease(request, delay)
+    if (mayBePublic) await withdrawRelease(request, delay)
     throw error
   }
 }

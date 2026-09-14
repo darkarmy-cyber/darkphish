@@ -51,6 +51,17 @@ test("already verified public release is never republished", async () => {
   const f = fixture(); f.release.draft = false; await f.run(); assert.equal(f.writes.length, 0)
 })
 
+test("retry after runner termination withdraws an already-public unverified selected release", async () => {
+  for (const change of [f => { f.release.published_at = "2026-09-14T15:00:00Z" },
+    f => { f.badProvenance = true }, f => { f.badReviews = true }, f => { f.badMain = true },
+    f => { f.release.body = "changed" }]) {
+    const f = fixture(); f.release.draft = false; change(f)
+    await assert.rejects(f.run())
+    assert.deepEqual(f.writes, [{ draft: true, prerelease: false, make_latest: "false" }])
+    assert.equal(f.release.draft, true)
+  }
+})
+
 test("hold, wrong main/PR, missing review, provenance and changed identity prevent publication", async () => {
   for (const change of [f => { f.hold = {} }, f => { f.badMain = true }, f => { f.badReviews = true },
     f => { f.badProvenance = true }, f => { f.release.id = 388031151 },

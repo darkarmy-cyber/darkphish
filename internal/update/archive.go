@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -17,13 +18,21 @@ var runtimeEntries = []string{"darkphish", "VERSION", "LICENSE", "NOTICE.md", "R
 // Extract accepts only regular native release files. Symlinks, hardlinks,
 // devices, ambiguous names, duplicates and archive bombs are rejected.
 func Extract(data []byte, dest, version, arch string) error {
+	return ExtractContext(context.Background(), data, dest, version, arch)
+}
+
+// ExtractContext interrupts decompression and copying when the service stops.
+func ExtractContext(ctx context.Context, data []byte, dest, version, arch string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if _, err := Compare(version, version); err != nil {
 		return err
 	}
 	if arch != "amd64" && arch != "arm64" {
 		return errors.New("unsupported architecture")
 	}
-	gz, err := gzip.NewReader(bytes.NewReader(data))
+	gz, err := gzip.NewReader(contextReader{ctx, bytes.NewReader(data)})
 	if err != nil {
 		return err
 	}
@@ -33,6 +42,9 @@ func Extract(data []byte, dest, version, arch string) error {
 	seen := map[string]bool{}
 	var total int64
 	for count := 0; ; count++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		h, err := tr.Next()
 		if err == io.EOF {
 			break
@@ -94,7 +106,7 @@ func Extract(data []byte, dest, version, arch string) error {
 		if err != nil {
 			return err
 		}
-		_, copyErr := io.CopyN(f, tr, h.Size)
+		_, copyErr := io.CopyN(f, contextReader{ctx, tr}, h.Size)
 		syncErr := f.Sync()
 		closeErr := f.Close()
 		if err = errors.Join(copyErr, syncErr, closeErr); err != nil {
@@ -114,12 +126,31 @@ func Extract(data []byte, dest, version, arch string) error {
 	if err != nil || strings.TrimSpace(string(v)) != version {
 		return errors.New("archive version mismatch")
 	}
-	return syncTreeDirectories(dest)
+	return syncTreeDirectoriesContext(ctx, dest)
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
 }
 
 func syncTreeDirectories(root string) error {
+	return syncTreeDirectoriesContext(context.Background(), root)
+}
+
+func syncTreeDirectoriesContext(ctx context.Context, root string) error {
 	var directories []string
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err != nil {
 			return err
 		}
@@ -131,6 +162,9 @@ func syncTreeDirectories(root string) error {
 		return err
 	}
 	for i := len(directories) - 1; i >= 0; i-- {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := syncDir(directories[i]); err != nil {
 			return err
 		}

@@ -51,10 +51,11 @@ func startSupervised(binary string, outcome ...string) (*supervisedChild, error)
 		w.Close()
 		return nil, err
 	}
-	cmd.Env = append(os.Environ(), childEnvironment+"=1")
+	cmd.Env = updateResultEnvironment("", "")
 	if len(outcome) == 2 {
-		cmd.Env = append(cmd.Env, "DARKPHISH_UPDATE_RESULT="+outcome[0], "DARKPHISH_UPDATE_TAG="+outcome[1])
+		cmd.Env = updateResultEnvironment(outcome[0], outcome[1])
 	}
+	cmd.Env = append(cmd.Env, childEnvironment+"=1")
 	cmd.ExtraFiles = []*os.File{w, feedbackReader}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -375,11 +376,13 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 				continue
 			}
 			if err = createActiveTransaction(state, active, l); err != nil {
-				return true, errors.Join(err, child.stop())
+				fmt.Fprintln(os.Stderr, "update preparation failed; application was not changed:", err)
+				_, _ = cWrite(child, "failed")
+				continue
 			}
 			stage := filepath.Join(active, "stage")
 			if err = os.Mkdir(stage, 0700); err == nil {
-				err = update.Extract(archive, stage, latest.Version(), runtime.GOARCH)
+				err = update.ExtractContext(stopContext, archive, stage, latest.Version(), runtime.GOARCH)
 			}
 			if err == nil {
 				probeContext, stopProbe := context.WithTimeout(stopContext, 10*time.Second)

@@ -337,5 +337,6 @@ func main() {
 	if *mode == modePhish || *mode == modeAll {
 		phishServer.Shutdown()
 	}
+	webhook.Shutdown()
 
 }

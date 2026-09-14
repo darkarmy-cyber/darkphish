@@ -206,6 +206,15 @@ func TestUpdateResultSurvivesSupervisorReload(t *testing.T) {
 	if strings.Contains(env, "DARKPHISH_UPDATE_RESULT=stale") || strings.Count(env, "DARKPHISH_UPDATE_RESULT=") != 1 || !strings.Contains(env, "DARKPHISH_UPDATE_RESULT=applied") || !strings.Contains(env, "DARKPHISH_UPDATE_TAG=v0.8.0") {
 		t.Fatal("reload lost or duplicated update outcome")
 	}
+	for _, result := range []string{"", "rollback", "backup_failed"} {
+		env = strings.Join(updateResultEnvironment(result, "v0.8.1"), "\n")
+		if strings.Contains(env, "=stale") || strings.Count(env, "DARKPHISH_UPDATE_RESULT=") > 1 {
+			t.Fatal("child inherited stale outcome")
+		}
+		if result != "" && !strings.Contains(env, "DARKPHISH_UPDATE_RESULT="+result) {
+			t.Fatal("child lost failure outcome")
+		}
+	}
 }
 
 func TestUpdateRuntimePaths(t *testing.T) {

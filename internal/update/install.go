@@ -95,7 +95,14 @@ func (l Layout) Validate() error {
 }
 
 func copyTree(src, dst string) error {
+	return copyTreeContext(context.Background(), src, dst)
+}
+
+func copyTreeContext(ctx context.Context, src, dst string) error {
 	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err != nil {
 			return err
 		}
@@ -132,7 +139,7 @@ func copyTree(src, dst string) error {
 		if err != nil {
 			return err
 		}
-		_, err = io.Copy(out, in)
+		_, err = io.Copy(out, contextReader{ctx, in})
 		return errors.Join(err, out.Sync(), out.Close())
 	})
 }
@@ -168,7 +175,7 @@ func Backup(ctx context.Context, l Layout, dest string) error {
 		return err
 	}
 	for _, entry := range runtimeEntries {
-		if err := copyTree(filepath.Join(l.Root, entry), filepath.Join(dest, entry)); err != nil {
+		if err := copyTreeContext(ctx, filepath.Join(l.Root, entry), filepath.Join(dest, entry)); err != nil {
 			return err
 		}
 	}
@@ -215,6 +222,9 @@ func Backup(ctx context.Context, l Layout, dest string) error {
 	}
 	hashes := map[string]string{}
 	err = filepath.WalkDir(dest, func(p string, d os.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err != nil {
 			return err
 		}
@@ -226,7 +236,7 @@ func Backup(ctx context.Context, l Layout, dest string) error {
 			return err
 		}
 		h := sha256.New()
-		_, err = io.Copy(h, f)
+		_, err = io.Copy(h, contextReader{ctx, f})
 		closeErr := f.Close()
 		if err = errors.Join(err, closeErr); err != nil {
 			return err
@@ -260,10 +270,10 @@ func (t Transaction) InstallContext(ctx context.Context, stage string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := verifyBackup(filepath.Join(t.Directory, "backup")); err != nil {
+	if err := verifyBackupContext(ctx, filepath.Join(t.Directory, "backup")); err != nil {
 		return errors.New("completed backup required before install")
 	}
-	if err := syncTreeDirectories(stage); err != nil {
+	if err := syncTreeDirectoriesContext(ctx, stage); err != nil {
 		return err
 	}
 	if err := os.Mkdir(filepath.Join(t.Directory, "original"), 0700); err != nil {
@@ -367,6 +377,10 @@ func (t Transaction) Rollback() error {
 }
 
 func verifyBackup(directory string) error {
+	return verifyBackupContext(context.Background(), directory)
+}
+
+func verifyBackupContext(ctx context.Context, directory string) error {
 	b, err := os.ReadFile(filepath.Join(directory, "backup-manifest.json"))
 	if err != nil {
 		return err
@@ -382,6 +396,9 @@ func verifyBackup(directory string) error {
 		return errors.New("invalid backup manifest")
 	}
 	for name, want := range manifest.Files {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if !filepath.IsLocal(name) || strings.Contains(name, "\\") {
 			return errors.New("unsafe backup manifest path")
 		}
@@ -395,7 +412,7 @@ func verifyBackup(directory string) error {
 			return err
 		}
 		h := sha256.New()
-		_, err = io.Copy(h, f)
+		_, err = io.Copy(h, contextReader{ctx, f})
 		closeErr := f.Close()
 		if err = errors.Join(err, closeErr); err != nil {
 			return err

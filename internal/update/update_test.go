@@ -178,6 +178,24 @@ func TestCancelledInstallDoesNotMutateRuntime(t *testing.T) {
 	}
 }
 
+func TestExtractionAndCopyObserveCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	reader := contextReader{ctx, strings.NewReader("archive contents")}
+	if n, err := reader.Read(make([]byte, 1)); err != nil || n != 1 {
+		t.Fatal("initial read failed", err)
+	}
+	cancel()
+	if _, err := reader.Read(make([]byte, 1)); err != context.Canceled {
+		t.Fatal("copy ignored cancellation", err)
+	}
+	if err := ExtractContext(ctx, nil, t.TempDir(), "0.8.0", "amd64"); err != context.Canceled {
+		t.Fatal("extraction ignored cancellation", err)
+	}
+	if err := copyTreeContext(ctx, t.TempDir(), t.TempDir()); err != context.Canceled {
+		t.Fatal("backup copy ignored cancellation", err)
+	}
+}
+
 func TestStableSemVer(t *testing.T) {
 	for _, tc := range []struct {
 		a, b string

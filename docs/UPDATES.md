@@ -72,6 +72,8 @@ database results to finish. It never force-kills a delivery to advance an update
 a hung SMTP/IMAP operation or active HTTP request leaves apply waiting for
 operator intervention. IMAP shutdown joins its manager and per-user polling
 goroutines, including report persistence and unread restoration. It
+also joins accepted webhook deliveries after their event producers stop, and
+archive extraction and backup copying observe service-stop cancellation. It
 backs up the original config, binary, migrations, templates, static runtime
 files and release metadata. Backups are owner-only, with a manifest containing
 file checksums. Resolved environment secrets and Vault tokens are never

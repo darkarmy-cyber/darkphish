@@ -188,8 +188,10 @@ func checkForNewEmails(ctx context.Context, im models.IMAP) {
 
 	if len(msgs) > 0 {
 		log.Debugf("%d new emails for %s", len(msgs), im.Username)
-		var processed []uint32 // UIDs acknowledged only after report persistence.
-		var deleteEmails []uint32    // SeqNums of campaign emails. If DeleteReportedCampaignEmail is true, we will delete these
+		// UIDs acknowledged only after report persistence.
+		var processed []uint32
+		// Successfully reported campaign UIDs eligible for configured deletion.
+		var deleteEmails []uint32
 		for _, m := range msgs {
 			// Check if sender is from company's domain, if enabled. TODO: Make this an IMAP filter
 			if im.RestrictDomain != "" { // e.g domainResitct = widgets.com

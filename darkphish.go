@@ -34,6 +34,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
@@ -126,6 +127,10 @@ func writeExclusive(path string, value []byte) error {
 	}
 	complete = true
 	return nil
+}
+
+func notifyShutdown(c chan<- os.Signal) {
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 }
 
 func main() {
@@ -306,6 +311,9 @@ func main() {
 	phishServer := controllers.NewPhishingServer(phishConfig)
 
 	imapMonitor := imap.NewMonitor()
+	c := make(chan os.Signal, 1)
+	notifyShutdown(c)
+	defer signal.Stop(c)
 	if *mode == "admin" || *mode == "all" {
 		go adminServer.Start()
 		go func() {
@@ -320,10 +328,8 @@ func main() {
 	}
 
 	// Handle graceful shutdown
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
 	<-c
-	log.Info("CTRL+C Received... Gracefully shutting down servers")
+	log.Info("Shutdown signal received; gracefully shutting down servers")
 	if *mode == modeAdmin || *mode == modeAll {
 		adminServer.Shutdown()
 		imapMonitor.Shutdown()

@@ -4,12 +4,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -88,6 +89,42 @@ func TestActiveTransactionPublishesCompleteLayout(t *testing.T) {
 	if err != nil || len(entries) != 1 || entries[0].Name() != "active" {
 		t.Fatal("failed preparation was not cleaned up")
 	}
+}
+
+func TestPreInstallCancellationDoesNotRequireBackup(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv(childEnvironment, "")
+	previous := *configPath
+	*configPath = filepath.Join(root, "config.json")
+	defer func() { *configPath = previous }()
+	state := filepath.Join(root, ".darkphish-updates")
+	if err := os.Mkdir(state, 0700); err != nil {
+		t.Fatal(err)
+	}
+	active := filepath.Join(state, "active")
+	if err := createActiveTransaction(state, active, update.Layout{Database: "darkphish.db"}); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate cancellation during backup: no install marker or manifest exists.
+	// The intentionally absent executable makes exec return instead of replacing
+	// the test process, proving recovery reached normal restart without rollback.
+	if handled, err := recoverPendingUpdate(); !handled || !errors.Is(err, syscall.ENOENT) {
+		t.Fatal("pre-install recovery incorrectly required a backup", err)
+	}
+	if _, err := os.Lstat(active); !os.IsNotExist(err) {
+		t.Fatal("pre-install journal was not retired", err)
+	}
+	entries, err := os.ReadDir(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "recovered-") {
+			return
+		}
+	}
+	t.Fatal("retired pre-install journal missing")
 }
 
 func TestRecoveryLayoutDoesNotRequireNewUpdateEligibility(t *testing.T) {
@@ -187,7 +224,7 @@ func TestUpdateRuntimePaths(t *testing.T) {
 func TestSupervisorSignalsGracefulShutdown(t *testing.T) {
 	if marker := os.Getenv("DARKPHISH_TEST_SHUTDOWN_MARKER"); marker != "" {
 		shutdown := make(chan os.Signal, 1)
-		signal.Notify(shutdown, os.Interrupt)
+		notifyShutdown(shutdown)
 		_, _ = os.Stdout.WriteString("ready")
 		<-shutdown
 		if os.WriteFile(marker, []byte("drained"), 0600) != nil {
@@ -225,6 +262,10 @@ func TestSupervisorSignalsGracefulShutdown(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("shutdown fixture did not start")
+	}
+	// systemd's control-group stop also sends SIGTERM directly to the child.
+	if err = cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
 	}
 	if err = child.stop(); err != nil {
 		t.Fatal(err)

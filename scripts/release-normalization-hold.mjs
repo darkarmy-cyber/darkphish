@@ -1,4 +1,5 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs"
+import { pathToFileURL } from "node:url"
 import { versionTag } from "./release-lib.mjs"
 
 const path = new URL("../.github/release-normalization-hold.json", import.meta.url)
@@ -18,11 +19,15 @@ export function normalizationHold() {
   return Object.freeze({ version: value.version, source: value.source_sha, tag: versionTag(value.version) })
 }
 
-const command = process.argv[2] || "check"
-if (command !== "check") throw new Error(`unknown release normalization hold command ${command}`)
-const hold = normalizationHold()
-output("active", hold ? "true" : "false")
-if (hold) {
-  output("version", hold.version); output("source", hold.source); output("tag", hold.tag)
-  console.log(`Release normalization hold is active for ${hold.tag} at ${hold.source}.`)
-} else console.log("No release normalization hold is active.")
+function cli() {
+  const command = process.argv[2] || "check"
+  if (command !== "check") throw new Error(`unknown release normalization hold command ${command}`)
+  const hold = normalizationHold()
+  output("active", hold ? "true" : "false")
+  if (hold) {
+    output("version", hold.version); output("source", hold.source); output("tag", hold.tag)
+    console.log(`Release normalization hold is active for ${hold.tag} at ${hold.source}.`)
+  } else console.log("No release normalization hold is active.")
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) cli()

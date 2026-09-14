@@ -1,0 +1,37 @@
+name: Reconcile release metadata
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  schedule:
+    - cron: '12,27,42,57 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-metadata-reconciliation
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.19.0
+      - name: Verify release-note formatting tests
+        run: node --test scripts/release-notes.test.mjs
+      - name: Reconcile trusted release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-reconcile.mjs

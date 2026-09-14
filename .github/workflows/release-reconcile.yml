@@ -35,8 +35,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24.19.0
-      - name: Verify release-note formatting tests
-        run: node --test scripts/release-notes.test.mjs scripts/release-body-match.test.mjs
+      - name: Verify release-note formatting and provenance tests
+        run: node --test scripts/release-notes.test.mjs scripts/release-body-match.test.mjs scripts/release-staged-provenance.test.mjs
       - name: Verify exact green protected main
         id: execution
         env:

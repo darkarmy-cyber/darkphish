@@ -139,6 +139,14 @@ func main() {
 		return
 	}
 
+	if command == serveCommand.FullCommand() {
+		if handled, err := recoverPendingUpdate(); handled {
+			if err != nil {
+				log.Fatal(err)
+			}
+			return
+		}
+	}
 	// Load the config
 	conf, err := config.LoadConfig(*configPath)
 	// Just warn if a contact address hasn't been configured

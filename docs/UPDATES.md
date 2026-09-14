@@ -83,12 +83,20 @@ entry. A durable transaction journal supports recovery after interruption.
 The state and all nested staged directories are synced before runtime mutation, and executable replacement
 is atomic. Startup recovers a pending journal before new-update eligibility
 checks, even when the external signature verifier is no longer available.
+Recovery reads a local layout journal before loading replacement-version
+configuration. Service stop signals cancel verification, readiness and apply;
+an interrupted installation retains its rollback journal.
 Completed recovery restores the saved transaction outcome and release tag for
 status and audit reporting, including a crash before supervisor reload.
+The last outcome is also persisted outside the active journal before retirement.
+Only a resumed application records completion audit events, with a durable
+acknowledgement to avoid replaying them on ordinary subsequent restarts.
 Replacement listeners are bound but do not serve traffic until the transaction
 is committed. Failed startup restores the previous application and database
 snapshot, including recovery from migration changes, before traffic resumes.
 Rollback failures stop the supervisor rather than starting a partial install.
+Rollback restores from the checksum-verified backup without consuming it, so a
+second interruption during recovery can be retried safely.
 The Update tab retains backup-failure and rollback outcomes across release
 checks, so the restart watcher reports what happened. Apply is also unavailable
 with custom file logging or migrations outside the bundled SQLite directory.

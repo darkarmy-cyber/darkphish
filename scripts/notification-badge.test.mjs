@@ -16,4 +16,7 @@ test("badge counts a stable update and renders release text without HTML",()=>{
  assert.equal(elements.get("#adminReleaseNotification").value,"Darkphish <img onerror=alert(1)> is available");
  context.renderAdminNotification({available:false,badge:1});assert.equal(elements.get("#adminNotificationBadge").hidden,true);
  context.renderAdminNotification({available:true,badge:99});assert.equal(elements.get("#adminNotificationBadge").hidden,true);
+ context.renderAdminNotification({available:true,badge:1,error:"GitHub unavailable"});
+ assert.equal(elements.get("#adminNotificationBadge").hidden,true);
+ assert.equal(elements.get("#adminReleaseNotification").value,"Release check unavailable");
 });

@@ -46,6 +46,9 @@ func (l Layout) Validate() error {
 			return errors.New("one-click update requires a local database and config beside the binary")
 		}
 	}
+	if l.Database == ".darkphish-updates" {
+		return errors.New("database overlaps update state")
+	}
 	if l.Database == l.Config {
 		return errors.New("database and config overlap")
 	}
@@ -249,6 +252,14 @@ type Transaction struct {
 }
 
 func (t Transaction) Install(stage string) error {
+	return t.InstallContext(context.Background(), stage)
+}
+
+// InstallContext leaves its journal recoverable when shutdown interrupts apply.
+func (t Transaction) InstallContext(ctx context.Context, stage string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := verifyBackup(filepath.Join(t.Directory, "backup")); err != nil {
 		return errors.New("completed backup required before install")
 	}
@@ -270,6 +281,9 @@ func (t Transaction) Install(stage string) error {
 	}
 	for _, entry := range runtimeEntries {
 		source := filepath.Join(t.Layout.Root, entry)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		original := filepath.Join(t.Directory, "original", entry)
 		info, err := os.Lstat(source)
 		if err != nil {
@@ -308,11 +322,24 @@ func (t Transaction) Rollback() error {
 		return err
 	}
 	for _, entry := range runtimeEntries {
-		original := filepath.Join(t.Directory, "original", entry)
-		info, err := os.Lstat(original)
-		if os.IsNotExist(err) {
-			continue
-		} else if err != nil {
+		// Restore from the immutable backup, not by consuming originals. A
+		// second power loss during rollback must leave every source retryable.
+		original := filepath.Join(t.Directory, "backup", entry)
+		restore := filepath.Join(t.Directory, "restore", entry)
+		if err := os.MkdirAll(filepath.Dir(restore), 0700); err != nil {
+			return err
+		}
+		if err := os.RemoveAll(restore); err != nil {
+			return err
+		}
+		if err := copyTree(original, restore); err != nil {
+			return err
+		}
+		if err := syncTreeDirectories(restore); err != nil {
+			return err
+		}
+		info, err := os.Lstat(restore)
+		if err != nil {
 			return err
 		}
 		// All paths are fixed runtime roots inside the locally validated layout.
@@ -321,7 +348,10 @@ func (t Transaction) Rollback() error {
 				return err
 			}
 		}
-		if err := os.Rename(original, filepath.Join(t.Layout.Root, entry)); err != nil {
+		if err := os.Rename(restore, filepath.Join(t.Layout.Root, entry)); err != nil {
+			return err
+		}
+		if err := syncDir(t.Layout.Root); err != nil {
 			return err
 		}
 	}

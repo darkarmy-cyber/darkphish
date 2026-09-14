@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"os/exec"
@@ -13,8 +14,47 @@ import (
 	"time"
 
 	"github.com/darkarmy-cyber/darkphish/config"
+	"github.com/darkarmy-cyber/darkphish/internal/update"
 	"github.com/darkarmy-cyber/darkphish/logger"
 )
+
+func TestRecoveryUsesJournalBeforeConfiguration(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv(childEnvironment, "")
+	previous := *configPath
+	*configPath = filepath.Join(root, "config.json")
+	defer func() { *configPath = previous }()
+	active := filepath.Join(root, ".darkphish-updates", "active")
+	if err := os.MkdirAll(active, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(*configPath, []byte("invalid replacement configuration"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeRecoveryLayout(active, update.Layout{Database: "darkphish.db"}); err != nil {
+		t.Fatal(err)
+	}
+	layout, err := readRecoveryLayout(active, root)
+	if err != nil || layout.Database != "darkphish.db" || layout.Root != root {
+		t.Fatal("recovery depended on parsing replacement configuration", err)
+	}
+	if err = os.WriteFile(filepath.Join(active, "install-started.json"), []byte(`{"started":true}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if handled, err := recoverPendingUpdate(); !handled || err == nil {
+		t.Fatal("missing backup must block startup before configuration loading")
+	}
+}
+
+func TestReadinessCancelledBySupervisorStop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	child := &supervisedChild{messages: make(chan supervisorMessage), done: make(chan error)}
+	if err := child.readyContext(ctx); err != context.Canceled {
+		t.Fatal("shutdown did not cancel readiness", err)
+	}
+}
 
 func TestRecoveryLayoutDoesNotRequireNewUpdateEligibility(t *testing.T) {
 	root, err := os.Getwd()
@@ -70,6 +110,14 @@ func TestCompletedRecoveryRetainsResultAndTag(t *testing.T) {
 		completed, err := completedUpdate(active)
 		if err != nil || completed.Result != outcome || completed.Tag != "v0.8.0" {
 			t.Fatal("completed crash recovery lost outcome or audit tag")
+		}
+		state := t.TempDir()
+		if err = persistUpdateResult(state, completed); err != nil {
+			t.Fatal(err)
+		}
+		last, err := readUpdateCompletion(filepath.Join(state, "last-result.json"))
+		if err != nil || last != completed {
+			t.Fatal("outcome did not survive retirement of the active transaction")
 		}
 	}
 }

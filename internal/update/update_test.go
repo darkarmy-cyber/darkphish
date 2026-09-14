@@ -128,6 +128,17 @@ func TestSQLiteBackupAndRollback(t *testing.T) {
 	if err = tx.Rollback(); err != nil {
 		t.Fatal(err)
 	}
+	// Emulate another interruption losing a restored directory entry. Recovery
+	// must be repeatable without having consumed its backup source.
+	if err = os.RemoveAll(filepath.Join(root, "templates")); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Rollback(); err != nil {
+		t.Fatal("repeated rollback failed:", err)
+	}
+	if _, err = os.Stat(filepath.Join(root, "templates", "fixture")); err != nil {
+		t.Fatal("repeated rollback lost a runtime directory")
+	}
 	b, err := os.ReadFile(filepath.Join(root, "darkphish"))
 	if err != nil || string(b) != "old" {
 		t.Fatal("binary was not rolled back")
@@ -140,6 +151,30 @@ func TestSQLiteBackupAndRollback(t *testing.T) {
 	var value string
 	if err = db.QueryRow("SELECT value FROM fixture").Scan(&value); err != nil || value != "before" {
 		t.Fatalf("database not restored: %s %v", value, err)
+	}
+}
+
+func TestDatabaseCannotOverlapUpdateState(t *testing.T) {
+	l := Layout{Root: t.TempDir(), Config: "config.json", Database: ".darkphish-updates"}
+	if err := l.Validate(); err == nil {
+		t.Fatal("update state accepted as database")
+	}
+}
+
+func TestCancelledInstallDoesNotMutateRuntime(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "darkphish")
+	if err := os.WriteFile(path, []byte("old"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	tx := Transaction{Layout: Layout{Root: root}, Directory: t.TempDir()}
+	if err := tx.InstallContext(ctx, t.TempDir()); err != context.Canceled {
+		t.Fatal("cancelled install did not stop", err)
+	}
+	if data, err := os.ReadFile(path); err != nil || string(data) != "old" {
+		t.Fatal("cancelled install changed runtime")
 	}
 }
 

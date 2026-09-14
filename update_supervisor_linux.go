@@ -97,11 +97,17 @@ func (c *supervisedChild) stop() error {
 }
 
 func (c *supervisedChild) ready() error {
+	return c.readyContext(context.Background())
+}
+
+func (c *supervisedChild) readyContext(ctx context.Context) error {
 	timer := time.NewTimer(90 * time.Second)
 	defer timer.Stop()
 	ready := map[string]bool{}
 	for {
 		select {
+		case <-ctx.Done():
+			return ctx.Err()
 		case msg := <-c.messages:
 			if msg.Kind == "admin-ready" || msg.Kind == "phish-ready" {
 				ready[msg.Kind] = true
@@ -188,12 +194,27 @@ func updateLayout(conf *config.Config) (update.Layout, error) {
 	return l, nil
 }
 
+// recoverPendingUpdate runs before replacement-version configuration parsing.
+func recoverPendingUpdate() (bool, error) {
+	if os.Getenv(childEnvironment) == "1" {
+		return false, nil
+	}
+	if _, err := os.Lstat(filepath.Join(".darkphish-updates", "active")); os.IsNotExist(err) {
+		return false, nil
+	} else if err != nil {
+		return true, err
+	}
+	return superviseUpdates(nil)
+}
+
 // superviseUpdates keeps the systemd main PID alive across replacement. All
 // child processes and their workers are reaped before snapshot or rollback.
 func superviseUpdates(conf *config.Config) (bool, error) {
 	if os.Getenv(childEnvironment) == "1" {
 		return false, nil
 	}
+	stopContext, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
 	root, err := os.Getwd()
 	if err != nil {
 		return true, err
@@ -209,7 +230,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 	if pending {
 		// Local recovery must precede ALL new-update eligibility checks. The
 		// executable/runtime may be partially replaced and gh may be unavailable.
-		l, err = recoveryLayout(conf, root)
+		l, err = readRecoveryLayout(active, root)
 		if err != nil {
 			return true, err
 		}
@@ -265,6 +286,14 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 		} else if !os.IsNotExist(started) {
 			return true, started
 		}
+		if recovered {
+			saved = updateCompletion{Result: "rollback", Tag: "interrupted"}
+		}
+		if saved.Result != "" {
+			if err = persistUpdateResult(state, saved); err != nil {
+				return true, err
+			}
+		}
 		if err = os.Rename(active, filepath.Join(state, "recovered-"+time.Now().UTC().Format("20060102T150405.000000000"))); err != nil {
 			return true, err
 		}
@@ -285,7 +314,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 	if err != nil {
 		return true, err
 	}
-	if err = child.ready(); err != nil {
+	if err = child.readyContext(stopContext); err != nil {
 		_ = child.stop()
 		return true, err
 	}
@@ -293,12 +322,9 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 		_ = child.stop()
 		return true, err
 	}
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(signals)
 	for {
 		select {
-		case <-signals:
+		case <-stopContext.Done():
 			return true, child.stop()
 		case err := <-child.done:
 			if err == nil {
@@ -313,7 +339,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			if compareErr != nil || comparison <= 0 {
 				continue
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			ctx, cancel := context.WithTimeout(stopContext, 3*time.Minute)
 			client := update.NewClient()
 			latest, checkErr := client.Latest(ctx)
 			var archive []byte
@@ -334,12 +360,15 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			if err = syncUpdateDirectory(state); err != nil {
 				return true, errors.Join(err, child.stop())
 			}
+			if err = writeRecoveryLayout(active, l); err != nil {
+				return true, errors.Join(err, child.stop())
+			}
 			stage := filepath.Join(active, "stage")
 			if err = os.Mkdir(stage, 0700); err == nil {
 				err = update.Extract(archive, stage, latest.Version(), runtime.GOARCH)
 			}
 			if err == nil {
-				probeContext, stopProbe := context.WithTimeout(context.Background(), 10*time.Second)
+				probeContext, stopProbe := context.WithTimeout(stopContext, 10*time.Second)
 				output, probeErr := exec.CommandContext(probeContext, filepath.Join(stage, "darkphish"), "version").Output()
 				stopProbe()
 				if probeErr != nil || !strings.Contains(string(output), "version "+latest.Version()+",") || !strings.Contains(string(output), "commit "+latest.Source+",") {
@@ -355,6 +384,9 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			if err = child.stop(); err != nil {
 				return true, err
 			}
+			if stopContext.Err() != nil {
+				return true, nil
+			}
 			// No application process remains; setup only the old database/audit store.
 			if err = models.Setup(conf); err != nil {
 				return true, err
@@ -363,17 +395,20 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			if err = models.Close(); err != nil {
 				return true, err
 			}
-			ctx, cancel = context.WithTimeout(context.Background(), 5*time.Minute)
+			ctx, cancel = context.WithTimeout(stopContext, 5*time.Minute)
 			err = update.Backup(ctx, l, filepath.Join(active, "backup"))
 			cancel()
 			backedUp := err == nil
+			if stopContext.Err() != nil {
+				return true, nil
+			}
 			if err == nil {
-				err = transaction.Install(stage)
+				err = transaction.InstallContext(stopContext, stage)
 			}
 			if err == nil {
 				child, err = startSupervised(binary)
 				if err == nil {
-					err = child.ready()
+					err = child.readyContext(stopContext)
 					if err != nil {
 						_ = child.stop()
 					}
@@ -391,17 +426,23 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 				if !backedUp {
 					outcome = "backup_failed"
 				}
+				if stopContext.Err() != nil {
+					return true, nil
+				}
 				child, err = startSupervised(binary, outcome, latest.Tag)
 				if err != nil {
 					return true, err
 				}
-				if err = child.ready(); err != nil {
+				if err = child.readyContext(stopContext); err != nil {
 					_ = child.stop()
 					return true, err
 				}
 			}
 			// Outcome remains durable in the retained backup directory, without secrets.
 			if err = durableUpdateResult(filepath.Join(active, "completed.json"), outcome, latest.Tag); err != nil {
+				return true, errors.Join(err, child.stop())
+			}
+			if err = persistUpdateResult(state, updateCompletion{Result: outcome, Tag: latest.Tag}); err != nil {
 				return true, errors.Join(err, child.stop())
 			}
 			retained := filepath.Join(state, "backup-"+time.Now().UTC().Format("20060102T150405.000000000"))
@@ -418,7 +459,17 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 					return true, err
 				}
 				if err = syscall.Exec(binary, os.Args, updateResultEnvironment("applied", latest.Tag)); err != nil {
-					transaction.Directory = retained
+					// Reactivate the journal before rollback so a second interruption
+					// cannot leave a completed marker over a partial restoration.
+					if journalErr := os.Rename(retained, active); journalErr != nil {
+						return true, errors.Join(err, journalErr)
+					}
+					if journalErr := os.Remove(filepath.Join(active, "completed.json")); journalErr != nil {
+						return true, errors.Join(err, journalErr)
+					}
+					if journalErr := errors.Join(syncUpdateDirectory(active), syncUpdateDirectory(state)); journalErr != nil {
+						return true, errors.Join(err, journalErr)
+					}
 					return true, errors.Join(err, transaction.Rollback())
 				}
 			}
@@ -468,9 +519,25 @@ func configureUpdates(conf *config.Config) *update.Service {
 		}
 	}
 	result := os.Getenv("DARKPHISH_UPDATE_RESULT")
-	if result != "" {
-		tag := os.Getenv("DARKPHISH_UPDATE_TAG")
-		switch result {
+	_ = os.Unsetenv("DARKPHISH_UPDATE_RESULT")
+	_ = os.Unsetenv("DARKPHISH_UPDATE_TAG")
+	service := update.NewService(semanticVersion(), reason, request)
+	if result == "" {
+		if saved, err := readUpdateCompletion(filepath.Join(".darkphish-updates", "last-result.json")); err == nil {
+			result = saved.Result
+		}
+	}
+	service.SetResult(result)
+	recordResult := func() {
+		state := ".darkphish-updates"
+		saved, err := readUpdateCompletion(filepath.Join(state, "last-result.json"))
+		if err != nil || saved.Result == "" || saved.AuditRecorded {
+			return
+		}
+		// Only a resumed child records completion; standby validation cannot
+		// report success. The durable record also covers a crash before exec.
+		tag := saved.Tag
+		switch saved.Result {
 		case "applied":
 			audit.RecordSystem("update.backup", "release", tag, "success")
 			audit.RecordSystem("update.apply", "release", tag, "success")
@@ -481,11 +548,11 @@ func configureUpdates(conf *config.Config) *update.Service {
 			audit.RecordSystem("update.backup", "release", tag, "failure")
 			audit.RecordSystem("update.apply", "release", tag, "failure")
 		}
-		_ = os.Unsetenv("DARKPHISH_UPDATE_RESULT")
-		_ = os.Unsetenv("DARKPHISH_UPDATE_TAG")
+		saved.AuditRecorded = true
+		if err := persistUpdateResult(state, saved); err != nil {
+			fmt.Fprintln(os.Stderr, "update audit acknowledgement failed:", err)
+		}
 	}
-	service := update.NewService(semanticVersion(), reason, request)
-	service.SetResult(result)
 	if feedback != nil {
 		go func() {
 			defer feedback.Close()
@@ -494,7 +561,10 @@ func configureUpdates(conf *config.Config) *update.Service {
 			for scanner.Scan() {
 				switch scanner.Text() {
 				case "resume":
-					once.Do(func() { close(gate) })
+					once.Do(func() {
+						recordResult()
+						close(gate)
+					})
 				case "failed":
 					service.Fail()
 					audit.RecordSystem("update.apply", "release", "verification", "failure")
@@ -503,6 +573,8 @@ func configureUpdates(conf *config.Config) *update.Service {
 			// A child must not outlive the process that owns its update transaction.
 			os.Exit(1)
 		}()
+	} else {
+		recordResult()
 	}
 	return service
 }
@@ -516,6 +588,46 @@ func updateRuntimePaths(conf *config.Config, root string) error {
 		return errors.New("one-click update requires the bundled SQLite migration directory")
 	}
 	return nil
+}
+
+func writeRecoveryLayout(active string, layout update.Layout) error {
+	data, err := json.Marshal(struct {
+		Database string `json:"database"`
+	}{Database: layout.Database})
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(active, "layout.json"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if err = errors.Join(err, f.Sync(), f.Close()); err != nil {
+		return err
+	}
+	return syncUpdateDirectory(active)
+}
+
+func readRecoveryLayout(active, root string) (update.Layout, error) {
+	path := filepath.Join(active, "layout.json")
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > 4096 {
+		return update.Layout{}, errors.New("invalid local recovery layout")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return update.Layout{}, err
+	}
+	var layout struct {
+		Database string `json:"database"`
+	}
+	if err = json.Unmarshal(data, &layout); err != nil {
+		return update.Layout{}, err
+	}
+	if !filepath.IsLocal(layout.Database) || filepath.Base(layout.Database) != layout.Database {
+		return update.Layout{}, errors.New("invalid recovery database path")
+	}
+	return recoveryLayout(&config.Config{DBName: "sqlite3", DBPath: filepath.Join(root, layout.Database)}, root)
 }
 
 func recoveryLayout(conf *config.Config, root string) (update.Layout, error) {
@@ -550,12 +662,16 @@ func updateResultEnvironment(result, tag string) []string {
 }
 
 type updateCompletion struct {
-	Result string `json:"result"`
-	Tag    string `json:"tag"`
+	Result        string `json:"result"`
+	Tag           string `json:"tag"`
+	AuditRecorded bool   `json:"audit_recorded,omitempty"`
 }
 
 func completedUpdate(active string) (updateCompletion, error) {
-	path := filepath.Join(active, "completed.json")
+	return readUpdateCompletion(filepath.Join(active, "completed.json"))
+}
+
+func readUpdateCompletion(path string) (updateCompletion, error) {
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
 		return updateCompletion{}, nil
@@ -578,6 +694,9 @@ func completedUpdate(active string) (updateCompletion, error) {
 	if result.Result != "applied" && result.Result != "rollback" && result.Result != "backup_failed" {
 		return updateCompletion{}, nil
 	}
+	if result.Result == "rollback" && result.Tag == "interrupted" {
+		return result, nil
+	}
 	if !strings.HasPrefix(result.Tag, "v") {
 		return updateCompletion{}, nil
 	}
@@ -585,6 +704,26 @@ func completedUpdate(active string) (updateCompletion, error) {
 		return updateCompletion{}, nil
 	}
 	return result, nil
+}
+
+func persistUpdateResult(state string, result updateCompletion) error {
+	data, err := json.Marshal(result)
+	if err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(state, "result-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	_, err = f.Write(append(data, '\n'))
+	if err = errors.Join(err, f.Sync(), f.Close()); err != nil {
+		return err
+	}
+	if err = os.Rename(f.Name(), filepath.Join(state, "last-result.json")); err != nil {
+		return err
+	}
+	return syncUpdateDirectory(state)
 }
 
 func cWrite(c *supervisedChild, message string) (int, error) {

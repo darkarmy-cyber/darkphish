@@ -54,7 +54,7 @@ jobs:
           node-version: 24.19.0
       - id: hold
         name: Enforce release normalization hold
-        run: node scripts/release-normalization-hold.mjs check
+        run: node scripts/release-resume.mjs guard-rebuild
       - name: Test trusted recovery invariants
         run: node --test .github/scripts/release-recover.test.mjs .github/scripts/release-publication-guard.test.mjs .github/scripts/release-missing-tag-guard.test.mjs .github/scripts/release-create-consistency.test.mjs scripts/release-normalization-hold.test.mjs
       - name: Verify immutable recovery execution before any release mutation

@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import {
   api, expectedReleaseAssetNames, generatedPath, greenCommit, pages, peelTagToCommit,
   requiredChecks, versionTag,
@@ -23,7 +24,7 @@ const timestamp = (value, label) => {
   return parsed
 }
 
-async function executionMain(repo, expectedSHA) {
+export async function executionMain(repo, expectedSHA) {
   if (!sha40(expectedSHA)) throw new Error("reconciliation execution SHA is invalid")
   const metadata = await api(`repos/${repo}`)
   const branch = await api(`repos/${repo}/branches/main`)
@@ -231,7 +232,7 @@ function assertSameAssets(assets, snapshot, tag) {
   }
 }
 
-async function verifyTrustedRelease(repo, summary, main) {
+export async function verifyTrustedRelease(repo, summary, main) {
   if (!semver.test(summary?.tag_name || "") || !Number.isSafeInteger(summary?.id) || summary.id < 1 || summary.prerelease !== false || !bot(summary.author) || !sha40(summary.target_commitish)) return null
   const version = summary.tag_name.slice(1), source = summary.target_commitish
   if (versionTag(version) !== summary.tag_name) throw new Error("release tag canonicalization failed")
@@ -292,4 +293,6 @@ async function run() {
   console.log(`Release reconciliation complete; ${changed} release(s) updated.`)
 }
 
-run().catch((error) => { console.error(error.message); process.exitCode = 1 })
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  run().catch((error) => { console.error(error.message); process.exitCode = 1 })
+}

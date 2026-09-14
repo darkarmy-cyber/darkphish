@@ -64,3 +64,22 @@ test("scope change during reviews prevents final merge", async () => {
   await assert.rejects(f.merge(), /unauthorized/)
   assert.equal(f.writes.length, 0)
 })
+
+test("PR58 finalization is scoped to its own immutable base and exact hold deletion", async () => {
+  const make = () => {
+    const f = fixture()
+    f.pr.number = 58; f.pr.base.sha = "88377d6951ede7352acb257777250bdfecd2052b"
+    f.pr.head.ref = "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-finalize"
+    f.files = [{ filename: ".github/release-normalization-hold.json", status: "removed" }]
+    const original = f.request
+    f.request = async (path, options) => path.includes("/contents/.github/release-normalization-hold.json?") && path.endsWith(head)
+      ? (assert.equal(options?.missing, true), f.headHold || null) : original(path, options)
+    return f
+  }
+  const f = make(); await verifyReleaseRepair(repo, f.pr, f.request)
+  for (const change of [g => { g.pr.number = 59 }, g => { g.pr.base.sha = base },
+    g => { g.files[0].status = "modified" }, g => { g.headHold = {} },
+    g => { g.hold.source_sha = head }, g => { g.files.push({ filename: "VERSION", status: "modified" }) }]) {
+    const g = make(); change(g); await assert.rejects(verifyReleaseRepair(repo, g.pr, g.request))
+  }
+})

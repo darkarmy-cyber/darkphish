@@ -158,29 +158,22 @@ async function verifyTrustedRelease(repo, summary) {
   const source = summary.target_commitish
   if (await tagCommit(repo, summary.tag_name) !== source) throw new Error(`${summary.tag_name}: immutable tag does not match release source`)
   const release = await api(`repos/${repo}/releases/${summary.id}`)
-  if (release.tag_name !== summary.tag_name || release.target_commitish !== source || release.prerelease !== false || !bot(release.author)) throw new Error(`${summary.tag_name}: release identity changed during reconciliation`)
+  if (release.tag_name !== summary.tag_name || release.target_commitish !== source || release.prerelease !== false || !bot(release.author) || release.draft !== summary.draft || release.name !== summary.name) throw new Error(`${summary.tag_name}: release identity changed during reconciliation`)
   await verifyArtifactProofs(repo, release, version)
   const changelog = await sourceText(repo, source)
   const body = releaseBody(changelog, version, source)
-  const name = `Darkphish ${version.split(".").slice(0, 2).join(".")}`
-  return { release, version, source, body, name }
+  return { release, version, source, body }
 }
 
 async function reconcile(repo, summary) {
   const trusted = await verifyTrustedRelease(repo, summary)
   if (!trusted) return false
-  const { release, body, name } = trusted
+  const { release, body } = trusted
   if (![true, false].includes(release.draft)) throw new Error(`${release.tag_name}: release has an invalid draft state`)
-  if (release.body === body && release.name === name) return false
+  if (release.body === body) return false
 
-  const patched = await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: {
-    name,
-    body,
-    draft: release.draft,
-    prerelease: false,
-    make_latest: release.draft ? "legacy" : (release.tag_name === "v0.7.0" ? "true" : "legacy"),
-  } })
-  if (patched.id !== release.id || patched.tag_name !== release.tag_name || patched.target_commitish !== release.target_commitish || patched.draft !== release.draft || patched.prerelease !== false || patched.body !== body || patched.name !== name || !bot(patched.author)) throw new Error(`${release.tag_name}: reconciled release metadata failed verification`)
+  const patched = await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { body } })
+  if (patched.id !== release.id || patched.tag_name !== release.tag_name || patched.target_commitish !== release.target_commitish || patched.draft !== release.draft || patched.prerelease !== release.prerelease || patched.body !== body || patched.name !== release.name || !bot(patched.author)) throw new Error(`${release.tag_name}: reconciled release metadata failed verification`)
   await verifyArtifactProofs(repo, patched, trusted.version)
   console.log(`${release.tag_name}: notes reconciled${release.draft ? " (draft preserved)" : ""}`)
   return true

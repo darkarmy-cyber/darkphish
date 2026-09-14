@@ -96,10 +96,6 @@ func (c *supervisedChild) stop() error {
 	return <-c.done
 }
 
-func (c *supervisedChild) ready() error {
-	return c.readyContext(context.Background())
-}
-
 func (c *supervisedChild) readyContext(ctx context.Context) error {
 	timer := time.NewTimer(90 * time.Second)
 	defer timer.Stop()
@@ -375,13 +371,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 				_, _ = cWrite(child, "failed")
 				continue
 			}
-			if err = os.Mkdir(active, 0700); err != nil {
-				return true, errors.Join(err, child.stop())
-			}
-			if err = syncUpdateDirectory(state); err != nil {
-				return true, errors.Join(err, child.stop())
-			}
-			if err = writeRecoveryLayout(active, l); err != nil {
+			if err = createActiveTransaction(state, active, l); err != nil {
 				return true, errors.Join(err, child.stop())
 			}
 			stage := filepath.Join(active, "stage")
@@ -609,6 +599,23 @@ func updateRuntimePaths(conf *config.Config, root string) error {
 		return errors.New("one-click update requires the bundled SQLite migration directory")
 	}
 	return nil
+}
+
+func createActiveTransaction(state, active string, layout update.Layout) error {
+	preparing, err := os.MkdirTemp(state, "preparing-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(preparing)
+	if err = writeRecoveryLayout(preparing, layout); err != nil {
+		return err
+	}
+	// The visible recovery journal always contains a complete, synced layout.
+	// A crash before this rename leaves only an ignored preparation directory.
+	if err = os.Rename(preparing, active); err != nil {
+		return err
+	}
+	return syncUpdateDirectory(state)
 }
 
 func writeRecoveryLayout(active string, layout update.Layout) error {

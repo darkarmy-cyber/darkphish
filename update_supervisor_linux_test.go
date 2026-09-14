@@ -67,6 +67,29 @@ func TestReservedDatabaseDoesNotPreventNormalStartup(t *testing.T) {
 	}
 }
 
+func TestActiveTransactionPublishesCompleteLayout(t *testing.T) {
+	root := t.TempDir()
+	previous := *configPath
+	*configPath = filepath.Join(root, "config.json")
+	defer func() { *configPath = previous }()
+	state := t.TempDir()
+	active := filepath.Join(state, "active")
+	if err := createActiveTransaction(state, active, update.Layout{Database: "original.db"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := createActiveTransaction(state, active, update.Layout{Database: "replacement.db"}); err == nil {
+		t.Fatal("existing transaction was overwritten")
+	}
+	layout, err := readRecoveryLayout(active, root)
+	if err != nil || layout.Database != "original.db" {
+		t.Fatal("failed journal publication damaged recovery", err)
+	}
+	entries, err := os.ReadDir(state)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "active" {
+		t.Fatal("failed preparation was not cleaned up")
+	}
+}
+
 func TestRecoveryLayoutDoesNotRequireNewUpdateEligibility(t *testing.T) {
 	root, err := os.Getwd()
 	if err != nil {

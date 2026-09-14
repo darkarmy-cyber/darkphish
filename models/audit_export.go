@@ -2,9 +2,13 @@ package models
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"time"
 
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
@@ -71,6 +75,15 @@ func buildAuditExportTx(tx *gorm.DB, head *auditChainHead, applicationVersion, c
 }
 
 func VerifyAuditExport(content, manifestContent []byte) (audit.ExportManifest, error) {
+	return VerifyAuditExportReader(bytes.NewReader(content), manifestContent)
+}
+
+// VerifyAuditExportReader verifies the signed manifest and the complete original
+// input, retaining only one decoded event rather than the full event history.
+// It does not close content. Callers own reader deadlines and cancellation.
+// Memory still depends on the largest individual JSON value and manifest size;
+// the legacy byte-slice wrapper necessarily retains its caller-owned input.
+func VerifyAuditExportReader(content io.Reader, manifestContent []byte) (audit.ExportManifest, error) {
 	var manifest audit.ExportManifest
 	if err := json.Unmarshal(manifestContent, &manifest); err != nil {
 		return manifest, fmt.Errorf("decode audit manifest: %w", err)
@@ -81,32 +94,74 @@ func VerifyAuditExport(content, manifestContent []byte) (audit.ExportManifest, e
 	if err := auditSigner.VerifyManifest(manifest); err != nil {
 		return manifest, err
 	}
-	if audit.FileSHA256(content) != manifest.SHA256 {
-		return manifest, errors.New("audit export hash does not match manifest")
+	if content == nil {
+		return manifest, errors.New("audit export reader is unavailable")
 	}
-	var events []audit.Event
-	if err := json.Unmarshal(content, &events); err != nil {
+	digest := sha256.New()
+	decoder := json.NewDecoder(io.TeeReader(content, digest))
+	opening, err := decoder.Token()
+	if err != nil {
 		return manifest, fmt.Errorf("decode audit export: %w", err)
 	}
-	if len(events) != manifest.RecordCount {
-		return manifest, errors.New("audit export record count does not match manifest")
+	// json.Unmarshal into []audit.Event historically accepts null as an empty
+	// export. Preserve this compatibility; its signed count/hash still apply.
+	if opening != nil && opening != json.Delim('[') {
+		return manifest, errors.New("decode audit export: expected an array or null")
 	}
-	if len(events) > 0 {
-		if events[0].ID != manifest.FirstEventID || events[len(events)-1].ID != manifest.LastEventID {
-			return manifest, errors.New("audit export event range does not match manifest")
-		}
-		previous := events[0].PreviousHash
-		expectedSequence := events[0].Sequence
-		for _, event := range events {
-			if event.Sequence != expectedSequence || event.PreviousHash != previous {
+	count := 0
+	var firstID, lastID, previousSequence int64
+	var previous string
+	if opening != nil {
+		for decoder.More() {
+			// Refuse excess records before decoding their potentially large value,
+			// and bound the counter by the signed count before incrementing it.
+			if count >= manifest.RecordCount {
+				return manifest, errors.New("audit export record count does not match manifest")
+			}
+			var event audit.Event
+			if err := decoder.Decode(&event); err != nil {
+				return manifest, fmt.Errorf("decode audit export: %w", err)
+			}
+			if count == 0 {
+				firstID, previous = event.ID, event.PreviousHash
+			} else if previousSequence == math.MaxInt64 || event.Sequence != previousSequence+1 {
+				return manifest, audit.ErrBrokenChain
+			}
+			if event.PreviousHash != previous {
 				return manifest, audit.ErrBrokenChain
 			}
 			hash, err := audit.HashEvent(event, previous)
 			if err != nil || hash != event.EventHash {
 				return manifest, audit.ErrBrokenChain
 			}
-			previous = event.EventHash
-			expectedSequence++
+			lastID, previousSequence, previous = event.ID, event.Sequence, event.EventHash
+			count++
+		}
+		closing, err := decoder.Token()
+		if err != nil {
+			return manifest, fmt.Errorf("decode audit export: %w", err)
+		}
+		if closing != json.Delim(']') {
+			return manifest, errors.New("decode audit export: missing array end")
+		}
+	}
+	// Token consumes trailing whitespace and forces the underlying reader to EOF,
+	// including buffered lookahead. No hash or checkpoint success before this.
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			err = errors.New("unexpected trailing JSON value")
+		}
+		return manifest, fmt.Errorf("decode audit export trailing input: %w", err)
+	}
+	if hex.EncodeToString(digest.Sum(nil)) != manifest.SHA256 {
+		return manifest, errors.New("audit export hash does not match manifest")
+	}
+	if count != manifest.RecordCount {
+		return manifest, errors.New("audit export record count does not match manifest")
+	}
+	if count > 0 {
+		if firstID != manifest.FirstEventID || lastID != manifest.LastEventID {
+			return manifest, errors.New("audit export event range does not match manifest")
 		}
 		if manifest.CheckpointReference != 0 {
 			var row auditCheckpointRow
@@ -116,7 +171,7 @@ func VerifyAuditExport(content, manifestContent []byte) (audit.ExportManifest, e
 				}
 				return manifest, err
 			}
-			if err := auditSigner.VerifyCheckpoint(rowCheckpoint(row)); err != nil || row.FinalHash != events[len(events)-1].EventHash {
+			if err := auditSigner.VerifyCheckpoint(rowCheckpoint(row)); err != nil || row.FinalHash != previous {
 				return manifest, errors.New("audit export checkpoint linkage is invalid")
 			}
 		}

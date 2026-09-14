@@ -36,7 +36,7 @@ jobs:
         with:
           node-version: 24.19.0
       - name: Verify release-note formatting and provenance tests
-        run: node --test scripts/release-notes.test.mjs scripts/release-body-match.test.mjs scripts/release-staged-provenance.test.mjs
+        run: node --test scripts/release-notes.test.mjs scripts/release-body-match.test.mjs scripts/release-staged-provenance.test.mjs scripts/release-draft-tag-repair.test.mjs
       - name: Verify exact green protected main
         id: execution
         env:
@@ -66,6 +66,10 @@ jobs:
         env:
           EXPECTED_SHA: ${{ needs.verify.outputs.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Repair trusted detached draft tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-draft-tag-repair.mjs
       - name: Reconcile trusted release metadata
         env:
           GH_TOKEN: ${{ github.token }}

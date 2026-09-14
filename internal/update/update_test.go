@@ -51,6 +51,29 @@ func TestCheckerIgnoresDraftAndPrereleaseWithoutToken(t *testing.T) {
 	}
 }
 
+func TestUpdateOutcomeSurvivesReleaseChecks(t *testing.T) {
+	r, _, _ := evidence(t)
+	body, _ := json.Marshal([]Release{r})
+	for _, result := range []string{"applied", "rollback", "backup_failed"} {
+		s := NewService("0.7.1", "", func(Release) error { return nil })
+		s.SetResult(result)
+		message := s.Status().Result
+		if message == "" {
+			t.Fatal("missing transaction outcome")
+		}
+		s.client.http.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
+		})
+		status, err := s.Check(context.Background(), true)
+		if err != nil || status.Result != message {
+			t.Fatal("release check erased transaction outcome")
+		}
+		if err = s.Apply(); err != nil || s.Status().Result != "" {
+			t.Fatal("new accepted update retained previous outcome")
+		}
+	}
+}
+
 func TestSQLiteBackupAndRollback(t *testing.T) {
 	root := t.TempDir()
 	dir := t.TempDir()

@@ -4,7 +4,7 @@ $(function () {
         $("#updateLatest").text(status.latest_version || "Unavailable");
         $("#updatePublished").text(status.latest_version ? status.published_at : "—");
         $("#updateNotes").text(status.release_notes || "");
-        $("#updateStatus").text(status.error || status.unsupported_reason || (status.applying ? "Update in progress" : status.available ? "A new stable release is available" : "You are up to date"));
+        $("#updateStatus").text(status.error || status.result || status.unsupported_reason || (status.applying ? "Update in progress" : status.available ? "A new stable release is available" : "You are up to date"));
         $("#updateApply").prop("disabled", !status.available || !!status.unsupported_reason || !!status.error || status.applying);
         renderAdminNotification(status);
     }

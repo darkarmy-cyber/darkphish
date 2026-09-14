@@ -89,7 +89,8 @@ func startSupervised(binary string, outcome ...string) (*supervisedChild, error)
 
 func (c *supervisedChild) stop() error {
 	defer c.feedback.Close()
-	_ = c.cmd.Process.Signal(syscall.SIGTERM)
+	// The application's shutdown loop handles os.Interrupt and drains HTTP/IMAP.
+	_ = c.cmd.Process.Signal(os.Interrupt)
 	select {
 	case <-c.done:
 		return nil
@@ -151,6 +152,9 @@ func updateLayout(conf *config.Config) (update.Layout, error) {
 	}
 	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
 		return update.Layout{}, errors.New("one-click update supports Linux amd64/arm64 only")
+	}
+	if err := updateRuntimePaths(conf, root); err != nil {
+		return update.Layout{}, err
 	}
 	if err := update.AttestationSupport(); err != nil {
 		return update.Layout{}, err
@@ -436,9 +440,11 @@ func configureUpdates(conf *config.Config) *update.Service {
 			}
 		}
 	}
+	result := ""
 	if os.Getenv(childEnvironment) == "1" {
 		tag := os.Getenv("DARKPHISH_UPDATE_TAG")
-		switch os.Getenv("DARKPHISH_UPDATE_RESULT") {
+		result = os.Getenv("DARKPHISH_UPDATE_RESULT")
+		switch result {
 		case "applied":
 			audit.RecordSystem("update.backup", "release", tag, "success")
 			audit.RecordSystem("update.apply", "release", tag, "success")
@@ -453,6 +459,7 @@ func configureUpdates(conf *config.Config) *update.Service {
 		_ = os.Unsetenv("DARKPHISH_UPDATE_TAG")
 	}
 	service := update.NewService(semanticVersion(), reason, request)
+	service.SetResult(result)
 	if feedback != nil {
 		go func() {
 			defer feedback.Close()
@@ -472,6 +479,17 @@ func configureUpdates(conf *config.Config) *update.Service {
 		}()
 	}
 	return service
+}
+
+func updateRuntimePaths(conf *config.Config, root string) error {
+	if conf.Logging != nil && conf.Logging.Filename != "" {
+		return errors.New("one-click update does not support custom file logging; use standard output or update manually")
+	}
+	migrations, err := filepath.Abs(conf.MigrationsPath)
+	if err != nil || migrations != filepath.Join(root, "db", "db_sqlite3", "migrations") {
+		return errors.New("one-click update requires the bundled SQLite migration directory")
+	}
+	return nil
 }
 
 func cWrite(c *supervisedChild, message string) (int, error) {

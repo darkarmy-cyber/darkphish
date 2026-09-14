@@ -31,6 +31,7 @@ type Status struct {
 	Unsupported string    `json:"unsupported_reason"`
 	Error       string    `json:"error,omitempty"`
 	Applying    bool      `json:"applying"`
+	Result      string    `json:"result,omitempty"`
 }
 
 type Service struct {
@@ -46,6 +47,21 @@ func NewService(current, unsupported string, request func(Release) error) *Servi
 }
 
 func (s *Service) Status() Status { s.mu.Lock(); defer s.mu.Unlock(); return s.status }
+
+// Keep the last transaction outcome separate from transient release-check
+// errors so a bell poll or automatic check cannot erase a rollback notice.
+func (s *Service) SetResult(result string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch result {
+	case "applied":
+		s.status.Result = "Update completed successfully"
+	case "rollback":
+		s.status.Result = "Update failed; the previous application and database were restored"
+	case "backup_failed":
+		s.status.Result = "Pre-update backup failed; no application files were changed"
+	}
+}
 
 func (s *Service) Check(ctx context.Context, force bool) (Status, error) {
 	s.mu.Lock()
@@ -99,5 +115,6 @@ func (s *Service) Apply() error {
 		return err
 	}
 	s.status.Applying = true
+	s.status.Result = ""
 	return nil
 }

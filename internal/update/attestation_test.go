@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAttestationCommandPinsIdentityAndDropsSecrets(t *testing.T) {
@@ -69,6 +70,8 @@ func TestConsistentForgedReleaseCannotReachArchiveDownload(t *testing.T) {
 			data = receipt
 		case strings.Contains(req.URL.Path, "/attestations/"):
 			data = []byte(`{"attestations":[{"bundle":{"mediaType":"application/vnd.dev.sigstore.bundle.v0.3+json"}}]}`)
+		case strings.Contains(req.URL.Path, "/actions/workflows/release-recover.yml/runs"):
+			data = []byte(`{"workflow_runs":[]}`)
 		default:
 			t.Fatalf("unverified executable download reached: %s", req.URL.Path)
 		}
@@ -76,6 +79,42 @@ func TestConsistentForgedReleaseCannotReachArchiveDownload(t *testing.T) {
 	})}}
 	if data, err := c.VerifiedArchive(context.Background(), r, "amd64"); err == nil || data != nil {
 		t.Fatal("self-consistent GitHub metadata bypassed independent attestation")
+	}
+}
+
+func TestRecoveryPublicationUsesExecutionCommitAndSignedReceipt(t *testing.T) {
+	r, _, _ := evidence(t)
+	execution := strings.Repeat("c", 40)
+	run := recoveryRun{ID: 1, HeadSHA: execution, HeadBranch: "main", Path: ".github/workflows/release-recover.yml", Event: "schedule", Status: "completed", Conclusion: "success", Created: r.Published.Add(-time.Hour)}
+	steps := []publicationStep{
+		{Name: "Attest rebuilt recovery artifacts", Status: "completed", Conclusion: "success", Started: r.Published.Add(-2 * time.Minute), Completed: r.Published.Add(-time.Minute)},
+		{Name: "Publish rebuilt verified recovery assets", Status: "completed", Conclusion: "success", Started: r.Published.Add(-time.Second), Completed: r.Published.Add(time.Second)},
+	}
+	if !recoveryPublicationMatches(run, steps, r) {
+		t.Fatal("official recovery publication was rejected")
+	}
+	for name, mutate := range map[string]func(*recoveryRun){
+		"branch":   func(run *recoveryRun) { run.HeadBranch = "feature" },
+		"workflow": func(run *recoveryRun) { run.Path = ".github/workflows/untrusted.yml" },
+		"failed":   func(run *recoveryRun) { run.Conclusion = "failure" },
+		"trigger":  func(run *recoveryRun) { run.Event = "pull_request" },
+		"later":    func(run *recoveryRun) { run.Created = r.Published.Add(time.Second) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := run
+			mutate(&bad)
+			if recoveryPublicationMatches(bad, steps, r) {
+				t.Fatal("untrusted publication accepted")
+			}
+		})
+	}
+	args := strings.Join(publicationAttestationArgs("/private", recoveryIdentity, execution), "\n")
+	if !strings.Contains(args, "--source-digest\n"+execution) || !strings.Contains(args, "--signer-digest\n"+execution) || !strings.Contains(args, recoveryIdentity) || !strings.Contains(args, "receipt.json") || strings.Contains(args, r.Source) {
+		t.Fatal("recovery execution policy conflates build source and signing execution")
+	}
+	steps[1].Completed = r.Published.Add(-time.Second)
+	if recoveryPublicationMatches(run, steps, r) {
+		t.Fatal("unrelated publication time accepted")
 	}
 }
 

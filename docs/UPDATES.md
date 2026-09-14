@@ -47,11 +47,16 @@ The trust boundary requires the canonical GitHub Actions bot identity, the
 complete expected native artifact set, GitHub SHA-256 digests, SHA256SUMS,
 and the publication receipt binding the checksum manifest, tag and immutable
 source commit. The tag must resolve to that commit before and after download.
-Before downloading or probing the replacement executable, the checksum manifest
+Before downloading or probing the replacement executable, the publication receipt
 must pass Sigstore signature, certificate transparency, Rekor log and timestamp
 verification. Certificate policy pins the GitHub OIDC issuer, this repository's
 `release.yml@refs/heads/main`, GitHub-hosted runners, and the exact source and
-signer commit. A release-write credential alone cannot forge this evidence.
+signer commit. Official recovery releases instead require
+`release-recover.yml@refs/heads/main` and the exact recovery execution commit,
+a successful recovery publish step covering the release publication time, and
+source ancestry. The signed receipt binds the released source to the checksum
+manifest even when recovery executed on a later commit. A release-write
+credential alone cannot forge this evidence.
 The verifier receives an isolated environment/config directory without inherited
 secrets or credentials. Missing attestations, unknown signing keys and every
 verification failure stop apply before the application is stopped or changed.
@@ -74,6 +79,9 @@ Replacement listeners are bound but do not serve traffic until the transaction
 is committed. Failed startup restores the previous application and database
 snapshot, including recovery from migration changes, before traffic resumes.
 Rollback failures stop the supervisor rather than starting a partial install.
+The Update tab retains backup-failure and rollback outcomes across release
+checks, so the restart watcher reports what happened. Apply is also unavailable
+with custom file logging or migrations outside the bundled SQLite directory.
 
 The supervisor reloads itself after a successful update while preserving its
 PID, so systemd retains the service process. Use the standard systemd

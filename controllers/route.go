@@ -142,10 +142,17 @@ func (as *AdminServer) Shutdown() error {
 		ctx, cancel = context.WithTimeout(ctx, time.Second*10)
 	}
 	defer cancel()
-	err := as.server.Shutdown(ctx)
+	workerDone := make(chan struct{})
 	if background, ok := as.worker.(interface{ Shutdown() }); ok {
-		background.Shutdown()
+		go func() {
+			background.Shutdown()
+			close(workerDone)
+		}()
+	} else {
+		close(workerDone)
 	}
+	err := as.server.Shutdown(ctx)
+	<-workerDone
 	return err
 }
 

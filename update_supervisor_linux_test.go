@@ -74,6 +74,27 @@ func TestReservedDatabaseDoesNotPreventNormalStartup(t *testing.T) {
 	}
 }
 
+func TestInactiveStatePermissionsOnlyDisableUpdates(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv(childEnvironment, "")
+	state := ".darkphish-updates"
+	if err := os.Mkdir(state, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(state, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if handled, err := recoverPendingUpdate(); handled || err != nil {
+		t.Fatal("inactive state prevented startup", err)
+	}
+	if err := os.Mkdir(filepath.Join(state, "active"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if handled, err := recoverPendingUpdate(); !handled || err == nil {
+		t.Fatal("unsafe active state bypassed fail-closed recovery")
+	}
+}
+
 func TestActiveTransactionPublishesCompleteLayout(t *testing.T) {
 	root := t.TempDir()
 	previous := *configPath

@@ -72,6 +72,10 @@ func (l Layout) Validate() error {
 			if !d.IsDir() {
 				return errors.New("update state path is not a directory; use manual updates")
 			}
+			info, err := d.Info()
+			if err != nil || info.Mode().Perm()&0077 != 0 {
+				return errors.New("update state directory requires owner-only permissions; use manual updates")
+			}
 			return filepath.SkipDir
 		}
 		for _, exclude := range l.Excluded {

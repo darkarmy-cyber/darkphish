@@ -69,7 +69,7 @@ The supervising process stops and reaps the application and all its workers
 before taking a SQLite `VACUUM INTO` snapshot and checking its integrity. It
 also cancels campaign scheduling and waits for active SMTP sends and their
 database results to finish. It never force-kills a delivery to advance an update;
-a hung SMTP/IMAP operation or active HTTP request leaves apply waiting for
+a hung IMAP operation or active HTTP request leaves apply waiting for
 operator intervention. IMAP shutdown joins its manager and per-user polling
 goroutines, including report persistence and unread restoration. It
 also joins accepted webhook deliveries after their event producers stop, and
@@ -79,6 +79,11 @@ files and release metadata. Backups are owner-only, with a manifest containing
 file checksums. Resolved environment secrets and Vault tokens are never
 serialized. The original config is copied with any inline Vault token removed;
 external secrets must be restored from the authoritative secret store.
+
+SMTP greeting/TLS/authentication and message operations have a 30-second
+deadline (connection establishment is separately bounded); QUIT is bounded to
+five seconds. Worker shutdown starts alongside HTTP draining so a test-email
+handler cannot keep administration waiting on a worker that has not stopped.
 
 A completed backup is required before installation can rename any runtime
 entry. A durable transaction journal supports recovery after interruption.

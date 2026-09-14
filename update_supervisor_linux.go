@@ -219,12 +219,15 @@ func pendingUpdate(root string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if !info.IsDir() || info.Mode().Perm()&0077 != 0 {
-		return false, errors.New("unsafe update state directory")
+	if !info.IsDir() {
+		return false, nil
 	}
 	_, err = os.Lstat(filepath.Join(state, "active"))
 	if os.IsNotExist(err) {
 		return false, nil
+	}
+	if info.Mode().Perm()&0077 != 0 {
+		return false, errors.New("unsafe pending update state directory")
 	}
 	return err == nil, err
 }
@@ -586,6 +589,7 @@ func configureUpdates(conf *config.Config) *update.Service {
 			audit.RecordSystem("update.backup", "release", tag, "success")
 			audit.RecordSystem("update.apply", "release", tag, "success")
 		case "rollback":
+			audit.RecordSystem("update.backup", "release", tag, "success")
 			audit.RecordSystem("update.apply", "release", tag, "failure")
 			audit.RecordSystem("update.rollback", "release", tag, "success")
 		case "backup_failed":

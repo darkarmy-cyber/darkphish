@@ -121,6 +121,10 @@ Local files absent from the incoming runtime trees require manual update, includ
 custom campaign assets and files removed upstream. Linux file capabilities are
 also unsupported: use manual updates or systemd ambient capabilities. These checks
 prevent silent removal of custom files and loss of privileges during rollback.
+IMAP report processing is cancellable between database operations and bounded
+to 100 identifiers per message, 20 attachments and 50 messages per rotating
+batch, with a 32 MiB batch parsing budget. Oversized work remains unread for
+operator inspection; later UIDs continue on subsequent polls.
 The Update tab retains backup-failure and rollback outcomes across release
 checks, so the restart watcher reports what happened. Apply is also unavailable
 with custom file logging or migrations outside the bundled SQLite directory.

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"regexp"
+	"sort"
 	"strconv"
 	"time"
 
@@ -42,6 +43,7 @@ type Email struct {
 // needed for connecting to an IMAP server.
 type Mailbox struct {
 	ctx              context.Context
+	cursor           *uint32
 	uidValidity      uint32
 	Host             string
 	TLS              bool
@@ -137,6 +139,10 @@ func (mbox *Mailbox) DeleteEmails(seqs []uint32) error {
 // GetUnread will find all unread emails in the folder and return them as a list.
 func (mbox *Mailbox) GetUnread(markAsRead, delete bool) ([]Email, error) {
 	var emails []Email
+	ctx := mbox.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	imapClient, err := mbox.newClient()
 	if err != nil {
@@ -156,6 +162,11 @@ func (mbox *Mailbox) GetUnread(markAsRead, delete bool) ([]Email, error) {
 	if len(seqs) == 0 {
 		return emails, nil
 	}
+	var last uint32
+	if mbox.cursor != nil {
+		last = *mbox.cursor
+	}
+	seqs = unreadBatch(seqs, last)
 
 	seqset := new(imap.SeqSet)
 	seqset.AddNum(seqs...)
@@ -166,9 +177,20 @@ func (mbox *Mailbox) GetUnread(markAsRead, delete bool) ([]Email, error) {
 	fetched := make(chan error, 1)
 	go func() { fetched <- imapClient.UidFetch(seqset, items, messages) }()
 	var parseErrors error
+	var batchBytes int
+	var received int
 
 	// Step through each email
 	for msg := range messages {
+		if ctx.Err() != nil {
+			_ = imapClient.conn.Close()
+			continue
+		}
+		received++
+		if received > maxUnreadBatch {
+			_ = imapClient.conn.Close()
+			continue
+		}
 		var parseErr error
 		if msg.Uid == 0 {
 			parseErrors = errors.Join(parseErrors, errors.New("IMAP response omitted stable message UID"))
@@ -178,11 +200,19 @@ func (mbox *Mailbox) GetUnread(markAsRead, delete bool) ([]Email, error) {
 		var em *email.Email
 		var buf []byte
 		for _, value := range msg.Body {
+			if batchBytes+value.Len() > 32<<20 && batchBytes > 0 {
+				parseErr = errors.New("IMAP batch exceeds processing byte limit")
+				break
+			}
+			if mbox.cursor != nil {
+				*mbox.cursor = msg.Uid
+			}
 			if value.Len() > 25<<20 {
 				parseErr = errors.New("IMAP message exceeds size limit")
 				break
 			}
 			buf, err = io.ReadAll(io.LimitReader(value, (25<<20)+1))
+			batchBytes += len(buf)
 			if err != nil {
 				parseErr = err
 			}
@@ -210,7 +240,23 @@ func (mbox *Mailbox) GetUnread(markAsRead, delete bool) ([]Email, error) {
 		emails = append(emails, emtmp)
 
 	}
-	return emails, errors.Join(parseErrors, <-fetched)
+	return emails, errors.Join(ctx.Err(), parseErrors, <-fetched)
+}
+
+const maxUnreadBatch = 50
+
+// Rotate bounded batches so unread malformed messages cannot starve later UIDs.
+func unreadBatch(seqs []uint32, last uint32) []uint32 {
+	sort.Slice(seqs, func(i, j int) bool { return seqs[i] < seqs[j] })
+	start := sort.Search(len(seqs), func(i int) bool { return seqs[i] > last })
+	if start == len(seqs) {
+		start = 0
+	}
+	end := start + maxUnreadBatch
+	if end > len(seqs) {
+		end = len(seqs)
+	}
+	return seqs[start:end]
 }
 
 func init() {

@@ -1,0 +1,24 @@
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+version: 1
+site:
+  title: Darkphish
+  structure:
+    - type: space
+      key: space-docs
+      title: Documentation
+      path: docs
+      default: true
+      content:
+        directory: ./docs
+    - type: space
+      key: space-contributor-agreements
+      title: Contributor License Agreements
+      path: contributor-agreements
+      content:
+        directory: ./doc
+    - type: space
+      key: space-changelog-fragments
+      title: Changelog Fragments
+      path: changes
+      content:
+        directory: ./changes

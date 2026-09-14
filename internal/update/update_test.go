@@ -122,6 +122,22 @@ func TestSQLiteBackupAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	tx := Transaction{Layout: l, Directory: dir}
+	reserve := filepath.Join(dir, "rollback-reserve")
+	if err = os.WriteFile(reserve, []byte("allocation unavailable"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Install(stage); err == nil {
+		t.Fatal("install ignored failed space reservation")
+	}
+	if _, err = os.Stat(filepath.Join(dir, "install-started.json")); !os.IsNotExist(err) {
+		t.Fatal("installation started before rollback space was reserved")
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "darkphish")); err != nil || string(data) != "old" {
+		t.Fatal("space reservation failure changed runtime")
+	}
+	if err = os.Remove(reserve); err != nil {
+		t.Fatal(err)
+	}
 	if err = tx.Install(stage); err == nil {
 		t.Fatal("expected incomplete stage to fail after first replacement")
 	}

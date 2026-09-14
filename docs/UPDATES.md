@@ -106,6 +106,13 @@ snapshot, including recovery from migration changes, before traffic resumes.
 Rollback failures stop the supervisor rather than starting a partial install.
 Rollback restores from the checksum-verified backup without consuming it, so a
 second interruption during recovery can be retried safely.
+Before changing runtime files, apply preallocates rollback disk space in addition
+to the complete backup and staged release. Filesystems without allocation support
+or sufficient space are rejected before installation. Recovery releases that
+reserve and obsolete transaction copies before restoring the verified backup.
+Retained successful transaction directories include this reserve. Completion
+audit acknowledgement is saved only after all persistent audit writes succeed;
+an interrupted or failed write is retried on startup and may replay earlier events.
 The Update tab retains backup-failure and rollback outcomes across release
 checks, so the restart watcher reports what happened. Apply is also unavailable
 with custom file logging or migrations outside the bundled SQLite directory.

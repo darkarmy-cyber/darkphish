@@ -15,9 +15,46 @@ import (
 	"time"
 
 	"github.com/darkarmy-cyber/darkphish/config"
+	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	"github.com/darkarmy-cyber/darkphish/internal/update"
 	"github.com/darkarmy-cyber/darkphish/logger"
 )
+
+type failingCompletionStore struct {
+	audit.Store
+	err error
+}
+
+func (s *failingCompletionStore) Append(audit.Event) (int64, error) {
+	return 0, s.err
+}
+
+func TestCompletionAuditRetriesFailedPersistence(t *testing.T) {
+	state := t.TempDir()
+	saved := updateCompletion{Result: "applied", Tag: "v0.8.0"}
+	if err := persistUpdateResult(state, saved); err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("audit database unavailable")
+	store := &failingCompletionStore{err: failure}
+	audit.SetStore(store)
+	defer audit.SetStore(nil)
+	if err := recordUpdateCompletion(state, saved); !errors.Is(err, failure) {
+		t.Fatal("audit failure was not returned", err)
+	}
+	pending, err := readUpdateCompletion(filepath.Join(state, "last-result.json"))
+	if err != nil || pending.AuditRecorded {
+		t.Fatal("failed audit was acknowledged", err)
+	}
+	store.err = nil
+	if err := recordUpdateCompletion(state, pending); err != nil {
+		t.Fatal("audit retry failed", err)
+	}
+	completed, err := readUpdateCompletion(filepath.Join(state, "last-result.json"))
+	if err != nil || !completed.AuditRecorded {
+		t.Fatal("successful retry not acknowledged", err)
+	}
+}
 
 func TestRecoveryUsesJournalBeforeConfiguration(t *testing.T) {
 	root := t.TempDir()

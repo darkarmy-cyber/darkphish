@@ -583,21 +583,7 @@ func configureUpdates(conf *config.Config) *update.Service {
 		}
 		// Only a resumed child records completion; standby validation cannot
 		// report success. The durable record also covers a crash before exec.
-		tag := saved.Tag
-		switch saved.Result {
-		case "applied":
-			audit.RecordSystem("update.backup", "release", tag, "success")
-			audit.RecordSystem("update.apply", "release", tag, "success")
-		case "rollback":
-			audit.RecordSystem("update.backup", "release", tag, "success")
-			audit.RecordSystem("update.apply", "release", tag, "failure")
-			audit.RecordSystem("update.rollback", "release", tag, "success")
-		case "backup_failed":
-			audit.RecordSystem("update.backup", "release", tag, "failure")
-			audit.RecordSystem("update.apply", "release", tag, "failure")
-		}
-		saved.AuditRecorded = true
-		if err := persistUpdateResult(state, saved); err != nil {
+		if err := recordUpdateCompletion(state, saved); err != nil {
 			fmt.Fprintln(os.Stderr, "update audit acknowledgement failed:", err)
 		}
 	}
@@ -625,6 +611,27 @@ func configureUpdates(conf *config.Config) *update.Service {
 		recordResult()
 	}
 	return service
+}
+
+func recordUpdateCompletion(state string, saved updateCompletion) error {
+	var events [][2]string
+	switch saved.Result {
+	case "applied":
+		events = [][2]string{{"update.backup", "success"}, {"update.apply", "success"}}
+	case "rollback":
+		events = [][2]string{{"update.backup", "success"}, {"update.apply", "failure"}, {"update.rollback", "success"}}
+	case "backup_failed":
+		events = [][2]string{{"update.backup", "failure"}, {"update.apply", "failure"}}
+	default:
+		return errors.New("invalid update audit result")
+	}
+	for _, event := range events {
+		if err := audit.RecordSystemChecked(event[0], "release", saved.Tag, event[1]); err != nil {
+			return err
+		}
+	}
+	saved.AuditRecorded = true
+	return persistUpdateResult(state, saved)
 }
 
 func updateRuntimePaths(conf *config.Config, root string) error {

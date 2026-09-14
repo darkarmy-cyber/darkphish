@@ -283,6 +283,9 @@ func (t Transaction) InstallContext(ctx context.Context, stage string) error {
 	if err := syncTreeDirectoriesContext(ctx, stage); err != nil {
 		return err
 	}
+	if err := reserveRollbackSpace(ctx, filepath.Join(t.Directory, "backup"), filepath.Join(t.Directory, "rollback-reserve")); err != nil {
+		return err
+	}
 	if err := os.Mkdir(filepath.Join(t.Directory, "original"), 0700); err != nil {
 		return err
 	}
@@ -336,6 +339,18 @@ func (t Transaction) InstallContext(ctx context.Context, stage string) error {
 // The caller must stop and reap the replacement process before invoking it.
 func (t Transaction) Rollback() error {
 	if err := verifyBackup(filepath.Join(t.Directory, "backup")); err != nil {
+		return err
+	}
+	// Reclaim only replaceable transaction data after verifying the backup.
+	// The preallocated reserve covers restoration even when apply filled the
+	// filesystem. Removing stale copies also bounds space across retrying a
+	// rollback interrupted by power loss. The running executable stays present.
+	for _, name := range []string{"rollback-reserve", "original", "stage", "restore"} {
+		if err := os.RemoveAll(filepath.Join(t.Directory, name)); err != nil {
+			return err
+		}
+	}
+	if err := syncDir(t.Directory); err != nil {
 		return err
 	}
 	for _, entry := range runtimeEntries {

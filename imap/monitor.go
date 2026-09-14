@@ -179,7 +179,9 @@ func checkForNewEmails(ctx context.Context, im models.IMAP) {
 	msgs, err := mailServer.GetUnread(true, false)
 	if err != nil {
 		log.Error(err)
-		return
+		if len(msgs) == 0 {
+			return
+		}
 	}
 	// Update last_succesful_login here via im.Host
 	if err := models.SuccessfulLogin(&im); err != nil {

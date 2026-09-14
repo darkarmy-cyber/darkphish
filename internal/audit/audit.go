@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -168,11 +169,26 @@ func NewRequestEvent(r *http.Request, actor string, actorID int64, action, targe
 }
 
 func RecordSystem(action, targetType, targetID, result string) {
-	persist(Event{
+	persist(systemEvent(action, targetType, targetID, result))
+}
+
+// RecordSystemChecked lets durable callers retry a failed audit write.
+func RecordSystemChecked(action, targetType, targetID, result string) error {
+	storeMu.RLock()
+	available := store != nil
+	storeMu.RUnlock()
+	if !available {
+		return errors.New("persistent audit store unavailable")
+	}
+	return AppendEvent(systemEvent(action, targetType, targetID, result))
+}
+
+func systemEvent(action, targetType, targetID, result string) Event {
+	return Event{
 		Timestamp: time.Now().UTC(), Actor: "darkphish", ActorType: "system",
 		Action: bounded(action, 128), TargetType: bounded(targetType, 64), TargetID: bounded(targetID, 255), Result: bounded(result, 32),
 		RequestID: NewRequestID(), AuthMethod: "system", Metadata: "{}",
-	})
+	}
 }
 
 func Query(filter Filter) ([]Event, int64, error) {

@@ -165,15 +165,13 @@ func (mbox *Mailbox) GetUnread(markAsRead, delete bool) ([]Email, error) {
 
 	fetched := make(chan error, 1)
 	go func() { fetched <- imapClient.UidFetch(seqset, items, messages) }()
-	var parseErr error
+	var parseErrors error
 
 	// Step through each email
 	for msg := range messages {
-		if parseErr != nil {
-			continue
-		}
+		var parseErr error
 		if msg.Uid == 0 {
-			parseErr = errors.New("IMAP response omitted stable message UID")
+			parseErrors = errors.Join(parseErrors, errors.New("IMAP response omitted stable message UID"))
 			continue
 		}
 		// Extract raw message body. I can't find a better way to do this with the emersion library
@@ -191,6 +189,7 @@ func (mbox *Mailbox) GetUnread(markAsRead, delete bool) ([]Email, error) {
 			break // There should only ever be one item in this map, but I'm not 100% sure
 		}
 		if parseErr != nil {
+			parseErrors = errors.Join(parseErrors, fmt.Errorf("IMAP UID %d: %w", msg.Uid, parseErr))
 			continue
 		}
 
@@ -203,7 +202,7 @@ func (mbox *Mailbox) GetUnread(markAsRead, delete bool) ([]Email, error) {
 		rawBodyStream := bytes.NewReader(buf)
 		em, err = email.NewEmailFromReader(rawBodyStream) // Parse with @jordanwright's library
 		if err != nil {
-			parseErr = err
+			parseErrors = errors.Join(parseErrors, fmt.Errorf("IMAP UID %d: %w", msg.Uid, err))
 			continue
 		}
 
@@ -211,10 +210,7 @@ func (mbox *Mailbox) GetUnread(markAsRead, delete bool) ([]Email, error) {
 		emails = append(emails, emtmp)
 
 	}
-	if err := errors.Join(parseErr, <-fetched); err != nil {
-		return nil, err
-	}
-	return emails, nil
+	return emails, errors.Join(parseErrors, <-fetched)
 }
 
 func init() {

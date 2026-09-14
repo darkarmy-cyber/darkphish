@@ -3,6 +3,7 @@ package imap
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -53,6 +54,24 @@ func TestIMAPCancellationClosesBlockedRead(t *testing.T) {
 }
 
 func TestFailedFetchLeavesMessagesUnread(t *testing.T) {
+	messages, err, commands := fetchFixture(t, nil)
+	if err == nil || len(messages) != 0 {
+		t.Fatal("failed fetch was treated as completed", err)
+	}
+	assertPeekOnly(t, commands)
+}
+
+func TestMalformedMessageDoesNotDiscardValidReports(t *testing.T) {
+	valid := "From: sender@example.com\r\nTo: reports@example.com\r\nSubject: report\r\n\r\nvalid report\r\n"
+	messages, err, commands := fetchFixture(t, []string{valid, "malformed header\r\n\r\nbody", valid})
+	if err == nil || len(messages) != 2 || messages[0].UID != 42 || messages[1].UID != 44 {
+		t.Fatalf("valid messages around malformed UID were lost: %#v %v", messages, err)
+	}
+	assertPeekOnly(t, commands)
+}
+
+func fetchFixture(t *testing.T, bodies []string) ([]Email, error, []string) {
+	t.Helper()
 	allowed := dialer.DefaultDialer.AllowedHosts()
 	if err := dialer.SetAllowedHosts([]string{"127.0.0.1"}); err != nil {
 		t.Fatal(err)
@@ -85,9 +104,16 @@ func TestFailedFetchLeavesMessagesUnread(t *testing.T) {
 			case strings.Contains(line, "SELECT"):
 				_, _ = io.WriteString(conn, "* 1 EXISTS\r\n* OK [UIDVALIDITY 1] stable\r\n"+tag+" OK selected\r\n")
 			case strings.Contains(line, "UID SEARCH"):
-				_, _ = io.WriteString(conn, "* SEARCH 42\r\n"+tag+" OK searched\r\n")
+				_, _ = io.WriteString(conn, "* SEARCH 42 43 44\r\n"+tag+" OK searched\r\n")
 			case strings.Contains(line, "UID FETCH"):
-				_, _ = io.WriteString(conn, tag+" NO interrupted fetch\r\n")
+				if bodies == nil {
+					_, _ = io.WriteString(conn, tag+" NO interrupted fetch\r\n")
+					continue
+				}
+				for i, body := range bodies {
+					_, _ = fmt.Fprintf(conn, "* %d FETCH (UID %d BODY[] {%d}\r\n%s)\r\n", i+1, 42+i, len(body), body)
+				}
+				_, _ = io.WriteString(conn, tag+" OK fetched\r\n")
 			case strings.Contains(line, "LOGOUT"):
 				_, _ = io.WriteString(conn, "* BYE closing\r\n"+tag+" OK logout\r\n")
 				return
@@ -97,11 +123,18 @@ func TestFailedFetchLeavesMessagesUnread(t *testing.T) {
 		}
 	}()
 	mailbox := &Mailbox{Host: listener.Addr().String(), User: "user", Pwd: "password", Folder: "INBOX"}
-	if messages, err := mailbox.GetUnread(true, false); err == nil || len(messages) != 0 {
-		t.Fatal("failed fetch was treated as completed", err)
-	}
-	peek := false
+	messages, fetchErr := mailbox.GetUnread(true, false)
+	var captured []string
 	for command := range commands {
+		captured = append(captured, command)
+	}
+	return messages, fetchErr, captured
+}
+
+func assertPeekOnly(t *testing.T, commands []string) {
+	t.Helper()
+	peek := false
+	for _, command := range commands {
 		peek = peek || strings.Contains(command, "BODY.PEEK[]")
 		if strings.Contains(command, "STORE") {
 			t.Fatal("failed fetch changed message flags")

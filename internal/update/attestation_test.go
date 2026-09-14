@@ -131,3 +131,43 @@ func TestEmbeddedTrustRootIsIndependentPublicGood(t *testing.T) {
 		t.Fatal("offline verifier needs newline-terminated JSONL")
 	}
 }
+
+func TestRecoveryStopsAfterVerifiedPublicationCandidate(t *testing.T) {
+	r, _, _ := evidence(t)
+	execution := strings.Repeat("c", 40)
+	runs := make([]recoveryRun, 100)
+	for i := range runs {
+		runs[i] = recoveryRun{ID: int64(i + 1), HeadSHA: execution, HeadBranch: "main", Path: ".github/workflows/release-recover.yml", Event: "schedule", Status: "completed", Conclusion: "success", Created: r.Published.Add(-time.Hour)}
+	}
+	steps := []publicationStep{
+		{Name: "Attest rebuilt recovery artifacts", Status: "completed", Conclusion: "success", Started: r.Published.Add(-2 * time.Minute), Completed: r.Published.Add(-time.Minute)},
+		{Name: "Publish rebuilt verified recovery assets", Status: "completed", Conclusion: "success", Started: r.Published.Add(-time.Second), Completed: r.Published.Add(time.Second)},
+	}
+	requests := 0
+	c := &Client{http: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requests++
+		if req.Header.Get("Authorization") != "" {
+			t.Fatal("public recovery lookup sent credentials")
+		}
+		var value any
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/workflows/release-recover.yml/runs"):
+			value = map[string]any{"workflow_runs": runs}
+		case strings.HasSuffix(req.URL.Path, "/runs/1/jobs"):
+			value = map[string]any{"jobs": []map[string]any{{"name": "publish", "conclusion": "success", "steps": steps}}}
+		case strings.Contains(req.URL.Path, "/compare/"):
+			value = map[string]any{"status": "ahead", "merge_base_commit": map[string]string{"sha": r.Source}}
+		default:
+			t.Fatalf("unnecessary historical API request: %s", req.URL.Path)
+		}
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(data)), Header: make(http.Header)}, nil
+	})}}
+	got, err := c.recoveryExecutions(context.Background(), r)
+	if err != nil || len(got) != 1 || got[0] != execution || requests != 3 {
+		t.Fatal("recovery lookup exhausted history after finding publisher", got, requests, err)
+	}
+}

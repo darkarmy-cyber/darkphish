@@ -97,6 +97,28 @@ func TestActiveTransactionPublishesCompleteLayout(t *testing.T) {
 	}
 }
 
+func TestFailedJournalSyncAllowsRetry(t *testing.T) {
+	state := t.TempDir()
+	active := filepath.Join(state, "active")
+	calls := 0
+	err := createActiveTransactionWithSync(state, active, update.Layout{Database: "darkphish.db"}, func(string) error {
+		calls++
+		if calls == 1 {
+			return errors.New("temporary sync failure")
+		}
+		return nil
+	})
+	if err == nil {
+		t.Fatal("sync failure was ignored")
+	}
+	if _, err = os.Lstat(active); !os.IsNotExist(err) {
+		t.Fatal("failed preparation still occupies active", err)
+	}
+	if err = createActiveTransaction(state, active, update.Layout{Database: "darkphish.db"}); err != nil {
+		t.Fatal("retry blocked by failed preparation", err)
+	}
+}
+
 func TestPreInstallCancellationDoesNotRequireBackup(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)

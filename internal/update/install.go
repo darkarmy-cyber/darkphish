@@ -69,6 +69,9 @@ func (l Layout) Validate() error {
 			return nil
 		}
 		if rel == ".darkphish-updates" {
+			if !d.IsDir() {
+				return errors.New("update state path is not a directory; use manual updates")
+			}
 			return filepath.SkipDir
 		}
 		for _, exclude := range l.Excluded {

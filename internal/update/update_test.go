@@ -159,6 +159,13 @@ func TestDatabaseCannotOverlapUpdateState(t *testing.T) {
 	if err := l.Validate(); err == nil {
 		t.Fatal("update state accepted as database")
 	}
+	l.Database = "darkphish.db"
+	if err := os.WriteFile(filepath.Join(l.Root, ".darkphish-updates"), []byte("unrelated file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Validate(); err == nil {
+		t.Fatal("regular file update-state collision accepted")
+	}
 }
 
 func TestCancelledInstallDoesNotMutateRuntime(t *testing.T) {

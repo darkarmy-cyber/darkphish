@@ -165,7 +165,6 @@ func (c *Client) recoveryExecutions(ctx context.Context, r Release) ([]string, e
 	if len(response.Runs) > 100 {
 		return nil, errors.New("excessive recovery publication history")
 	}
-	var executions []string
 	for _, run := range response.Runs {
 		if run.ID <= 0 || !sourceSHA.MatchString(run.HeadSHA) || run.Created.After(r.Published) {
 			continue
@@ -194,9 +193,9 @@ func (c *Client) recoveryExecutions(ctx context.Context, r Release) ([]string, e
 				return nil, err
 			}
 			if (ancestry.Status == "ahead" || ancestry.Status == "identical") && ancestry.Base.SHA == r.Source {
-				executions = append(executions, run.HeadSHA)
+				return []string{run.HeadSHA}, nil
 			}
 		}
 	}
-	return executions, nil
+	return nil, nil
 }

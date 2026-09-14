@@ -324,6 +324,9 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 	}
 	binary := filepath.Join(l.Root, "darkphish")
 	if pending {
+		if stopContext.Err() != nil {
+			return true, nil
+		}
 		result, tag := saved.Result, saved.Tag
 		if recovered {
 			result, tag = "rollback", "interrupted"
@@ -632,6 +635,10 @@ func updateRuntimePaths(conf *config.Config, root string) error {
 }
 
 func createActiveTransaction(state, active string, layout update.Layout) error {
+	return createActiveTransactionWithSync(state, active, layout, syncUpdateDirectory)
+}
+
+func createActiveTransactionWithSync(state, active string, layout update.Layout, syncState func(string) error) error {
 	preparing, err := os.MkdirTemp(state, "preparing-")
 	if err != nil {
 		return err
@@ -645,7 +652,13 @@ func createActiveTransaction(state, active string, layout update.Layout) error {
 	if err = os.Rename(preparing, active); err != nil {
 		return err
 	}
-	return syncUpdateDirectory(state)
+	if err = syncState(state); err != nil {
+		// No runtime mutation has begun. Retire this visible preparation so a
+		// transient sync failure does not prevent another attempt while serving.
+		retireErr := os.Rename(active, preparing)
+		return errors.Join(err, retireErr, syncState(state))
+	}
+	return nil
 }
 
 func writeRecoveryLayout(active string, layout update.Layout) error {

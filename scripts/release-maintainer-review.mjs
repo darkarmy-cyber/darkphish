@@ -123,6 +123,16 @@ async function verifyResolvedThreads(get, repo, pr) {
 
 async function verifyLegacyProtectedAutoMerge(get, repo, pr) {
   requireReview(pr.state === "closed" && pr.merged_at && /^[a-f0-9]{40}$/.test(pr.merge_commit_sha || ""), "Historical release PR lacks immutable merge provenance")
+  // One audited pre-attestation merge, not a general alternative to maintainer
+  // approval. Prepare run 34100513780 queued this exact head through protected
+  // native auto-merge; the PR merge event records the Actions actor and digest.
+  // Changing this tuple requires a new reviewed policy change.
+  requireReview(repo === "darkarmy-cyber/darkphish" && pr.number === 20 &&
+    pr.head.ref === "release/v0.7.0" && pr.head.sha === "67848d4dcd25023899fa587e5d6b2dbd6f78b55b" &&
+    pr.base.sha === "38504372fb5f59ce989e15228fef70f0709f5e48" &&
+    pr.merge_commit_sha === "355d2881a4d5eea162d46a1c155998b1fb8c9f36" &&
+    pr.merged_at === "2026-09-07T08:29:08Z" && trustedActionsActor(pr.merged_by),
+  "Historical release is not the audited pre-attestation protected merge")
   // Old releases predate maintainer attestations, not review itself. Authenticate
   // both original exact-head results, their editors and pre-merge chronology.
   // Source-code substrings (including dead code/comments) prove no execution.
@@ -132,7 +142,7 @@ async function verifyLegacyProtectedAutoMerge(get, repo, pr) {
   const finalPR = await get(`repos/${repo}/pulls/${pr.number}`)
   requireReview(finalPR.number === pr.number && finalPR.head?.repo?.full_name === repo && finalPR.head?.ref === pr.head.ref &&
     finalPR.head?.sha === pr.head.sha && finalPR.base?.ref === "main" && finalPR.base?.sha === pr.base.sha && finalPR.title === pr.title &&
-    finalPR.state === pr.state && finalPR.merged_at === pr.merged_at && finalPR.merge_commit_sha === pr.merge_commit_sha,
+    finalPR.state === pr.state && finalPR.merged_at === pr.merged_at && finalPR.merge_commit_sha === pr.merge_commit_sha && trustedActionsActor(finalPR.merged_by),
   "Historical release PR changed during protected auto-merge verification")
   return { ...evidence, historicalConnectorReviews: true, mergeCommit: pr.merge_commit_sha }
 }

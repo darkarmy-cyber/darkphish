@@ -2,10 +2,12 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { verifyReleaseMaintainerReview } from "./release-maintainer-review.mjs"
 
-const repo = "darkarmy-cyber/darkphish", head = "a".repeat(40), base = "b".repeat(40), merge = "c".repeat(40)
+const repo = "darkarmy-cyber/darkphish", head = "67848d4dcd25023899fa587e5d6b2dbd6f78b55b",
+  base = "38504372fb5f59ce989e15228fef70f0709f5e48", merge = "355d2881a4d5eea162d46a1c155998b1fb8c9f36"
 const at = n => `2026-09-07T00:00:${String(n).padStart(2, "0")}Z`
 function fixture() {
-  const pr = { number: 20, state: "closed", draft: false, merged_at: at(20), merge_commit_sha: merge,
+  const pr = { number: 20, state: "closed", draft: false, merged_at: "2026-09-07T08:29:08Z", merge_commit_sha: merge,
+    merged_by: { login: "github-actions[bot]", id: 41898282, type: "Bot" },
     title: "release: Darkphish 0.7.0", user: { login: "github-actions[bot]", id: 41898282, type: "Bot" },
     head: { ref: "release/v0.7.0", sha: head, repo: { full_name: repo } }, base: { ref: "main", sha: base } }
   const actor = { login: "chatgpt-codex-connector[bot]", id: 199175422, type: "Bot" }
@@ -50,7 +52,7 @@ test("absent, incomplete, forged, late or unresolved historical reviews fail clo
     f => { f.comments = [] },
     f => { f.comments.pop() },
     f => { f.comments[2].user = { login: "impostor", id: 1, type: "User" } },
-    f => { f.pr.merged_at = at(6) },
+    f => { f.comments[2].created_at = "2026-09-07T09:00:00Z"; f.comments[2].updated_at = f.comments[2].created_at },
     f => { f.pr.state = "open"; f.pr.merged_at = null },
     f => { f.threads = [{ isResolved: false }] },
     f => { f.reviews = [{ id: 10, state: "CHANGES_REQUESTED", user: { login: "reviewer" } }] },
@@ -58,5 +60,21 @@ test("absent, incomplete, forged, late or unresolved historical reviews fail clo
   ]) {
     const f = fixture(); mutate(f)
     await assert.rejects(f.verify())
+  }
+})
+
+test("only the audited pre-attestation protected merge may use historical reviews", async () => {
+  for (const mutate of [
+    f => { f.pr.number = 21 },
+    f => { f.pr.head.sha = "a".repeat(40) },
+    f => { f.pr.base.sha = "b".repeat(40) },
+    f => { f.pr.merge_commit_sha = "c".repeat(40) },
+    f => { f.pr.merged_at = "2026-09-14T00:00:00Z" },
+    f => { f.pr.merged_by = { login: "oliverkko", id: 309485696, type: "User" } },
+    f => { f.pr.merged_by = undefined },
+    f => { f.pr.head.ref = "release/v0.7.1"; f.pr.title = "release: Darkphish 0.7.1" },
+  ]) {
+    const f = fixture(); mutate(f)
+    await assert.rejects(f.verify(), /not the audited pre-attestation protected merge/)
   }
 })

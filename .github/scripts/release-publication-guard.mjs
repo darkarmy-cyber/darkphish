@@ -7,6 +7,7 @@ import {
   api, assertCurrentVersionPublished, expectedReleaseAssetNames, generatedPath, greenCommit,
   pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, versionTag,
 } from "../../scripts/release-lib.mjs"
+import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
 
@@ -21,24 +22,14 @@ const timestamp = (value, label) => {
 }
 const successfulStep = (job, name) => job?.steps?.some((step) => step.name === name && step.status === "completed" && step.conclusion === "success")
 
-function notesForVersion(changelog, version) {
-  const start = changelog.indexOf(`## ${version} - `)
-  if (start < 0) throw new Error("release source changelog is missing the release section")
-  const end = changelog.indexOf("\n## ", start + 1)
-  return changelog.slice(start, end < 0 ? undefined : end).trim()
-}
 function releaseName(version) { return `Darkphish ${version.split(".").slice(0, 2).join(".")}` }
-function releaseBody(notes, source) {
-  return `${notes}\n\nSource commit: ${source}\n\n<!-- darkphish-release-source:${source} -->\n\nNative binaries, SHA-256 checksums and SPDX SBOM are attached.`
-}
 async function sourceText(repo, path, source) {
   const file = await api(`repos/${repo}/contents/${path}?ref=${source}`)
   if (file?.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") throw new Error(`release source ${path} is unavailable`)
   return Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf8")
 }
 async function expectedMetadata(repo, source, version) {
-  const notes = notesForVersion(await sourceText(repo, "CHANGELOG.md", source), version)
-  return { name: releaseName(version), body: releaseBody(notes, source) }
+  return { name: releaseName(version), body: canonicalReleaseBody(await sourceText(repo, "CHANGELOG.md", source), version, source) }
 }
 function assertExactPublished(release, version, source, expected) {
   const tag = versionTag(version)
@@ -132,13 +123,13 @@ function verifyAttestation(repo, path, workflow, digest, run) {
   if (!matching) throw new Error("artifact attestation is not bound to the selected workflow run and attempt")
 }
 function assetSnapshot(assets) {
-  return new Map(assets.map((asset) => [asset.name, { digest: asset.digest, size: asset.size, uploader: asset.uploader?.id, state: asset.state }]))
+  return new Map(assets.map((asset) => [asset.name, { id: asset.id, digest: asset.digest, size: asset.size, uploader: asset.uploader?.id, state: asset.state }]))
 }
 function assertSameAssets(assets, snapshot) {
   if (assets.length !== snapshot.size) throw new Error("release asset set changed during provenance verification")
   for (const asset of assets) {
     const prior = snapshot.get(asset.name)
-    if (!prior || asset.digest !== prior.digest || asset.size !== prior.size || asset.uploader?.id !== prior.uploader || asset.state !== prior.state) throw new Error("release asset state changed during provenance verification")
+    if (!prior || asset.id !== prior.id || asset.digest !== prior.digest || asset.size !== prior.size || asset.uploader?.id !== prior.uploader || asset.state !== prior.state) throw new Error("release asset state changed during provenance verification")
   }
 }
 async function assertPublishedSnapshot(repo, release, version, tagState, common) {

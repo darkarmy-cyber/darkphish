@@ -39,13 +39,30 @@ async function tagCommit(repo, tag) {
   return peelTagToCommit(ref, (sha) => api(`repos/${repo}/git/tags/${sha}`))
 }
 
+function staleDetachedAlias(repo, release, tag, source, recoveryName) {
+  if (!release || release.tag_name !== tag || release.draft !== true || release.prerelease !== false || release.target_commitish !== source || release.name !== recoveryName || !bot(release.author)) return false
+  if (typeof release.published_at !== "string" || !Number.isFinite(Date.parse(release.published_at))) return false
+  let url
+  try { url = new URL(release.html_url) } catch { return false }
+  if (url.protocol !== "https:" || url.hostname !== "github.com" || url.search || url.hash) return false
+  const prefix = `/${repo}/releases/tag/`
+  if (!url.pathname.startsWith(prefix)) return false
+  return detachedTag.test(url.pathname.slice(prefix.length))
+}
+
 async function repair(repo, summary, releases) {
   const match = canonicalName.exec(summary.name || "")
   if (!match || summary.draft !== true || summary.prerelease !== false || !detachedTag.test(summary.tag_name || "") || !Number.isSafeInteger(summary.id) || summary.id < 1 || !sha40(summary.target_commitish) || !bot(summary.author)) throw new Error("detached draft candidate identity is malformed")
   const version = `${match[1]}.${match[2]}.${match[3]}`
   const tag = versionTag(version)
-  if (releases.some((release) => release.id !== summary.id && release.tag_name === tag)) throw new Error(`${tag}: canonical release identity already exists`)
   const source = summary.target_commitish
+  const recoveryName = `Darkphish ${match[1]}.${match[2]}`
+
+  const canonical = await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })
+  if (canonical && canonical.id !== summary.id) throw new Error(`${tag}: canonical release identity already exists`)
+  const conflicts = releases.filter((release) => release.id !== summary.id && release.tag_name === tag)
+  if (conflicts.some((release) => !staleDetachedAlias(repo, release, tag, source, recoveryName))) throw new Error(`${tag}: conflicting release identity requires manual forensic review`)
+
   if (await tagCommit(repo, tag) !== source) throw new Error(`${tag}: immutable tag does not match detached draft source`)
 
   const release = await api(`repos/${repo}/releases/${summary.id}`)

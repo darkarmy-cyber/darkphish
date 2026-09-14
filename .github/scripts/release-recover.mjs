@@ -7,6 +7,7 @@ import {
   api, assertCurrentVersionPublished, assetDisposition, expectedReleaseAssetNames, generatedPath,
   greenCommit, pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, verifyChecksums, versionTag,
 } from "../../scripts/release-lib.mjs"
+import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
 
@@ -15,14 +16,7 @@ const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(valu
 const output = (name, value) => { if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`) }
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-function notesForVersion(changelog, version) {
-  const start = changelog.indexOf(`## ${version} - `)
-  if (start < 0) throw new Error("recovery source changelog is missing the release section")
-  const end = changelog.indexOf("\n## ", start + 1)
-  return changelog.slice(start, end < 0 ? undefined : end).trim()
-}
 function releaseName(version) { return `Darkphish ${version.split(".").slice(0, 2).join(".")}` }
-function releaseBody(notes, source) { return `${notes}\n\nSource commit: ${source}\n\n<!-- darkphish-release-source:${source} -->\n\nNative binaries, SHA-256 checksums and SPDX SBOM are attached.` }
 async function sourceText(repo, path, source) {
   const file = await api(`repos/${repo}/contents/${path}?ref=${source}`)
   if (file?.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") throw new Error(`recovery source ${path} is unavailable`)
@@ -120,8 +114,7 @@ async function verifyOriginalNativeRelease(repo, source) {
   return candidates[0]
 }
 async function expectedMetadata(repo, source, version) {
-  const notes = notesForVersion(await sourceText(repo, "CHANGELOG.md", source), version)
-  return { name: releaseName(version), body: releaseBody(notes, source) }
+  return { name: releaseName(version), body: canonicalReleaseBody(await sourceText(repo, "CHANGELOG.md", source), version, source) }
 }
 function assertExactDraft(release, version, source, expected) {
   const tag = versionTag(version)
@@ -203,7 +196,7 @@ async function verifyPublishedRecovery(repo, release, version, main, tagState, e
   if (canonical.id !== release.id) throw new Error("published recovery resolved a different release identity")
   await assertTagState(repo, versionTag(version), tagState, "published recovery tag ref object changed before attestation verification")
   const initialAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
-  const initialSnapshot = new Map(initialAssets.map((asset) => [asset.name, { digest: asset.digest, size: asset.size }]))
+  const initialSnapshot = new Map(initialAssets.map((asset) => [asset.name, { id: asset.id, digest: asset.digest, size: asset.size }]))
   const { run, local } = await qualifyingRecoveryRun(repo, release, version, main)
   const verifySnapshot = async () => {
     const current = assertExactPublished(await api(`repos/${repo}/releases/${release.id}`), version, source, expected)
@@ -214,7 +207,7 @@ async function verifyPublishedRecovery(repo, release, version, main, tagState, e
     if (assets.length !== initialSnapshot.size) throw new Error("published recovery asset set changed during attestation verification")
     for (const asset of assets) {
       const initial = initialSnapshot.get(asset.name)
-      if (!initial || asset.digest !== initial.digest || asset.size !== initial.size || !actionsBot(asset.uploader) || asset.state !== "uploaded") throw new Error("published recovery asset state changed during attestation verification")
+      if (!initial || asset.id !== initial.id || asset.digest !== initial.digest || asset.size !== initial.size || !actionsBot(asset.uploader) || asset.state !== "uploaded") throw new Error("published recovery asset state changed during attestation verification")
       const downloaded = local.get(asset.name); if (downloaded) assetDisposition(asset, downloaded.digest, downloaded.size)
     }
   }

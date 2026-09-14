@@ -1,29 +1,34 @@
 name: Reconcile release metadata
 
 on:
-  push:
-    branches: [main]
-  release:
-    types: [published]
-  schedule:
-    - cron: '12,27,42,57 * * * *'
+  workflow_run:
+    workflows: [CodeQL]
+    types: [completed]
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: release-metadata-reconciliation
   cancel-in-progress: false
 
 jobs:
-  reconcile:
+  verify:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
+      contents: read
+      actions: read
+      security-events: read
+    outputs:
+      sha: ${{ steps.execution.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: main
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v7
@@ -31,7 +36,37 @@ jobs:
           node-version: 24.19.0
       - name: Verify release-note formatting tests
         run: node --test scripts/release-notes.test.mjs
+      - name: Verify exact green protected main
+        id: execution
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECONCILE_EXECUTION_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/release-reconcile.mjs verify-execution
+
+  reconcile:
+    needs: verify
+    if: needs.verify.result == 'success' && needs.verify.outputs.sha != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+      security-events: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.19.0
+      - name: Confirm immutable checkout
+        env:
+          EXPECTED_SHA: ${{ needs.verify.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Reconcile trusted release metadata
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/release-reconcile.mjs
+          RECONCILE_EXECUTION_SHA: ${{ needs.verify.outputs.sha }}
+        run: node scripts/release-reconcile.mjs reconcile

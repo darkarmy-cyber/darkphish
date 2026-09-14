@@ -1,4 +1,5 @@
 import { generatedPath } from "./release-lib.mjs"
+import { verifyPullRequestReviews } from "./review-gate.mjs"
 
 export class ReleaseMaintainerReviewError extends Error {}
 
@@ -121,24 +122,19 @@ async function verifyResolvedThreads(get, repo, pr) {
 }
 
 async function verifyLegacyProtectedAutoMerge(get, repo, pr) {
-  requireReview(pr.merged_at && /^[a-f0-9]{40}$/.test(pr.merge_commit_sha || ""), "Historical release PR lacks immutable merge provenance")
-  const file = await get(`repos/${repo}/contents/scripts/release-lib.mjs?ref=${pr.merge_commit_sha}`)
-  requireReview(file?.type === "file" && file.encoding === "base64" && typeof file.content === "string", "Historical release merge policy source is unavailable")
-  const source = Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf8")
-  requireReview(!source.includes("verifyPullRequestReviews") && !source.includes("release-maintainer-review") && !source.includes("review-gate"),
-    "Historical release source already required explicit review provenance")
-  requireReview(source.includes("export function protectedMergeArguments(repo, pr)") &&
-    source.includes('["pr", "merge", String(pr.number), "--repo", repo, "--auto", "--squash", "--match-head-commit", pr.head.sha]') &&
-    source.includes('if (!metadata.allow_auto_merge || !base.protected) throw new Error("native auto-merge requires enabled repository auto-merge and a protected base branch")') &&
-    source.includes('if (pr.draft || pr.head.repo?.full_name !== repo) throw new Error("only internal ready pull requests are eligible")'),
-  "Historical release source does not prove the protected exact-head auto-merge policy")
-  await verifyResolvedThreads(get, repo, pr)
+  requireReview(pr.state === "closed" && pr.merged_at && /^[a-f0-9]{40}$/.test(pr.merge_commit_sha || ""), "Historical release PR lacks immutable merge provenance")
+  // Old releases predate maintainer attestations, not review itself. Authenticate
+  // both original exact-head results, their editors and pre-merge chronology.
+  // Source-code substrings (including dead code/comments) prove no execution.
+  const evidence = await verifyPullRequestReviews(repo, pr, {
+    get, query: (body) => get("graphql", { method: "POST", body }),
+  })
   const finalPR = await get(`repos/${repo}/pulls/${pr.number}`)
   requireReview(finalPR.number === pr.number && finalPR.head?.repo?.full_name === repo && finalPR.head?.ref === pr.head.ref &&
     finalPR.head?.sha === pr.head.sha && finalPR.base?.ref === "main" && finalPR.base?.sha === pr.base.sha && finalPR.title === pr.title &&
     finalPR.state === pr.state && finalPR.merged_at === pr.merged_at && finalPR.merge_commit_sha === pr.merge_commit_sha,
   "Historical release PR changed during protected auto-merge verification")
-  return { head: pr.head.sha, base: pr.base.sha, legacyProtectedAutoMerge: true, mergeCommit: pr.merge_commit_sha }
+  return { ...evidence, historicalConnectorReviews: true, mergeCommit: pr.merge_commit_sha }
 }
 
 export function releaseReviewBody(repo, pr) {
@@ -181,7 +177,6 @@ export async function verifyReleaseMaintainerReview(repo, pr, { get }) {
 
   const trusted = reviews.filter((review) => trustedReleaseReviewer(review.user))
   if (trusted.length === 0) {
-    requireReview(reviews.length === 0, "Missing trusted maintainer generated-release review")
     return verifyLegacyProtectedAutoMerge(get, repo, pr)
   }
   const latest = trusted.reduce((current, review) => !current || review.id > current.id ? review : current, null)

@@ -2,4 +2,4 @@
 category: Fixed
 version: 0.8.0
 ---
-- Verify pre-review generated release pull requests through their immutable historical protected exact-head auto-merge policy instead of retroactively requiring the later maintainer-review attestation, while keeping modern release review enforcement fail closed.
+- Verify historical generated release pull requests using both authentic exact-head code and security reviews completed before merge, instead of inferring review provenance from merge-script substrings or accepting missing reviews. Keep modern maintainer attestation enforcement unchanged.

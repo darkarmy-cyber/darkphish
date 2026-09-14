@@ -55,6 +55,12 @@ func TestReadinessCancelledBySupervisorStop(t *testing.T) {
 	if err := child.readyContext(ctx); err != context.Canceled {
 		t.Fatal("shutdown did not cancel readiness", err)
 	}
+	child.messages = make(chan supervisorMessage, 2)
+	child.messages <- supervisorMessage{Kind: "admin-ready"}
+	child.messages <- supervisorMessage{Kind: "phish-ready"}
+	if err := child.readyContext(ctx); err != context.Canceled {
+		t.Fatal("ready messages overrode shutdown", err)
+	}
 }
 
 func TestReservedDatabaseDoesNotPreventNormalStartup(t *testing.T) {
@@ -267,8 +273,14 @@ func TestSupervisorSignalsGracefulShutdown(t *testing.T) {
 	if err = cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
-	if err = child.stop(); err != nil {
-		t.Fatal(err)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	transaction := update.Transaction{Directory: t.TempDir()}
+	if stopped, err := stopReadyUpdate(ctx, child, transaction); !stopped || err != nil {
+		t.Fatal("stop request did not prevent commit", err)
+	}
+	if _, err := os.Stat(filepath.Join(transaction.Directory, "completed.json")); !os.IsNotExist(err) {
+		t.Fatal("cancelled ready update was committed")
 	}
 	if data, err := os.ReadFile(marker); err != nil || string(data) != "drained" {
 		t.Fatal("supervisor bypassed graceful shutdown")

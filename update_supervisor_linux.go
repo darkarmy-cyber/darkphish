@@ -101,6 +101,9 @@ func (c *supervisedChild) readyContext(ctx context.Context) error {
 	defer timer.Stop()
 	ready := map[string]bool{}
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -109,7 +112,7 @@ func (c *supervisedChild) readyContext(ctx context.Context) error {
 				ready[msg.Kind] = true
 			}
 			if len(ready) == 2 {
-				return nil
+				return ctx.Err()
 			}
 		case err := <-c.done: // Keep termination observable by stop.
 			c.done <- err
@@ -449,6 +452,9 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 					return true, err
 				}
 			}
+			if stopped, stopErr := stopReadyUpdate(stopContext, child, transaction); stopped {
+				return true, stopErr
+			}
 			// Outcome remains durable in the retained backup directory, without secrets.
 			if err = durableUpdateResult(filepath.Join(active, "completed.json"), outcome, latest.Tag); err != nil {
 				return true, errors.Join(err, child.stop())
@@ -469,6 +475,9 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 				if err = child.stop(); err != nil {
 					return true, err
 				}
+				if stopContext.Err() != nil {
+					return true, nil
+				}
 				if err = syscall.Exec(binary, os.Args, updateResultEnvironment("applied", latest.Tag)); err != nil {
 					// Reactivate the journal before rollback so a second interruption
 					// cannot leave a completed marker over a partial restoration.
@@ -484,11 +493,29 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 					return true, errors.Join(err, transaction.Rollback())
 				}
 			}
+			if stopContext.Err() != nil {
+				return true, child.stop()
+			}
 			if _, err = cWrite(child, "resume"); err != nil {
 				return true, errors.Join(err, child.stop())
 			}
 		}
 	}
+}
+
+func stopReadyUpdate(ctx context.Context, child *supervisedChild, transaction update.Transaction) (bool, error) {
+	if ctx.Err() == nil {
+		return false, nil
+	}
+	if err := child.stop(); err != nil {
+		return true, err
+	}
+	if _, err := os.Lstat(filepath.Join(transaction.Directory, "install-started.json")); err == nil {
+		return true, transaction.Rollback()
+	} else if !os.IsNotExist(err) {
+		return true, err
+	}
+	return true, nil
 }
 
 func configureUpdates(conf *config.Config) *update.Service {

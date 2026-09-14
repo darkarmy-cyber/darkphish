@@ -1,5 +1,7 @@
 const required = ["Changed", "Fixed", "Security", "Migration"]
-const stableSemver = "(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)"
+const stableSemver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+const releaseHeading = /^## ((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)) - \d{4}-\d{2}-\d{2}$/gm
+const releaseHeadingLine = /^## (0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*) - \d{4}-\d{2}-\d{2}$/
 const legacyTrailer = "All notable changes to Darkphish are documented here. The project follows\nSemantic Versioning while the public API and schema are still pre-1.0."
 
 const fallback = new Map([
@@ -22,16 +24,14 @@ const categoryMap = new Map([
 export const requiredReleaseSections = Object.freeze([...required])
 
 export function releaseSection(changelog, version) {
-  if (!new RegExp(`^${stableSemver}$`).test(version)) throw new Error("release notes require stable SemVer")
+  if (!stableSemver.test(version)) throw new Error("release notes require stable SemVer")
   const normalized = String(changelog).replace(/\r\n/g, "\n")
-  const heading = new RegExp(`^## ${version.replace(/\./g, "\\.")} - \\d{4}-\\d{2}-\\d{2}$`, "m")
-  const match = heading.exec(normalized)
-  if (!match) throw new Error(`changelog is missing release ${version}`)
-  const start = match.index
-  const nextHeading = /^## (0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*) - \d{4}-\d{2}-\d{2}$/gm
-  nextHeading.lastIndex = start + match[0].length
-  const next = nextHeading.exec(normalized)
-  let section = normalized.slice(start, next ? next.index : undefined).trim()
+  const headings = [...normalized.matchAll(releaseHeading)]
+  const index = headings.findIndex((match) => match[1] === version)
+  if (index < 0) throw new Error(`changelog is missing release ${version}`)
+  const match = headings[index]
+  const next = headings[index + 1]
+  let section = normalized.slice(match.index, next ? next.index : undefined).trim()
   if (section.endsWith(legacyTrailer)) section = section.slice(0, -legacyTrailer.length).trim()
   return section
 }
@@ -39,7 +39,7 @@ export function releaseSection(changelog, version) {
 export function canonicalReleaseNotes(section) {
   const normalized = String(section).replace(/\r\n/g, "\n").trim()
   const lines = normalized.split("\n")
-  if (!new RegExp(`^## ${stableSemver} - \\d{4}-\\d{2}-\\d{2}$`).test(lines[0] || "")) throw new Error("release notes heading is malformed")
+  if (!releaseHeadingLine.test(lines[0] || "")) throw new Error("release notes heading is malformed")
 
   const rawSections = new Map()
   let current = null

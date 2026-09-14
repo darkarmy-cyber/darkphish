@@ -8,6 +8,7 @@ import {
   pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, versionTag,
 } from "../../scripts/release-lib.mjs"
 import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
+import { normalizationHold } from "../../scripts/release-normalization-hold.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
 
@@ -321,6 +322,41 @@ async function preflight() {
   output("verified", "false")
   console.warn(`Withdrew unverified public ${tag}; normal fail-closed recovery may proceed.`)
 }
+async function holdPublication() {
+  const hold = normalizationHold()
+  if (!hold) throw new Error("normalization hold command requires an active release normalization hold")
+  const repo = repository()
+  const main = await executionMain(repo, process.env.RECOVERY_EXECUTION_SHA)
+  const tagState = await readTagState(repo, hold.tag)
+  if (!tagState || tagState.commit !== hold.source) throw new Error("normalization hold tag does not resolve to the held immutable source")
+  const release = await api(`repos/${repo}/releases/tags/${hold.tag}`, { missing: true })
+  if (release) {
+    const common = await commonPublishedState(repo, release, hold.version, main, tagState)
+    if (common.source !== hold.source) throw new Error("normalization hold public release source differs from held immutable source")
+    let run, kind
+    try {
+      run = await verifyRecoveryPublication(repo, release, hold.version, main, tagState, common)
+      kind = "recovery"
+    } catch (recoveryError) {
+      try {
+        run = await verifyNativePublication(repo, release, hold.version, main, tagState, common)
+        kind = "native"
+      } catch (nativeError) {
+        throw new Error(`normalization hold refused to withdraw an unverified publication: recovery=${recoveryError.message}; native=${nativeError.message}`)
+      }
+    }
+    await withdrawUnverified(repo, hold.tag, tagState, [release])
+    const withdrawn = await api(`repos/${repo}/releases/${release.id}`)
+    if (withdrawn?.draft !== true || withdrawn?.prerelease !== false || withdrawn?.target_commitish !== hold.source || withdrawn?.name !== release.name || withdrawn?.body !== release.body || !actionsBot(withdrawn?.author)) throw new Error("trusted publication changed unexpectedly while entering normalization hold")
+    assertSameAssets(await pages(`repos/${repo}/releases/${release.id}/assets`), common.snapshot)
+    console.log(`Verified ${kind} publication ${hold.tag} from run ${run.id} and withdrew it to draft under normalization hold.`)
+  }
+  const publicByTag = await api(`repos/${repo}/releases/tags/${hold.tag}`, { missing: true })
+  if (publicByTag?.draft === false) throw new Error("normalization hold failed to withdraw the public release")
+  await assertTagState(repo, hold.tag, tagState, "immutable release tag changed while entering normalization hold")
+  output("held", "true")
+  console.log(`Normalization hold is enforced for ${hold.tag}; no public release remains.`)
+}
 function generateReceipt() {
   const version = process.env.RECOVERY_VERSION, source = process.env.RECOVERY_SOURCE
   if (!version || !sha40(source)) throw new Error("recovery receipt inputs are invalid")
@@ -338,6 +374,6 @@ async function verifyExecution() {
   console.log("Verified immutable current protected-main execution before release mutation.")
 }
 const command = process.argv[2] || "preflight"
-const runner = command === "preflight" ? preflight : command === "receipt" ? async () => generateReceipt() : command === "execution" ? verifyExecution : null
+const runner = command === "preflight" ? preflight : command === "hold" ? holdPublication : command === "receipt" ? async () => generateReceipt() : command === "execution" ? verifyExecution : null
 if (!runner) throw new Error(`unknown publication guard command ${command}`)
 runner().catch((error) => { console.error(error.message); process.exitCode = 1 })

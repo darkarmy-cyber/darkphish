@@ -11,7 +11,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: release-metadata-reconciliation
+  group: protected-main-mutation
   cancel-in-progress: false
 
 jobs:
@@ -36,7 +36,7 @@ jobs:
         with:
           node-version: 24.19.0
       - name: Verify release-note formatting and provenance tests
-        run: node --test scripts/release-notes.test.mjs scripts/release-body-match.test.mjs scripts/release-staged-provenance.test.mjs scripts/release-draft-tag-repair.test.mjs
+        run: node --test scripts/release-notes.test.mjs scripts/release-body-match.test.mjs scripts/release-staged-provenance.test.mjs scripts/release-draft-tag-repair.test.mjs scripts/release-normalization-hold.test.mjs
       - name: Verify exact green protected main
         id: execution
         env:
@@ -51,6 +51,9 @@ jobs:
     permissions:
       contents: write
       actions: read
+      checks: read
+      pull-requests: read
+      issues: read
       security-events: read
       attestations: read
     steps:
@@ -66,6 +69,11 @@ jobs:
         env:
           EXPECTED_SHA: ${{ needs.verify.outputs.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Enforce trusted normalization hold
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_EXECUTION_SHA: ${{ needs.verify.outputs.sha }}
+        run: node .github/scripts/release-publication-guard.mjs hold
       - name: Repair trusted detached draft tag
         env:
           GH_TOKEN: ${{ github.token }}

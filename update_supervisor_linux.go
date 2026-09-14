@@ -267,17 +267,8 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			return false, nil
 		}
 	}
-	if err = os.MkdirAll(state, 0700); err != nil {
-		// A read-only native installation remains usable with manual updates.
-		// There cannot be a pending transaction in a state directory we could
-		// not create; configureUpdates will disable apply without a supervisor.
-		if _, stateErr := os.Lstat(state); os.IsNotExist(stateErr) {
-			return false, nil
-		}
-		return true, err
-	}
-	if err = syncUpdateDirectory(root); err != nil {
-		return true, err
+	if ready, stateErr := prepareSupervisorState(root, pending, syncUpdateDirectory); !ready || stateErr != nil {
+		return stateErr != nil, stateErr
 	}
 	info, err := os.Lstat(state)
 	if err != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
@@ -440,14 +431,10 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			outcome := "applied"
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "update failed:", err)
-				outcome = "rollback"
-				if _, started := os.Stat(filepath.Join(active, "install-started.json")); started == nil {
-					if rollbackErr := transaction.Rollback(); rollbackErr != nil {
-						return true, rollbackErr
-					}
-				}
-				if !backedUp {
-					outcome = "backup_failed"
+				var rollbackErr error
+				outcome, rollbackErr = recoverFailedApply(transaction, backedUp)
+				if rollbackErr != nil {
+					return true, rollbackErr
 				}
 				if stopContext.Err() != nil {
 					return true, nil
@@ -510,6 +497,40 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			}
 		}
 	}
+}
+
+func prepareSupervisorState(root string, pending bool, syncDirectory func(string) error) (bool, error) {
+	state := filepath.Join(root, ".darkphish-updates")
+	if err := os.MkdirAll(state, 0700); err != nil {
+		if !pending {
+			return false, nil
+		}
+		return false, err
+	}
+	if err := syncDirectory(root); err != nil {
+		// No transaction means no runtime mutation to recover. Keep the healthy
+		// application available, with one-click apply disabled by configureUpdates.
+		if !pending {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func recoverFailedApply(transaction update.Transaction, backedUp bool) (string, error) {
+	if _, err := os.Lstat(filepath.Join(transaction.Directory, "install-started.json")); err == nil {
+		if err := transaction.Rollback(); err != nil {
+			return "", err
+		}
+		return "rollback", nil
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+	if !backedUp {
+		return "backup_failed", nil
+	}
+	return "apply_failed", nil
 }
 
 func stopReadyUpdate(ctx context.Context, child *supervisedChild, transaction update.Transaction) (bool, error) {
@@ -622,6 +643,8 @@ func recordUpdateCompletion(state string, saved updateCompletion) error {
 		events = [][2]string{{"update.backup", "success"}, {"update.apply", "failure"}, {"update.rollback", "success"}}
 	case "backup_failed":
 		events = [][2]string{{"update.backup", "failure"}, {"update.apply", "failure"}}
+	case "apply_failed":
+		events = [][2]string{{"update.backup", "success"}, {"update.apply", "failure"}}
 	default:
 		return errors.New("invalid update audit result")
 	}
@@ -773,7 +796,7 @@ func readUpdateCompletion(path string) (updateCompletion, error) {
 	if json.Unmarshal(data, &result) != nil {
 		return updateCompletion{}, nil
 	}
-	if result.Result != "applied" && result.Result != "rollback" && result.Result != "backup_failed" {
+	if result.Result != "applied" && result.Result != "rollback" && result.Result != "backup_failed" && result.Result != "apply_failed" {
 		return updateCompletion{}, nil
 	}
 	if result.Result == "rollback" && result.Tag == "interrupted" {

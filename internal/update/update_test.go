@@ -54,7 +54,7 @@ func TestCheckerIgnoresDraftAndPrereleaseWithoutToken(t *testing.T) {
 func TestUpdateOutcomeSurvivesReleaseChecks(t *testing.T) {
 	r, _, _ := evidence(t)
 	body, _ := json.Marshal([]Release{r})
-	for _, result := range []string{"applied", "rollback", "backup_failed"} {
+	for _, result := range []string{"applied", "rollback", "backup_failed", "apply_failed"} {
 		s := NewService("0.7.1", "", func(Release) error { return nil })
 		s.SetResult(result)
 		message := s.Status().Result

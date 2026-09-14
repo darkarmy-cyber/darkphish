@@ -22,11 +22,48 @@ import (
 
 type failingCompletionStore struct {
 	audit.Store
-	err error
+	err     error
+	actions []string
 }
 
-func (s *failingCompletionStore) Append(audit.Event) (int64, error) {
+func (s *failingCompletionStore) Append(event audit.Event) (int64, error) {
+	s.actions = append(s.actions, event.Action)
 	return 0, s.err
+}
+
+func TestPreInstallFailureDoesNotReportRollback(t *testing.T) {
+	state := t.TempDir()
+	transaction := update.Transaction{Directory: t.TempDir()}
+	result, err := recoverFailedApply(transaction, true)
+	if err != nil || result != "apply_failed" {
+		t.Fatal("pre-install failure reported rollback", result, err)
+	}
+	store := &failingCompletionStore{}
+	audit.SetStore(store)
+	defer audit.SetStore(nil)
+	if err := recordUpdateCompletion(state, updateCompletion{Result: result, Tag: "v0.8.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(store.actions, ",") != "update.backup,update.apply" {
+		t.Fatal("pre-install failure recorded nonexistent rollback", store.actions)
+	}
+	if err := os.WriteFile(filepath.Join(transaction.Directory, "install-started.json"), []byte(`{}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := recoverFailedApply(transaction, true); err == nil {
+		t.Fatal("started installation skipped rollback verification")
+	}
+}
+
+func TestUnsupportedStateSyncOnlyFallsBackWithoutTransaction(t *testing.T) {
+	root := t.TempDir()
+	syncFailure := func(string) error { return syscall.EOPNOTSUPP }
+	if ready, err := prepareSupervisorState(root, false, syncFailure); ready || err != nil {
+		t.Fatal("unsupported state sync prevented normal startup", ready, err)
+	}
+	if ready, err := prepareSupervisorState(root, true, syncFailure); ready || !errors.Is(err, syscall.EOPNOTSUPP) {
+		t.Fatal("pending recovery did not fail closed", ready, err)
+	}
 }
 
 func TestCompletionAuditRetriesFailedPersistence(t *testing.T) {
@@ -259,7 +296,7 @@ func TestPendingRecoveryFailsClosedBeforeEligibility(t *testing.T) {
 }
 
 func TestCompletedRecoveryRetainsResultAndTag(t *testing.T) {
-	for _, outcome := range []string{"applied", "rollback", "backup_failed"} {
+	for _, outcome := range []string{"applied", "rollback", "backup_failed", "apply_failed"} {
 		active := t.TempDir()
 		if err := durableUpdateResult(filepath.Join(active, "completed.json"), outcome, "v0.8.0"); err != nil {
 			t.Fatal(err)

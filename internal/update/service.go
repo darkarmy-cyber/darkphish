@@ -60,6 +60,8 @@ func (s *Service) SetResult(result string) {
 		s.status.Result = "Update failed; the previous application and database were restored"
 	case "backup_failed":
 		s.status.Result = "Pre-update backup failed; no application files were changed"
+	case "apply_failed":
+		s.status.Result = "Update could not start; the backup completed and no application files were changed"
 	}
 }
 

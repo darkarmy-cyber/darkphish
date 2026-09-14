@@ -4,6 +4,7 @@ on:
   workflow_run:
     workflows: [CI, CodeQL]
     types: [completed]
+    branches: [main]
 
 permissions:
   contents: read

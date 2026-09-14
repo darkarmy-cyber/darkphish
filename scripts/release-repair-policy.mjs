@@ -16,12 +16,18 @@ const resumeAllowed = new Set([
   "scripts/release-repair-policy.mjs", "scripts/release-repair-policy.test.mjs",
   "changes/resume-verified-release.md", "docs/RELEASE_RESUME_071.md",
 ])
+const timestampAllowed = new Set([
+  "scripts/release-resume.mjs", "scripts/release-resume.test.mjs",
+  "scripts/release-repair-policy.mjs", "scripts/release-repair-policy.test.mjs",
+  "changes/resumption-publication-timestamp.md", "docs/RELEASE_RESUME_TIMESTAMP.md",
+])
 
 export async function verifyReleaseRepair(repo, pr, request) {
-  const resume = pr.number === 58, expectedBase = resume ? "88377d6951ede7352acb257777250bdfecd2052b" : base
-  const paths = resume ? resumeAllowed : allowed
-  const branch = resume ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-finalize" : "fix/historical-release-review-provenance"
-  if (repo !== repository || ![56, 58].includes(pr.number) || pr.base?.sha !== expectedBase || pr.base.ref !== "main" ||
+  const resume = pr.number === 58, timestamp = pr.number === 59
+  const expectedBase = timestamp ? "697fe42eb20f3f5197be9545ed5b3bf835b730c0" : resume ? "88377d6951ede7352acb257777250bdfecd2052b" : base
+  const paths = timestamp ? timestampAllowed : resume ? resumeAllowed : allowed
+  const branch = timestamp ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-timestamp" : resume ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-finalize" : "fix/historical-release-review-provenance"
+  if (repo !== repository || ![56, 58, 59].includes(pr.number) || pr.base?.sha !== expectedBase || pr.base.ref !== "main" ||
     pr.head?.repo?.full_name !== repository || pr.head.ref !== branch ||
     !/^[a-f0-9]{40}$/.test(pr.head.sha || "") || pr.state !== "open" || pr.draft !== false ||
     !["OWNER", "MEMBER", "COLLABORATOR"].includes(pr.author_association)) throw new Error("Not the authorized release repair")
@@ -37,6 +43,14 @@ export async function verifyReleaseRepair(repo, pr, request) {
     return Buffer.from(file.content, "base64").toString("utf8")
   }
   if ((await read("VERSION")).trim() !== "0.7.1") throw new Error("Release repair VERSION changed")
+  if (timestamp) {
+    for (const ref of [expectedBase, pr.head.sha]) {
+      if (await request(`repos/${repo}/contents/.github/release-normalization-hold.json?ref=${ref}`, { missing: true }) !== null) {
+        throw new Error("Timestamp repair must preserve the reviewed absence of the temporary hold")
+      }
+    }
+    return
+  }
   if (resume) {
     if (!files.some(f => f.filename === ".github/release-normalization-hold.json" && f.status === "removed") ||
       await request(`repos/${repo}/contents/.github/release-normalization-hold.json?ref=${pr.head.sha}`, { missing: true }) !== null) {

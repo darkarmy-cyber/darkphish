@@ -37,6 +37,25 @@ test("explicit repair retains merge gates and revalidates scope immediately befo
   assert.deepEqual(f.writes, [{ sha: head, merge_method: "squash" }])
 })
 
+test("PR59 timestamp repair permits only exact base, branch and narrow metadata-validation paths", async () => {
+  const make = () => {
+    const f = fixture()
+    f.pr.number = 59; f.pr.base.sha = "697fe42eb20f3f5197be9545ed5b3bf835b730c0"
+    f.pr.head.ref = "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-timestamp"
+    f.files = [{ filename: "scripts/release-resume.mjs", status: "modified" }]
+    const original = f.request
+    f.request = async (path, options) => path.includes("/contents/.github/release-normalization-hold.json?")
+      ? (assert.equal(options?.missing, true), f.headHold || null) : original(path, options)
+    return f
+  }
+  const f = make(); await verifyReleaseRepair(repo, f.pr, f.request)
+  for (const change of [g => { g.pr.number = 60 }, g => { g.pr.base.sha = base }, g => { g.pr.head.ref = "other" },
+    g => { g.files[0].status = "removed" }, g => { g.headHold = {} }, g => { g.version = "0.8.0" },
+    g => { g.files.push({ filename: ".github/workflows/release-resume.yml", status: "modified" }) }]) {
+    const g = make(); change(g); await assert.rejects(verifyReleaseRepair(repo, g.pr, g.request))
+  }
+})
+
 test("repair never authorizes failed checks, alerts, absent reviews or unready PR", async () => {
   for (const change of [f => { f.checks.pop() }, f => { f.alerts = [{}] }, f => { f.badReview = true },
     f => { f.pr.labels = [] }, f => { f.pr.mergeable = false }]) {

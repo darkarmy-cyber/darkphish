@@ -54,7 +54,7 @@ func TestIMAPCancellationClosesBlockedRead(t *testing.T) {
 }
 
 func TestFailedFetchLeavesMessagesUnread(t *testing.T) {
-	messages, err, commands := fetchFixture(t, nil)
+	messages, commands, err := fetchFixture(t, nil)
 	if err == nil || len(messages) != 0 {
 		t.Fatal("failed fetch was treated as completed", err)
 	}
@@ -63,14 +63,14 @@ func TestFailedFetchLeavesMessagesUnread(t *testing.T) {
 
 func TestMalformedMessageDoesNotDiscardValidReports(t *testing.T) {
 	valid := "From: sender@example.com\r\nTo: reports@example.com\r\nSubject: report\r\n\r\nvalid report\r\n"
-	messages, err, commands := fetchFixture(t, []string{valid, "malformed header\r\n\r\nbody", valid})
+	messages, commands, err := fetchFixture(t, []string{valid, "malformed header\r\n\r\nbody", valid})
 	if err == nil || len(messages) != 2 || messages[0].UID != 42 || messages[1].UID != 44 {
 		t.Fatalf("valid messages around malformed UID were lost: %#v %v", messages, err)
 	}
 	assertPeekOnly(t, commands)
 }
 
-func fetchFixture(t *testing.T, bodies []string) ([]Email, error, []string) {
+func fetchFixture(t *testing.T, bodies []string) ([]Email, []string, error) {
 	t.Helper()
 	allowed := dialer.DefaultDialer.AllowedHosts()
 	if err := dialer.SetAllowedHosts([]string{"127.0.0.1"}); err != nil {
@@ -128,7 +128,7 @@ func fetchFixture(t *testing.T, bodies []string) ([]Email, error, []string) {
 	for command := range commands {
 		captured = append(captured, command)
 	}
-	return messages, fetchErr, captured
+	return messages, captured, fetchErr
 }
 
 func assertPeekOnly(t *testing.T, commands []string) {

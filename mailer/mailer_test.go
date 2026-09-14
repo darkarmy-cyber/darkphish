@@ -8,7 +8,61 @@ import (
 	"net/textproto"
 	"reflect"
 	"testing"
+	"time"
 )
+
+type blockedCompletion struct {
+	Mail
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (m *blockedCompletion) Success() error {
+	close(m.entered)
+	<-m.release
+	return m.Mail.Success()
+}
+
+func TestCancellationWaitsForSMTPResultPersistence(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mw := NewMailWorker()
+	done := make(chan struct{})
+	go func() { mw.Start(ctx); close(done) }()
+	sender := newMockSender()
+	sender.setSend(func(*mockMessage) error { return nil })
+	dialer := newMockDialer()
+	dialer.setDial(func() (Sender, error) { return sender, nil })
+	mail := &blockedCompletion{Mail: generateMessages(dialer)[0], entered: make(chan struct{}), release: make(chan struct{})}
+	mw.Queue([]Mail{mail})
+	select {
+	case <-mail.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("SMTP completion was not reached")
+	}
+	cancel()
+	select {
+	case <-done:
+		t.Fatal("mailer exited before persisting an accepted SMTP message")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(mail.release)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("mailer did not finish draining")
+	}
+	if !mail.Mail.(*mockMessage).finished {
+		t.Fatal("accepted message result was lost")
+	}
+	queued := make(chan struct{})
+	go func() { mw.Queue([]Mail{mail}); close(queued) }()
+	select {
+	case <-queued:
+	case <-time.After(time.Second):
+		t.Fatal("queue blocked after shutdown")
+	}
+}
 
 func generateMessages(dialer Dialer) []Mail {
 	to := []string{"to@example.com"}

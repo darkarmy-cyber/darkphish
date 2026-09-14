@@ -91,20 +91,9 @@ func (c *supervisedChild) stop() error {
 	defer c.feedback.Close()
 	// The application's shutdown loop handles os.Interrupt and drains HTTP/IMAP.
 	_ = c.cmd.Process.Signal(os.Interrupt)
-	select {
-	case <-c.done:
-		return nil
-	case <-time.After(15 * time.Second):
-	}
-	if err := c.cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		return err
-	}
-	select {
-	case <-c.done:
-		return nil
-	case <-time.After(10 * time.Second):
-		return errors.New("application did not stop; refusing update")
-	}
+	// Never kill an in-flight SMTP delivery to advance an update. Its result
+	// must be persisted before a snapshot; a hung delivery keeps apply waiting.
+	return <-c.done
 }
 
 func (c *supervisedChild) ready() error {
@@ -205,14 +194,34 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 	if os.Getenv(childEnvironment) == "1" {
 		return false, nil
 	}
-	if releaseVersion != semanticVersion() {
-		return false, nil
-	}
-	l, err := updateLayout(conf)
+	root, err := os.Getwd()
 	if err != nil {
-		return false, nil
+		return true, err
 	}
-	state := filepath.Join(l.Root, ".darkphish-updates")
+	state := filepath.Join(root, ".darkphish-updates")
+	active := filepath.Join(state, "active")
+	_, activeErr := os.Lstat(active)
+	pending := activeErr == nil
+	if activeErr != nil && !os.IsNotExist(activeErr) {
+		return true, activeErr
+	}
+	var l update.Layout
+	if pending {
+		// Local recovery must precede ALL new-update eligibility checks. The
+		// executable/runtime may be partially replaced and gh may be unavailable.
+		l, err = recoveryLayout(conf, root)
+		if err != nil {
+			return true, err
+		}
+	} else {
+		if releaseVersion != semanticVersion() {
+			return false, nil
+		}
+		l, err = updateLayout(conf)
+		if err != nil {
+			return false, nil
+		}
+	}
 	if err = os.MkdirAll(state, 0700); err != nil {
 		// A read-only native installation remains usable with manual updates.
 		// There cannot be a pending transaction in a state directory we could
@@ -220,6 +229,9 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 		if _, stateErr := os.Lstat(state); os.IsNotExist(stateErr) {
 			return false, nil
 		}
+		return true, err
+	}
+	if err = syncUpdateDirectory(root); err != nil {
 		return true, err
 	}
 	info, err := os.Lstat(state)
@@ -234,29 +246,40 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		return true, errors.New("another supervisor holds the update lock")
 	}
-	active := filepath.Join(state, "active")
 	transaction := update.Transaction{Layout: l, Directory: active}
 	recovered := false
 	if _, err = os.Lstat(active); err == nil {
-		if _, started := os.Stat(filepath.Join(active, "install-started.json")); started == nil {
-			if _, completed := os.Stat(filepath.Join(active, "completed.json")); os.IsNotExist(completed) {
+		if _, started := os.Lstat(filepath.Join(active, "install-started.json")); started == nil {
+			completed, completionErr := completedUpdate(active)
+			if completionErr != nil {
+				return true, completionErr
+			}
+			if !completed {
 				if err = transaction.Rollback(); err != nil {
 					return true, err
 				}
 				recovered = true
 			}
+		} else if !os.IsNotExist(started) {
+			return true, started
 		}
 		if err = os.Rename(active, filepath.Join(state, "recovered-"+time.Now().UTC().Format("20060102T150405.000000000"))); err != nil {
 			return true, err
 		}
+		if err = syncUpdateDirectory(state); err != nil {
+			return true, err
+		}
 	}
 	binary := filepath.Join(l.Root, "darkphish")
-	var child *supervisedChild
-	if recovered {
-		child, err = startSupervised(binary, "rollback", "interrupted")
-	} else {
-		child, err = startSupervised(binary)
+	if pending {
+		result, tag := "", ""
+		if recovered {
+			result, tag = "rollback", "interrupted"
+		}
+		// Execute the restored supervisor even if future updates are unsupported.
+		return true, syscall.Exec(binary, os.Args, updateResultEnvironment(result, tag))
 	}
+	child, err := startSupervised(binary)
 	if err != nil {
 		return true, err
 	}
@@ -304,6 +327,9 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 				continue
 			}
 			if err = os.Mkdir(active, 0700); err != nil {
+				return true, errors.Join(err, child.stop())
+			}
+			if err = syncUpdateDirectory(state); err != nil {
 				return true, errors.Join(err, child.stop())
 			}
 			stage := filepath.Join(active, "stage")
@@ -390,7 +416,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 				if err = child.stop(); err != nil {
 					return true, err
 				}
-				if err = syscall.Exec(binary, os.Args, os.Environ()); err != nil {
+				if err = syscall.Exec(binary, os.Args, updateResultEnvironment("applied", latest.Tag)); err != nil {
 					transaction.Directory = retained
 					return true, errors.Join(err, transaction.Rollback())
 				}
@@ -440,10 +466,9 @@ func configureUpdates(conf *config.Config) *update.Service {
 			}
 		}
 	}
-	result := ""
-	if os.Getenv(childEnvironment) == "1" {
+	result := os.Getenv("DARKPHISH_UPDATE_RESULT")
+	if result != "" {
 		tag := os.Getenv("DARKPHISH_UPDATE_TAG")
-		result = os.Getenv("DARKPHISH_UPDATE_RESULT")
 		switch result {
 		case "applied":
 			audit.RecordSystem("update.backup", "release", tag, "success")
@@ -490,6 +515,60 @@ func updateRuntimePaths(conf *config.Config, root string) error {
 		return errors.New("one-click update requires the bundled SQLite migration directory")
 	}
 	return nil
+}
+
+func recoveryLayout(conf *config.Config, root string) (update.Layout, error) {
+	configAbs, err := filepath.Abs(*configPath)
+	if err != nil {
+		return update.Layout{}, err
+	}
+	dbAbs, err := filepath.Abs(conf.DBPath)
+	if err != nil || conf.DBName != "sqlite3" || filepath.Dir(configAbs) != root || filepath.Base(configAbs) != "config.json" || filepath.Dir(dbAbs) != root || filepath.Base(dbAbs) == "config.json" {
+		return update.Layout{}, errors.New("pending update requires its original local SQLite/config layout; refusing normal startup")
+	}
+	for _, entry := range []string{"darkphish", "VERSION", "LICENSE", "NOTICE.md", "README.md", "CHANGELOG.md", "db", "templates", "static", ".darkphish-updates"} {
+		if filepath.Base(dbAbs) == entry {
+			return update.Layout{}, errors.New("invalid recovery database path")
+		}
+	}
+	return update.Layout{Root: root, Config: "config.json", Database: filepath.Base(dbAbs)}, nil
+}
+
+func updateResultEnvironment(result, tag string) []string {
+	var env []string
+	for _, value := range os.Environ() {
+		if strings.HasPrefix(value, "DARKPHISH_UPDATE_RESULT=") || strings.HasPrefix(value, "DARKPHISH_UPDATE_TAG=") {
+			continue
+		}
+		env = append(env, value)
+	}
+	if result != "" {
+		env = append(env, "DARKPHISH_UPDATE_RESULT="+result, "DARKPHISH_UPDATE_TAG="+tag)
+	}
+	return env
+}
+
+func completedUpdate(active string) (bool, error) {
+	path := filepath.Join(active, "completed.json")
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > 4096 {
+		return false, errors.New("invalid update completion marker")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	var result struct {
+		Result string `json:"result"`
+	}
+	// An interrupted marker write is not a committed update; restore the backup.
+	return json.Unmarshal(data, &result) == nil && (result.Result == "success" || result.Result == "failure"), nil
 }
 
 func cWrite(c *supervisedChild, message string) (int, error) {

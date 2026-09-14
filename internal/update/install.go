@@ -261,8 +261,25 @@ func (t Transaction) Install(stage string) error {
 	if err := syncDir(t.Directory); err != nil {
 		return err
 	}
+	// Persist the transaction's name in its parent before mutating the runtime.
+	if err := syncDir(filepath.Dir(t.Directory)); err != nil {
+		return err
+	}
 	for _, entry := range runtimeEntries {
-		if err := os.Rename(filepath.Join(t.Layout.Root, entry), filepath.Join(t.Directory, "original", entry)); err != nil {
+		source := filepath.Join(t.Layout.Root, entry)
+		original := filepath.Join(t.Directory, "original", entry)
+		info, err := os.Lstat(source)
+		if err != nil {
+			return err
+		}
+		if info.Mode().IsRegular() {
+			// Keep the executable present across a crash: link the original, then
+			// atomically replace it. A missing executable cannot run recovery.
+			err = os.Link(source, original)
+		} else {
+			err = os.Rename(source, original)
+		}
+		if err != nil {
 			return err
 		}
 		if err := syncDir(filepath.Join(t.Directory, "original")); err != nil {
@@ -289,14 +306,17 @@ func (t Transaction) Rollback() error {
 	}
 	for _, entry := range runtimeEntries {
 		original := filepath.Join(t.Directory, "original", entry)
-		if _, err := os.Lstat(original); os.IsNotExist(err) {
+		info, err := os.Lstat(original)
+		if os.IsNotExist(err) {
 			continue
 		} else if err != nil {
 			return err
 		}
 		// All paths are fixed runtime roots inside the locally validated layout.
-		if err := os.RemoveAll(filepath.Join(t.Layout.Root, entry)); err != nil {
-			return err
+		if !info.Mode().IsRegular() {
+			if err := os.RemoveAll(filepath.Join(t.Layout.Root, entry)); err != nil {
+				return err
+			}
 		}
 		if err := os.Rename(original, filepath.Join(t.Layout.Root, entry)); err != nil {
 			return err

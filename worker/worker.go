@@ -2,7 +2,9 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
@@ -21,7 +23,55 @@ type Worker interface {
 
 // DefaultWorker is the background worker that handles watching for new campaigns and sending emails appropriately.
 type DefaultWorker struct {
-	mailer mailer.Mailer
+	mailer  mailer.Mailer
+	mu      sync.Mutex
+	cancel  context.CancelFunc
+	done    chan struct{}
+	stop    chan struct{}
+	stopped bool
+	jobs    sync.WaitGroup
+}
+
+func (w *DefaultWorker) begin() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.stopped {
+		return false
+	}
+	if w.stop == nil {
+		w.stop = make(chan struct{})
+	}
+	w.jobs.Add(1)
+	return true
+}
+
+// Shutdown stops scheduling and waits for SMTP delivery and result persistence.
+func (w *DefaultWorker) Shutdown() {
+	w.mu.Lock()
+	w.stopped = true
+	if w.stop != nil {
+		select {
+		case <-w.stop:
+		default:
+			close(w.stop)
+		}
+	}
+	if w.cancel != nil {
+		w.cancel()
+	}
+	if w.done == nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		w.done = make(chan struct{})
+		done := w.done
+		go func() { w.mailer.Start(ctx); close(done) }()
+	}
+	done := w.done
+	w.mu.Unlock()
+	if done != nil {
+		<-done
+	}
+	w.jobs.Wait()
 }
 
 // New creates a new worker object to handle the creation of campaigns
@@ -83,7 +133,9 @@ func (w *DefaultWorker) processCampaigns(t time.Time) error {
 
 	// Next, we process each group of maillogs in parallel
 	for cid, msc := range msg {
+		w.jobs.Add(1)
 		go func(cid int64, msc []mailer.Mail) {
+			defer w.jobs.Done()
 			c := campaignCache[cid]
 			if c.Status == models.CampaignQueued {
 				err := c.UpdateStatus(models.CampaignInProgress)
@@ -104,11 +156,29 @@ func (w *DefaultWorker) processCampaigns(t time.Time) error {
 // Start launches the worker to poll the database every minute for any pending maillogs
 // that need to be processed.
 func (w *DefaultWorker) Start() {
+	w.mu.Lock()
+	if w.stopped || w.done != nil {
+		w.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	w.cancel = cancel
+	w.done = make(chan struct{})
+	done := w.done
+	w.mu.Unlock()
+	mailerDone := make(chan struct{})
+	go func() { w.mailer.Start(ctx); close(mailerDone) }()
+	defer func() { cancel(); <-mailerDone; close(done) }()
 	log.Info("Background Worker Started Successfully - Waiting for Campaigns")
-	go w.mailer.Start(context.Background())
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
-	for t := range ticker.C {
+	for {
+		var t time.Time
+		select {
+		case <-ctx.Done():
+			return
+		case t = <-ticker.C:
+		}
 		credentials, auditEvents, cleanupErr := models.CleanupSecurityRetention(t)
 		if cleanupErr != nil {
 			log.Errorf("security retention cleanup failed: %v", cleanupErr)
@@ -131,6 +201,10 @@ func (w *DefaultWorker) Start() {
 
 // LaunchCampaign starts a campaign
 func (w *DefaultWorker) LaunchCampaign(c models.Campaign) {
+	if !w.begin() {
+		return
+	}
+	defer w.jobs.Done()
 	ms, err := models.GetMailLogsByCampaign(c.Id)
 	if err != nil {
 		audit.RecordSystem("campaign.start", "campaigns", strconv.FormatInt(c.Id, 10), "failure")
@@ -168,9 +242,23 @@ func (w *DefaultWorker) LaunchCampaign(c models.Campaign) {
 
 // SendTestEmail sends a test email
 func (w *DefaultWorker) SendTestEmail(s *models.EmailRequest) error {
+	if !w.begin() {
+		return errors.New("mailer is shutting down")
+	}
+	defer w.jobs.Done()
+	// A delivery already in flight must be able to record its result even if
+	// the HTTP caller leaves while shutdown is draining SMTP.
+	s.ErrorChan = make(chan error, 1)
+	w.jobs.Add(1)
 	go func() {
+		defer w.jobs.Done()
 		ms := []mailer.Mail{s}
 		w.mailer.Queue(ms)
 	}()
-	return <-s.ErrorChan
+	select {
+	case err := <-s.ErrorChan:
+		return err
+	case <-w.stop:
+		return errors.New("mailer is shutting down")
+	}
 }

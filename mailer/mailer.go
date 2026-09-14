@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/textproto"
+	"sync"
 
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/gophish/gomail"
@@ -63,6 +64,7 @@ type Mail interface {
 // to be sent to the same server.
 type MailWorker struct {
 	queue chan []Mail
+	done  chan struct{}
 }
 
 // NewMailWorker returns an instance of MailWorker with the mail queue
@@ -70,18 +72,29 @@ type MailWorker struct {
 func NewMailWorker() *MailWorker {
 	return &MailWorker{
 		queue: make(chan []Mail),
+		done:  make(chan struct{}),
 	}
 }
 
 // Start launches the mail worker to begin listening on the Queue channel
 // for new slices of Mail instances to process.
 func (mw *MailWorker) Start(ctx context.Context) {
+	var deliveries sync.WaitGroup
+	defer func() {
+		deliveries.Wait()
+		close(mw.done)
+	}()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case ms := <-mw.queue:
+			if len(ms) == 0 {
+				continue
+			}
+			deliveries.Add(1)
 			go func(ctx context.Context, ms []Mail) {
+				defer deliveries.Done()
 				dialer, err := ms[0].GetDialer()
 				if err != nil {
 					errorMail(err, ms)
@@ -95,7 +108,10 @@ func (mw *MailWorker) Start(ctx context.Context) {
 
 // Queue sends the provided mail to the internal queue for processing.
 func (mw *MailWorker) Queue(ms []Mail) {
-	mw.queue <- ms
+	select {
+	case mw.queue <- ms:
+	case <-mw.done:
+	}
 }
 
 // errorMail is a helper to handle erroring out a slice of Mail instances

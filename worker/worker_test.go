@@ -15,6 +15,42 @@ type logMailer struct {
 	queue chan []mailer.Mail
 }
 
+type drainingMailer struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (m *drainingMailer) Start(ctx context.Context) {
+	close(m.started)
+	<-ctx.Done()
+	<-m.release
+}
+
+func (m *drainingMailer) Queue([]mailer.Mail) {}
+
+func TestShutdownWaitsForMailer(t *testing.T) {
+	m := &drainingMailer{started: make(chan struct{}), release: make(chan struct{})}
+	w := &DefaultWorker{mailer: m}
+	go w.Start()
+	<-m.started
+	done := make(chan struct{})
+	go func() { w.Shutdown(); close(done) }()
+	select {
+	case <-done:
+		t.Fatal("worker did not wait for SMTP drain")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(m.release)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker did not stop")
+	}
+	if w.begin() {
+		t.Fatal("worker accepted work after shutdown")
+	}
+}
+
 func (m *logMailer) Start(ctx context.Context) {}
 
 func (m *logMailer) Queue(ms []mailer.Mail) {

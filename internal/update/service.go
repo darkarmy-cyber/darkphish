@@ -48,7 +48,7 @@ func NewService(current, unsupported string, request func(Release) error) *Servi
 
 func (s *Service) Status() Status { s.mu.Lock(); defer s.mu.Unlock(); return s.status }
 
-// Keep the last transaction outcome separate from transient release-check
+// SetResult keeps the last transaction outcome separate from release-check
 // errors so a bell poll or automatic check cannot erase a rollback notice.
 func (s *Service) SetResult(result string) {
 	s.mu.Lock()

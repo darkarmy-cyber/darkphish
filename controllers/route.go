@@ -138,7 +138,11 @@ func (as *AdminServer) Start() {
 func (as *AdminServer) Shutdown() error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
-	return as.server.Shutdown(ctx)
+	err := as.server.Shutdown(ctx)
+	if background, ok := as.worker.(interface{ Shutdown() }); ok {
+		background.Shutdown()
+	}
+	return err
 }
 
 // SetupAdminRoutes creates the routes for handling requests to the web interface.

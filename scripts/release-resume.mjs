@@ -35,6 +35,12 @@ export async function resumeRelease(main, { request = api, execution = execution
   assertIdentity(release)
   const trusted = await verify(repo, release, main)
   assertManifest(trusted)
+  const checkTag = async () => {
+    const ref = await request(`repos/${repo}/git/ref/tags/v0.7.1`)
+    if (!trusted.tagState || ref?.object?.type !== trusted.tagState.objectType || ref.object.sha !== trusted.tagState.objectSha) {
+      throw new Error("Immutable tag object changed during resumption")
+    }
+  }
   if (release.body !== trusted.body) throw new Error("Source-derived release notes must be reconciled before resumption")
   if (release.draft === false) { log("Verified v0.7.1 is already public; no mutation."); return }
   if (release.draft !== true) throw new Error("Unexpected resumption draft state")
@@ -48,6 +54,7 @@ export async function resumeRelease(main, { request = api, execution = execution
     const old = trusted.assets.get(a.name)
     return !old || a.id !== old.id || a.digest !== old.digest || a.size !== old.size || a.state !== "uploaded" || !actor(a.uploader)
   })) throw new Error("Draft assets changed before resumption")
+  await checkTag()
   try {
     await request(`repos/${repo}/releases/${releaseID}`, { method: "PATCH", body: { draft: false, prerelease: false, make_latest: "true" } })
     release = await request(`repos/${repo}/releases/${releaseID}`)
@@ -59,6 +66,16 @@ export async function resumeRelease(main, { request = api, execution = execution
     assertManifest(await verify(repo, release, main))
     await execution(repo, main)
     await checkAuthorization()
+    await checkTag()
+    const finalRelease = await request(`repos/${repo}/releases/${releaseID}`)
+    assertIdentity(finalRelease)
+    if (finalRelease.draft !== false || finalRelease.body !== trusted.body) throw new Error("Release changed during final resumption checks")
+    const finalAssets = await request(`repos/${repo}/releases/${releaseID}/assets?per_page=100`)
+    if (!Array.isArray(finalAssets) || finalAssets.length !== assets.length || new Set(finalAssets.map(a => a.name)).size !== assets.length ||
+      finalAssets.some(a => {
+        const original = trusted.assets.get(a.name)
+        return !original || a.id !== original.id || a.digest !== original.digest || a.size !== original.size || a.state !== "uploaded" || !actor(a.uploader)
+      })) throw new Error("Release assets changed during final resumption checks")
     log(`Verified resumed v0.7.1 release ${releaseID}; original artifacts and publication provenance preserved.`)
   } catch (error) {
     // The write may have succeeded despite a transport error. Withdraw only the

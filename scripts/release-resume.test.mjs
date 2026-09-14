@@ -9,7 +9,7 @@ function fixture() {
     name: "Darkphish 0.7", draft: true, prerelease: false, author: bot, published_at: "2026-09-14T11:01:32Z", body: "canonical" },
   pr: { number: 58, state: "closed", merged_at: "2026-09-14T14:00:00Z", merge_commit_sha: main,
     base: { ref: "main" }, head: { repo: { full_name: "darkarmy-cyber/darkphish" }, ref: "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-finalize" } },
-  writes: [], verifies: 0, reviews: 0, executions: 0 }
+  writes: [], verifies: 0, reviews: 0, executions: 0, tagReads: 0 }
   f.assets = Array.from({ length: 8 }, (_, i) => ({ id: i + 1, name: i ? `asset-${i}` : "SHA256SUMS", size: 1,
     digest: i ? `sha256:${"a".repeat(64)}` : "sha256:d41dea173bb71a7230b26bd10b60209285a9e9892a07e7267dd8e46c63a8e7b7", state: "uploaded", uploader: bot }))
   f.request = async (path, options = {}) => {
@@ -21,6 +21,10 @@ function fixture() {
       return structuredClone(f.release)
     }
     if (path.endsWith("/pulls/58")) return structuredClone(f.pr)
+    if (path.includes("/git/ref/tags/")) {
+      f.tagReads++
+      return { object: { type: "commit", sha: f.badTag || (f.badPostTag && f.tagReads > 1) ? main : f.release.target_commitish } }
+    }
     if (path.includes("/assets?")) return structuredClone(f.changedAssets || f.assets)
     if (path.includes("/releases/")) return structuredClone(f.release)
     throw new Error(`Unexpected request ${path}`)
@@ -29,7 +33,7 @@ function fixture() {
     execution: async () => { f.executions++; if (f.badMain) throw new Error("Main changed") },
     reviews: async () => { f.reviews++; if (f.badReviews) throw new Error("Missing review") },
     verify: async () => { f.verifies++; if (f.badProvenance || (f.failPost && f.verifies > 1)) throw new Error("Invalid provenance")
-      return { body: "canonical", assets: new Map(f.assets.map(a => [a.name, a])) } } }
+      return { body: "canonical", assets: new Map(f.assets.map(a => [a.name, a])), tagState: { objectType: "commit", objectSha: f.release.target_commitish } } } }
   f.run = () => resumeRelease(main, f.deps)
   return f
 }
@@ -50,13 +54,13 @@ test("hold, wrong main/PR, missing review, provenance and changed identity preve
     f => { f.pr.state = "open" }, f => { f.release.id = 388031151 },
     f => { f.release.target_commitish = "b".repeat(40) }, f => { f.release.author = { ...bot, id: 1 } },
     f => { f.release.body = "changed" }, f => { f.assets[0].digest = "sha256:" + "b".repeat(64) },
-    f => { f.changedAssets = f.assets.slice(1) }, f => { f.release.published_at = null }]) {
+    f => { f.changedAssets = f.assets.slice(1) }, f => { f.release.published_at = null }, f => { f.badTag = true }]) {
     const f = fixture(); change(f); await assert.rejects(f.run()); assert.equal(f.writes.length, 0)
   }
 })
 
 test("post-publication failures withdraw the same release without replacing or deleting assets", async () => {
-  for (const change of [f => { f.failPost = true }, f => { f.changePublicationTime = true }]) {
+  for (const change of [f => { f.failPost = true }, f => { f.changePublicationTime = true }, f => { f.badPostTag = true }]) {
     const f = fixture(); change(f); await assert.rejects(f.run())
     assert.deepEqual(f.writes, [{ draft: false, prerelease: false, make_latest: "true" }, { draft: true, prerelease: false, make_latest: "false" }])
     assert.equal(f.release.draft, true)

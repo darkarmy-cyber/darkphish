@@ -1,0 +1,69 @@
+name: Repair v0.7.1 release title
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/release-title-repair.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: protected-main-mutation
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Repair exact v0.7.1 release title
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RELEASE_ID: "388329244"
+          TAG: v0.7.1
+          SOURCE: 73bf5948ed19cd918638453d478ef3f1cbe83d89
+          EXPECTED_NAME: Darkphish 0.7.1
+          LEGACY_NAME: Darkphish 0.7
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          before="$(gh api "repos/$REPO/releases/tags/$TAG")"
+          test "$(jq -r '.id' <<<"$before")" = "$RELEASE_ID"
+          test "$(jq -r '.tag_name' <<<"$before")" = "$TAG"
+          test "$(jq -r '.target_commitish' <<<"$before")" = "$SOURCE"
+          test "$(jq -r '.draft' <<<"$before")" = "false"
+          test "$(jq -r '.prerelease' <<<"$before")" = "false"
+          test "$(jq -r '.author.login' <<<"$before")" = "github-actions[bot]"
+          test "$(jq -r '.author.id' <<<"$before")" = "41898282"
+
+          current_name="$(jq -r '.name' <<<"$before")"
+          if [ "$current_name" != "$EXPECTED_NAME" ] && [ "$current_name" != "$LEGACY_NAME" ]; then
+            echo "Unexpected release name: $current_name" >&2
+            exit 1
+          fi
+
+          body_before="$(jq -j '.body // ""' <<<"$before" | sha256sum | cut -d' ' -f1)"
+          published_before="$(jq -r '.published_at' <<<"$before")"
+          assets_before="$(gh api "repos/$REPO/releases/$RELEASE_ID/assets?per_page=100" | jq -c 'sort_by(.id) | map({id,name,size,digest,state,uploader:.uploader.id})')"
+
+          if [ "$current_name" != "$EXPECTED_NAME" ]; then
+            gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" -f name="$EXPECTED_NAME" >/dev/null
+          fi
+
+          after="$(gh api "repos/$REPO/releases/$RELEASE_ID")"
+          test "$(jq -r '.id' <<<"$after")" = "$RELEASE_ID"
+          test "$(jq -r '.tag_name' <<<"$after")" = "$TAG"
+          test "$(jq -r '.target_commitish' <<<"$after")" = "$SOURCE"
+          test "$(jq -r '.name' <<<"$after")" = "$EXPECTED_NAME"
+          test "$(jq -r '.draft' <<<"$after")" = "false"
+          test "$(jq -r '.prerelease' <<<"$after")" = "false"
+          test "$(jq -r '.published_at' <<<"$after")" = "$published_before"
+          test "$(jq -j '.body // ""' <<<"$after" | sha256sum | cut -d' ' -f1)" = "$body_before"
+
+          assets_after="$(gh api "repos/$REPO/releases/$RELEASE_ID/assets?per_page=100" | jq -c 'sort_by(.id) | map({id,name,size,digest,state,uploader:.uploader.id})')"
+          test "$assets_after" = "$assets_before"
+
+          echo "Release title is canonical: $EXPECTED_NAME"

@@ -15,7 +15,7 @@ test("trusted release body comparison does not normalize content changes", () =>
 })
 
 test("trusted release body comparison normalizes only CRLF", () => {
-  const loneCR = expected.replace("### Fixed\n", "### Fixed\r")
+  const loneCR = "trusted\rbody"
   assert.equal(comparableReleaseBody(loneCR), loneCR)
-  assert.equal(matchesTrustedReleaseBody(loneCR, expected), false)
+  assert.equal(matchesTrustedReleaseBody(loneCR, "trusted\nbody"), false)
 })

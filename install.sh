@@ -635,10 +635,10 @@ start_service() {
         current_pid="$(systemctl show "${SERVICE_NAME}" -p MainPID --value 2>/dev/null || true)"
         if [[ "${current_pid}" =~ ^[1-9][0-9]*$ ]] && \
             systemctl is-active --quiet "${SERVICE_NAME}" && \
-            curl --disable --fail --silent --show-error --max-time 2 \
+            curl --disable --noproxy '*' --fail --silent --show-error --max-time 2 \
                 --cacert "${CONFIG_DIR}/tls/admin.crt" \
                 "https://127.0.0.1:3333/readyz" >/dev/null 2>&1 && \
-            curl --disable --silent --show-error --max-time 2 \
+            curl --disable --noproxy '*' --silent --show-error --max-time 2 \
                 --output /dev/null "http://127.0.0.1:80/" >/dev/null 2>&1 && \
             [[ -f "${password_file}" && ! -L "${password_file}" && -s "${password_file}" ]]; then
             if [[ "${current_pid}" == "${stable_pid}" ]]; then

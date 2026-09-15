@@ -13,12 +13,28 @@ CONFIG_DIR="/etc/darkphish"
 STATE_DIR="/var/lib/darkphish"
 BOOTSTRAP_DIR="${STATE_DIR}/bootstrap"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}"
+SERVICE_DROPIN_ETC="/etc/systemd/system/${SERVICE_NAME}.d"
+SERVICE_DROPIN_RUN="/run/systemd/system/${SERVICE_NAME}.d"
 GO_REQUIRED="1.27.1"
+GO_SHA256_AMD64="63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445"
+GO_SHA256_ARM64="3450b45a3f9ee8568792736a5c5e70a1f2e9b36c35a8f74958c03e51d7d92bec"
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 BUILD_ROOT=""
+SOURCE_SNAPSHOT=""
+SOURCE_SHA=""
+SOURCE_VERSION=""
+SOURCE_BUILT_AT=""
+SOURCE_IS_RELEASE=0
 GO_BIN=""
 GO_ARCH=""
+GO_EXPECTED_SHA256=""
+CC_BIN=""
 PKG_FAMILY=""
+INSTALL_COMMITTED=0
+APP_PATHS_CREATED=0
+APP_GROUP_CREATED=0
+APP_USER_CREATED=0
+SERVICE_FILE_CREATED=0
 
 log() {
     printf '[darkphish] %s\n' "$*"
@@ -53,12 +69,52 @@ Default layout:
 EOF
 }
 
+path_entry_exists() {
+    [[ -e "$1" || -L "$1" ]]
+}
+
+git_source() {
+    git -c "safe.directory=${SOURCE_DIR}" -C "${SOURCE_DIR}" "$@"
+}
+
+rollback_install() {
+    set +e
+    warn "installation did not complete; removing installer-created Darkphish artifacts"
+
+    if [[ ${SERVICE_FILE_CREATED} -eq 1 ]]; then
+        systemctl disable --now "${SERVICE_NAME}" >/dev/null 2>&1 || true
+        rm -f -- "${SERVICE_FILE}"
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        systemctl reset-failed "${SERVICE_NAME}" >/dev/null 2>&1 || true
+    fi
+
+    if [[ ${APP_PATHS_CREATED} -eq 1 ]]; then
+        rm -rf -- "${INSTALL_DIR}" "${CONFIG_DIR}" "${STATE_DIR}"
+    fi
+
+    if [[ ${APP_USER_CREATED} -eq 1 ]]; then
+        userdel "${APP_USER}" >/dev/null 2>&1 || true
+    fi
+    if [[ ${APP_GROUP_CREATED} -eq 1 ]]; then
+        groupdel "${APP_GROUP}" >/dev/null 2>&1 || true
+    fi
+}
+
 cleanup() {
+    local status=$?
+    trap - EXIT
+    set +e
+    if [[ ${status} -ne 0 && ${INSTALL_COMMITTED} -ne 1 ]]; then
+        rollback_install
+    fi
     if [[ -n "${BUILD_ROOT}" && -d "${BUILD_ROOT}" ]]; then
         rm -rf -- "${BUILD_ROOT}"
     fi
+    exit "${status}"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     usage
@@ -74,17 +130,49 @@ require_root() {
 }
 
 verify_source_tree() {
-    cd -- "${SOURCE_DIR}"
-    [[ -f go.mod && -f go.sum && -f VERSION && -f config.json ]] || die "run install.sh from the Darkphish repository root"
-    [[ -d db && -d templates && -d static/js/dist && -d static/css/dist ]] || die "required runtime assets are missing from the repository"
+    [[ -f "${SOURCE_DIR}/go.mod" && -f "${SOURCE_DIR}/go.sum" && -f "${SOURCE_DIR}/VERSION" && -f "${SOURCE_DIR}/config.json" ]] || die "run install.sh from the Darkphish repository root"
+    [[ -d "${SOURCE_DIR}/db" && -d "${SOURCE_DIR}/templates" && -d "${SOURCE_DIR}/static/js/dist" && -d "${SOURCE_DIR}/static/css/dist" ]] || die "required runtime assets are missing from the repository"
     command -v git >/dev/null 2>&1 || die "git is required to verify the source tree"
-    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "the installer requires a Git checkout"
-    [[ "$(git rev-parse --show-toplevel)" == "${SOURCE_DIR}" ]] || die "install.sh must be run from the root of its Git checkout"
-    if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
-        die "the Git working tree is not clean; commit, stash, or remove local changes before installing"
+
+    local top_level status_output
+    if ! top_level="$(git_source rev-parse --show-toplevel 2>/dev/null)"; then
+        die "the installer requires a valid Git checkout"
     fi
-    if [[ -n "$(find db templates static/images static/font static/db static/endpoint static/js/dist static/js/src static/css/dist -type l -print -quit 2>/dev/null)" ]]; then
+    [[ "${top_level}" == "${SOURCE_DIR}" ]] || die "install.sh must be run from the root of its Git checkout"
+
+    if ! status_output="$(git_source status --porcelain=v1 --untracked-files=all 2>/dev/null)"; then
+        die "Git working-tree cleanliness could not be verified"
+    fi
+    [[ -z "${status_output}" ]] || die "the Git working tree is not clean; commit, stash, or remove local changes before installing"
+
+    if [[ -n "$(find "${SOURCE_DIR}/db" "${SOURCE_DIR}/templates" "${SOURCE_DIR}/static/images" "${SOURCE_DIR}/static/font" "${SOURCE_DIR}/static/db" "${SOURCE_DIR}/static/endpoint" "${SOURCE_DIR}/static/js/dist" "${SOURCE_DIR}/static/js/src" "${SOURCE_DIR}/static/css/dist" -type l -print -quit 2>/dev/null)" ]]; then
         die "runtime payload contains a symbolic link; refusing installation"
+    fi
+}
+
+prepare_source_snapshot() {
+    SOURCE_SHA="$(git_source rev-parse HEAD)" || die "cannot resolve source commit"
+    [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]] || die "source commit is malformed"
+
+    SOURCE_VERSION="$(git_source show "${SOURCE_SHA}:VERSION" | tr -d '[:space:]')" || die "cannot read VERSION from source commit"
+    [[ "${SOURCE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "VERSION does not contain a valid SemVer release"
+    SOURCE_BUILT_AT="$(git_source show -s --format=%cI "${SOURCE_SHA}")" || die "cannot read source commit timestamp"
+
+    if git_source tag --points-at "${SOURCE_SHA}" | grep -Fxq "v${SOURCE_VERSION}"; then
+        SOURCE_IS_RELEASE=1
+    else
+        warn "HEAD is not the exact v${SOURCE_VERSION} tag; this will be a development build and verified in-product updates will remain unavailable"
+    fi
+
+    SOURCE_SNAPSHOT="${BUILD_ROOT}/source"
+    mkdir -p -- "${SOURCE_SNAPSHOT}"
+    if ! git_source archive --format=tar "${SOURCE_SHA}" | tar -xf - -C "${SOURCE_SNAPSHOT}"; then
+        die "failed to create immutable source snapshot from Git"
+    fi
+
+    [[ -f "${SOURCE_SNAPSHOT}/go.mod" && -d "${SOURCE_SNAPSHOT}/db" && -d "${SOURCE_SNAPSHOT}/templates" ]] || die "Git source snapshot is incomplete"
+    if [[ -n "$(find "${SOURCE_SNAPSHOT}/db" "${SOURCE_SNAPSHOT}/templates" "${SOURCE_SNAPSHOT}/static/images" "${SOURCE_SNAPSHOT}/static/font" "${SOURCE_SNAPSHOT}/static/db" "${SOURCE_SNAPSHOT}/static/endpoint" "${SOURCE_SNAPSHOT}/static/js/dist" "${SOURCE_SNAPSHOT}/static/js/src" "${SOURCE_SNAPSHOT}/static/css/dist" -type l -print -quit 2>/dev/null)" ]]; then
+        die "tracked runtime payload contains a symbolic link; refusing installation"
     fi
 }
 
@@ -110,19 +198,39 @@ detect_platform() {
     esac
 
     case "$(uname -m)" in
-        x86_64|amd64) GO_ARCH="amd64" ;;
-        aarch64|arm64) GO_ARCH="arm64" ;;
+        x86_64|amd64)
+            GO_ARCH="amd64"
+            GO_EXPECTED_SHA256="${GO_SHA256_AMD64}"
+            ;;
+        aarch64|arm64)
+            GO_ARCH="arm64"
+            GO_EXPECTED_SHA256="${GO_SHA256_ARM64}"
+            ;;
         *) die "unsupported CPU architecture: $(uname -m); supported: amd64, arm64" ;;
     esac
 
     command -v systemctl >/dev/null 2>&1 || die "systemd is required"
+    command -v getent >/dev/null 2>&1 || die "getent is required for account preflight checks"
     [[ -d /run/systemd/system ]] || die "systemd is not running on this host"
 }
 
 refuse_existing_install() {
-    if [[ -e "${INSTALL_DIR}" || -e "${CONFIG_DIR}" || -e "${STATE_DIR}" || -e "${SERVICE_FILE}" ]]; then
-        die "an existing Darkphish path was found; this installer is intentionally fresh-install only"
-    fi
+    local managed_path
+    for managed_path in \
+        "${INSTALL_DIR}" \
+        "${CONFIG_DIR}" \
+        "${STATE_DIR}" \
+        "${SERVICE_FILE}" \
+        "${SERVICE_DROPIN_ETC}" \
+        "${SERVICE_DROPIN_RUN}" \
+        "/run/systemd/system/${SERVICE_NAME}" \
+        "/usr/lib/systemd/system/${SERVICE_NAME}" \
+        "/lib/systemd/system/${SERVICE_NAME}"; do
+        if path_entry_exists "${managed_path}"; then
+            die "existing Darkphish service/runtime path found: ${managed_path}; refusing to overwrite it"
+        fi
+    done
+
     if systemctl cat "${SERVICE_NAME}" >/dev/null 2>&1; then
         die "${SERVICE_NAME} already exists; refusing to overwrite it"
     fi
@@ -151,9 +259,11 @@ install_system_packages() {
         *) die "internal error: unsupported package family" ;;
     esac
 
-    for command_name in curl git gcc openssl tar sha256sum; do
+    local command_name
+    for command_name in curl git gcc openssl tar sha256sum stat; do
         command -v "${command_name}" >/dev/null 2>&1 || die "required command is unavailable after dependency installation: ${command_name}"
     done
+    CC_BIN="$(command -v gcc)"
 }
 
 curl_https() {
@@ -175,17 +285,13 @@ ensure_go() {
         return
     fi
 
-    log "Bootstrapping verified Go ${GO_REQUIRED} toolchain for linux/${GO_ARCH}"
+    log "Bootstrapping pinned Go ${GO_REQUIRED} toolchain for linux/${GO_ARCH}"
     local archive="${BUILD_ROOT}/go${GO_REQUIRED}.linux-${GO_ARCH}.tar.gz"
-    local checksum_file="${archive}.sha256"
     local url="https://go.dev/dl/go${GO_REQUIRED}.linux-${GO_ARCH}.tar.gz"
     curl_https "${url}" "${archive}"
-    curl_https "${url}.sha256" "${checksum_file}"
 
-    local expected
-    expected="$(tr -d '[:space:]' < "${checksum_file}")"
-    [[ "${expected}" =~ ^[0-9a-fA-F]{64}$ ]] || die "Go checksum response is malformed"
-    printf '%s  %s\n' "${expected}" "${archive}" | sha256sum --check --status - || die "Go toolchain checksum verification failed"
+    [[ "${GO_EXPECTED_SHA256}" =~ ^[0-9a-f]{64}$ ]] || die "internal Go checksum pin is malformed"
+    printf '%s  %s\n' "${GO_EXPECTED_SHA256}" "${archive}" | sha256sum --check --status - || die "Go toolchain checksum verification failed"
 
     mkdir -p -- "${BUILD_ROOT}/toolchain"
     tar -xzf "${archive}" -C "${BUILD_ROOT}/toolchain"
@@ -195,24 +301,41 @@ ensure_go() {
 }
 
 build_darkphish() {
-    cd -- "${SOURCE_DIR}"
-    local version commit_sha built_at release_ldflag ldflags
-    version="$(tr -d '[:space:]' < VERSION)"
-    [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "VERSION does not contain a valid SemVer release"
-    commit_sha="$(git rev-parse HEAD)"
-    built_at="$(git show -s --format=%cI HEAD)"
-    release_ldflag=""
-
-    if git tag --points-at "${commit_sha}" | grep -Fxq "v${version}"; then
-        release_ldflag=" -X main.releaseVersion=${version}"
-    else
-        warn "HEAD is not the exact v${version} tag; the installed binary will correctly identify itself as a development build"
+    local release_ldflag="" ldflags
+    if [[ ${SOURCE_IS_RELEASE} -eq 1 ]]; then
+        release_ldflag=" -X main.releaseVersion=${SOURCE_VERSION}"
     fi
+    ldflags="-s -w -X main.commitSHA=${SOURCE_SHA} -X main.builtAt=${SOURCE_BUILT_AT}${release_ldflag}"
 
-    ldflags="-s -w -X main.commitSHA=${commit_sha} -X main.builtAt=${built_at}${release_ldflag}"
-    log "Building Darkphish ${version} from ${commit_sha}"
-    GOTOOLCHAIN=local GOFLAGS='-mod=readonly' CGO_ENABLED=1 GOOS=linux GOARCH="${GO_ARCH}" \
-        "${GO_BIN}" build -trimpath -ldflags "${ldflags}" -o "${BUILD_ROOT}/darkphish" ./
+    log "Building Darkphish ${SOURCE_VERSION} from ${SOURCE_SHA}"
+    mkdir -p -- "${BUILD_ROOT}/home" "${BUILD_ROOT}/gomodcache" "${BUILD_ROOT}/gocache"
+
+    (
+        cd -- "${SOURCE_SNAPSHOT}"
+        env \
+            -u CGO_CFLAGS \
+            -u CGO_CPPFLAGS \
+            -u CGO_CXXFLAGS \
+            -u CGO_LDFLAGS \
+            HOME="${BUILD_ROOT}/home" \
+            GOCACHE="${BUILD_ROOT}/gocache" \
+            GOMODCACHE="${BUILD_ROOT}/gomodcache" \
+            GOENV=off \
+            GOWORK=off \
+            GOTOOLCHAIN=local \
+            GOFLAGS='-mod=readonly' \
+            GOPROXY='https://proxy.golang.org,direct' \
+            GOSUMDB='sum.golang.org' \
+            GOPRIVATE='' \
+            GONOPROXY='' \
+            GONOSUMDB='' \
+            CGO_ENABLED=1 \
+            GOOS=linux \
+            GOARCH="${GO_ARCH}" \
+            CC="${CC_BIN}" \
+            "${GO_BIN}" build -trimpath -ldflags "${ldflags}" -o "${BUILD_ROOT}/darkphish" ./
+    )
+
     [[ -x "${BUILD_ROOT}/darkphish" ]] || die "Darkphish build did not produce an executable"
     "${BUILD_ROOT}/darkphish" version >/dev/null || die "built Darkphish executable failed its version smoke check"
 }
@@ -220,10 +343,13 @@ build_darkphish() {
 create_service_account() {
     log "Creating dedicated system account"
     groupadd --system "${APP_GROUP}"
+    APP_GROUP_CREATED=1
+
     local nologin_shell
     nologin_shell="$(command -v nologin || true)"
     [[ -n "${nologin_shell}" ]] || nologin_shell="/usr/sbin/nologin"
     useradd --system --gid "${APP_GROUP}" --home-dir "${INSTALL_DIR}" --no-create-home --shell "${nologin_shell}" "${APP_USER}"
+    APP_USER_CREATED=1
 }
 
 generate_key_file() {
@@ -237,6 +363,7 @@ generate_key_file() {
 
 install_payload() {
     log "Installing application payload"
+    APP_PATHS_CREATED=1
     install -d -m 0750 -o "${APP_USER}" -g "${APP_GROUP}" "${INSTALL_DIR}"
     install -d -m 0750 -o root -g "${APP_GROUP}" "${CONFIG_DIR}"
     install -d -m 0750 -o root -g "${APP_GROUP}" "${CONFIG_DIR}/tls"
@@ -244,16 +371,17 @@ install_payload() {
     install -d -m 0700 -o "${APP_USER}" -g "${APP_GROUP}" "${BOOTSTRAP_DIR}"
 
     install -m 0750 -o "${APP_USER}" -g "${APP_GROUP}" "${BUILD_ROOT}/darkphish" "${INSTALL_DIR}/darkphish"
+    local file_name
     for file_name in VERSION LICENSE NOTICE.md README.md CHANGELOG.md; do
-        install -m 0640 -o "${APP_USER}" -g "${APP_GROUP}" "${SOURCE_DIR}/${file_name}" "${INSTALL_DIR}/${file_name}"
+        install -m 0640 -o "${APP_USER}" -g "${APP_GROUP}" "${SOURCE_SNAPSHOT}/${file_name}" "${INSTALL_DIR}/${file_name}"
     done
 
-    cp -a -- "${SOURCE_DIR}/db" "${INSTALL_DIR}/db"
-    cp -a -- "${SOURCE_DIR}/templates" "${INSTALL_DIR}/templates"
+    cp -a -- "${SOURCE_SNAPSHOT}/db" "${INSTALL_DIR}/db"
+    cp -a -- "${SOURCE_SNAPSHOT}/templates" "${INSTALL_DIR}/templates"
     mkdir -p -- "${INSTALL_DIR}/static/js" "${INSTALL_DIR}/static/css"
-    cp -a -- "${SOURCE_DIR}/static/images" "${SOURCE_DIR}/static/font" "${SOURCE_DIR}/static/db" "${SOURCE_DIR}/static/endpoint" "${INSTALL_DIR}/static/"
-    cp -a -- "${SOURCE_DIR}/static/js/dist" "${SOURCE_DIR}/static/js/src" "${INSTALL_DIR}/static/js/"
-    cp -a -- "${SOURCE_DIR}/static/css/dist" "${INSTALL_DIR}/static/css/"
+    cp -a -- "${SOURCE_SNAPSHOT}/static/images" "${SOURCE_SNAPSHOT}/static/font" "${SOURCE_SNAPSHOT}/static/db" "${SOURCE_SNAPSHOT}/static/endpoint" "${INSTALL_DIR}/static/"
+    cp -a -- "${SOURCE_SNAPSHOT}/static/js/dist" "${SOURCE_SNAPSHOT}/static/js/src" "${INSTALL_DIR}/static/js/"
+    cp -a -- "${SOURCE_SNAPSHOT}/static/css/dist" "${INSTALL_DIR}/static/css/"
 
     chown -R "${APP_USER}:${APP_GROUP}" "${INSTALL_DIR}"
     find "${INSTALL_DIR}" -type d -exec chmod 0750 {} +
@@ -268,11 +396,29 @@ create_security_material() {
     generate_key_file "${CONFIG_DIR}/secrets.key"
     generate_key_file "${CONFIG_DIR}/audit-signing.key"
 
+    local openssl_config="${BUILD_ROOT}/openssl-admin.cnf"
+    cat > "${openssl_config}" <<'EOF'
+[req]
+distinguished_name = dn
+prompt = no
+x509_extensions = v3_req
+
+[dn]
+CN = localhost
+
+[v3_req]
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+IP.1 = 127.0.0.1
+EOF
+
     openssl req -x509 -newkey rsa:3072 -sha256 -days 825 -nodes \
         -keyout "${CONFIG_DIR}/tls/admin.key" \
         -out "${CONFIG_DIR}/tls/admin.crt" \
-        -subj '/CN=localhost' \
-        -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' >/dev/null 2>&1
+        -config "${openssl_config}" \
+        -extensions v3_req >/dev/null 2>&1
 
     chown root:"${APP_GROUP}" \
         "${CONFIG_DIR}/session-auth.key" \
@@ -373,6 +519,7 @@ EOF
 
 create_systemd_unit() {
     log "Creating hardened systemd service"
+    SERVICE_FILE_CREATED=1
     cat > "${SERVICE_FILE}" <<EOF
 [Unit]
 Description=Darkphish authorized phishing simulation platform
@@ -424,21 +571,42 @@ EOF
     fi
 }
 
+verify_loaded_systemd_unit() {
+    systemctl daemon-reload
+
+    local fragment dropins effective_user effective_group
+    fragment="$(systemctl show "${SERVICE_NAME}" -p FragmentPath --value)" || die "cannot inspect loaded systemd unit"
+    [[ "${fragment}" == "${SERVICE_FILE}" ]] || die "systemd loaded Darkphish from an unexpected unit path: ${fragment:-unknown}"
+
+    dropins="$(systemctl show "${SERVICE_NAME}" -p DropInPaths --value)" || die "cannot inspect systemd drop-ins"
+    [[ -z "${dropins}" ]] || die "unexpected systemd drop-ins affect ${SERVICE_NAME}: ${dropins}"
+
+    effective_user="$(systemctl show "${SERVICE_NAME}" -p User --value)" || die "cannot inspect systemd service user"
+    effective_group="$(systemctl show "${SERVICE_NAME}" -p Group --value)" || die "cannot inspect systemd service group"
+    [[ "${effective_user}" == "${APP_USER}" && "${effective_group}" == "${APP_GROUP}" ]] || die "systemd service identity differs from the dedicated Darkphish account"
+}
+
 start_service() {
     log "Enabling and starting Darkphish"
-    systemctl daemon-reload
+    verify_loaded_systemd_unit
     systemctl enable --now "${SERVICE_NAME}" >/dev/null
 
-    local attempt
-    for attempt in $(seq 1 30); do
-        if systemctl is-active --quiet "${SERVICE_NAME}"; then
+    local attempt password_file
+    password_file="${BOOTSTRAP_DIR}/darkphish_initial_admin_password"
+    for attempt in $(seq 1 60); do
+        if systemctl is-active --quiet "${SERVICE_NAME}" && \
+            curl --fail --silent --show-error --max-time 2 \
+                --cacert "${CONFIG_DIR}/tls/admin.crt" \
+                "https://127.0.0.1:3333/readyz" >/dev/null 2>&1 && \
+            [[ -f "${password_file}" && ! -L "${password_file}" && -s "${password_file}" ]]; then
             return
         fi
         sleep 1
     done
 
     systemctl --no-pager --full status "${SERVICE_NAME}" || true
-    die "Darkphish did not reach the active state; inspect: journalctl -u ${SERVICE_NAME}"
+    journalctl --no-pager -u "${SERVICE_NAME}" -n 50 || true
+    die "Darkphish did not become application-ready; inspect: journalctl -u ${SERVICE_NAME}"
 }
 
 print_completion() {
@@ -468,23 +636,24 @@ print_completion() {
     printf '  journalctl -u darkphish -f\n'
     printf '  systemctl restart darkphish\n'
     printf '\n'
-    if [[ ! -f "${password_file}" ]]; then
-        warn "the bootstrap password file is not present yet; verify service logs before attempting login"
-    fi
     if [[ ! -x /usr/bin/gh ]]; then
         warn "optional one-click native updates require a separately installed /usr/bin/gh >= 2.100.0; see docs/UPDATES.md"
+    fi
+    if [[ ${SOURCE_IS_RELEASE} -ne 1 ]]; then
+        warn "this installation was built from an untagged source commit; verified in-product updates are intentionally unavailable"
     fi
 }
 
 main() {
     require_root
-    verify_source_tree
     detect_platform
     refuse_existing_install
 
     BUILD_ROOT="$(mktemp -d /var/tmp/darkphish-install.XXXXXX)"
     chmod 0700 "${BUILD_ROOT}"
 
+    verify_source_tree
+    prepare_source_snapshot
     install_system_packages
     ensure_go
     build_darkphish
@@ -494,6 +663,8 @@ main() {
     create_production_config
     create_systemd_unit
     start_service
+
+    INSTALL_COMMITTED=1
     print_completion
 }
 

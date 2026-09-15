@@ -37,7 +37,7 @@ test('installer builds only the committed source snapshot with isolated Git and 
   assert.match(installer, /-c core\.fsmonitor=false/);
   assert.match(installer, /git_source archive --format=tar/);
   assert.match(installer, /SOURCE_SNAPSHOT/);
-  assert.match(installer, /env -i \\\n            PATH=/);
+  assert.match(installer, /env -i \\\s+PATH=/);
   assert.match(installer, /GOENV=off/);
   assert.match(installer, /GOWORK=off/);
   assert.match(installer, /GOTOOLCHAIN=local/);
@@ -61,7 +61,7 @@ test('installer requires an executable private build filesystem before mutation'
   assert.match(installer, /darkphish-install\.XXXXXX/);
   assert.match(installer, /exec-probe/);
   assert.match(installer, /no executable private temporary filesystem is available/);
-  assert.ok(installer.indexOf('prepare_build_root') < installer.indexOf('install_system_packages'));
+  assert.match(installer, /refuse_existing_install\n    prepare_build_root\n\n    verify_source_tree\n    prepare_source_snapshot\n    install_system_packages/);
 });
 
 test('installer creates an unprivileged hardened systemd service and rejects overrides', () => {

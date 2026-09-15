@@ -9,10 +9,12 @@ package imap
 import (
 	"bytes"
 	"context"
+	"errors"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/darkarmy-cyber/darkphish/logger"
@@ -26,15 +28,25 @@ import (
 // We also include alternative URL encoded representations of '=' and '?' to handle Microsoft ATP URLs e.g %3Frid%3DAbC1234
 var resultIDRegex = regexp.MustCompile(`((\?|%3F)rid(=|%3D)(3D)?([A-Za-z0-9]{7}))`)
 
+const maxReportRIDs = 100
+const maxReportAttachments = 20
+
 // Monitor is a worker that monitors IMAP servers for reported campaign emails
 type Monitor struct {
-	cancel func()
+	mu      sync.Mutex
+	cancel  context.CancelFunc
+	done    chan struct{}
+	stopped bool
+	users   func() ([]models.User, error)
+	poll    func(int64, context.Context)
 }
 
 // Monitor.start() checks for campaign emails
 // As each account can have its own polling frequency set we need to run one Go routine for
 // each, as well as keeping an eye on newly created user accounts.
 func (im *Monitor) start(ctx context.Context) {
+	var polls sync.WaitGroup
+	defer polls.Wait()
 	usermap := make(map[int64]int) // Keep track of running go routines, one per user. We assume incrementing non-repeating UIDs (for the case where users are deleted and re-added).
 
 	for {
@@ -42,7 +54,7 @@ func (im *Monitor) start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			dbusers, err := models.GetUsers() //Slice of all user ids. Each user gets their own IMAP monitor routine.
+			dbusers, err := im.users() //Slice of all user ids. Each user gets their own IMAP monitor routine.
 			if err != nil {
 				log.Error(err)
 				break
@@ -51,10 +63,13 @@ func (im *Monitor) start(ctx context.Context) {
 				if _, ok := usermap[dbuser.Id]; !ok { // If we don't currently have a running Go routine for this user, start one.
 					log.Info("Starting new IMAP monitor for user ", dbuser.Username)
 					usermap[dbuser.Id] = 1
-					go monitor(dbuser.Id, ctx)
+					polls.Add(1)
+					go func(uid int64) { defer polls.Done(); im.poll(uid, ctx) }(dbuser.Id)
 				}
 			}
-			time.Sleep(10 * time.Second) // Every ten seconds we check if a new user has been created
+			if !waitPoll(ctx, 10*time.Second) {
+				return
+			}
 		}
 	}
 }
@@ -62,6 +77,7 @@ func (im *Monitor) start(ctx context.Context) {
 // monitor will continuously login to the IMAP settings associated to the supplied user id (if the user account has IMAP settings, and they're enabled.)
 // It also verifies the user account exists, and returns if not (for the case of a user being deleted).
 func monitor(uid int64, ctx context.Context) {
+	var cursor uint32
 	for {
 		select {
 		case <-ctx.Done():
@@ -84,42 +100,80 @@ func monitor(uid int64, ctx context.Context) {
 				// 3. Check if IMAP is enabled
 				if im.Enabled {
 					log.Debug("Checking IMAP for user ", uid, ": ", im.Username, " -> ", im.Host)
-					checkForNewEmails(im)
-					time.Sleep((time.Duration(im.IMAPFreq) - 10) * time.Second) // Subtract 10 to compensate for the default sleep of 10 at the bottom
+					checkForNewEmails(ctx, im, &cursor)
+					if !waitPoll(ctx, (time.Duration(im.IMAPFreq)-10)*time.Second) {
+						return
+					}
 				}
 			}
 		}
-		time.Sleep(10 * time.Second)
+		if !waitPoll(ctx, 10*time.Second) {
+			return
+		}
 	}
 }
 
 // NewMonitor returns a new instance of imap.Monitor
 func NewMonitor() *Monitor {
-	im := &Monitor{}
+	im := &Monitor{users: models.GetUsers, poll: monitor}
 	return im
 }
 
 // Start launches the IMAP campaign monitor
 func (im *Monitor) Start() error {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	if im.stopped || im.done != nil {
+		return nil
+	}
+	if im.users == nil {
+		im.users = models.GetUsers
+	}
+	if im.poll == nil {
+		im.poll = monitor
+	}
 	log.Info("Starting IMAP monitor manager")
 	ctx, cancel := context.WithCancel(context.Background()) // ctx is the derivedContext
 	im.cancel = cancel
-	go im.start(ctx)
+	im.done = make(chan struct{})
+	go func() { im.start(ctx); close(im.done) }()
 	return nil
 }
 
 // Shutdown attempts to gracefully shutdown the IMAP monitor.
 func (im *Monitor) Shutdown() error {
 	log.Info("Shutting down IMAP monitor manager")
-	im.cancel()
+	im.mu.Lock()
+	im.stopped = true
+	if im.cancel != nil {
+		im.cancel()
+	}
+	done := im.done
+	im.mu.Unlock()
+	if done != nil {
+		<-done
+	}
 	return nil
+}
+
+func waitPoll(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 // checkForNewEmails logs into an IMAP account and checks unread emails for the
 // rid campaign identifier.
-func checkForNewEmails(im models.IMAP) {
+func checkForNewEmails(ctx context.Context, im models.IMAP, cursor *uint32) {
 	im.Host = im.Host + ":" + strconv.Itoa(int(im.Port)) // Append port
 	mailServer := Mailbox{
+		ctx:              ctx,
+		cursor:           cursor,
 		Host:             im.Host,
 		TLS:              im.TLS,
 		IgnoreCertErrors: im.IgnoreCertErrors,
@@ -131,6 +185,11 @@ func checkForNewEmails(im models.IMAP) {
 	msgs, err := mailServer.GetUnread(true, false)
 	if err != nil {
 		log.Error(err)
+		if len(msgs) == 0 {
+			return
+		}
+	}
+	if ctx.Err() != nil {
 		return
 	}
 	// Update last_succesful_login here via im.Host
@@ -140,20 +199,29 @@ func checkForNewEmails(im models.IMAP) {
 
 	if len(msgs) > 0 {
 		log.Debugf("%d new emails for %s", len(msgs), im.Username)
-		var reportingFailed []uint32 // SeqNums of emails that were unable to be reported to phishing server, mark as unread
-		var deleteEmails []uint32    // SeqNums of campaign emails. If DeleteReportedCampaignEmail is true, we will delete these
+		// UIDs acknowledged only after report persistence.
+		var processed []uint32
+		// Successfully reported campaign UIDs eligible for configured deletion.
+		var deleteEmails []uint32
 		for _, m := range msgs {
+			if ctx.Err() != nil {
+				return
+			}
 			// Check if sender is from company's domain, if enabled. TODO: Make this an IMAP filter
 			if im.RestrictDomain != "" { // e.g domainResitct = widgets.com
 				splitEmail := strings.Split(m.Email.From, "@")
+				if len(splitEmail) < 2 {
+					continue
+				}
 				senderDomain := splitEmail[len(splitEmail)-1]
 				if senderDomain != im.RestrictDomain {
 					log.Debug("Ignoring email as not from company domain: ", senderDomain)
+					processed = append(processed, m.UID)
 					continue
 				}
 			}
 
-			rids, err := matchEmail(m.Email) // Search email Text, HTML, and each attachment for rid parameters
+			rids, err := matchEmail(ctx, m.Email) // Search email Text, HTML, and each attachment for rid parameters
 
 			if err != nil {
 				log.Errorf("Error searching email for rids from user '%s': %s", m.Email.From, err.Error())
@@ -163,31 +231,38 @@ func checkForNewEmails(im models.IMAP) {
 				// In the future this should be an alert in Darkphish
 				log.Infof("User '%s' reported email with subject '%s'. This is not a Darkphish campaign; you should investigate it.", m.Email.From, m.Email.Subject)
 			}
-			for rid := range rids {
+			err = processReportRIDs(ctx, rids, func(rid string) error {
 				log.Infof("User '%s' reported email with rid %s", m.Email.From, rid)
 				result, err := models.GetResult(rid)
 				if err != nil {
 					log.Error("Error reporting Darkphish email with rid ", rid, ": ", err.Error())
-					reportingFailed = append(reportingFailed, m.SeqNum)
-					continue
+					return err
 				}
-				err = result.HandleEmailReport(models.EventDetails{})
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				if !result.Reported {
+					err = result.HandleEmailReport(models.EventDetails{})
+				}
 				if err != nil {
 					log.Error("Error updating Darkphish email with rid ", rid, ": ", err.Error())
-					continue
+					return err
 				}
-				if im.DeleteReportedCampaignEmail {
-					deleteEmails = append(deleteEmails, m.SeqNum)
+				return nil
+			})
+			if err == nil {
+				processed = append(processed, m.UID)
+				if im.DeleteReportedCampaignEmail && len(rids) > 0 {
+					deleteEmails = append(deleteEmails, m.UID)
 				}
 			}
 
 		}
-		// Check if any emails were unable to be reported, so we can mark them as unread
-		if len(reportingFailed) > 0 {
-			log.Debugf("Marking %d emails as unread as failed to report", len(reportingFailed))
-			err := mailServer.MarkAsUnread(reportingFailed) // Set emails as unread that we failed to report to Darkphish
+		// PEEK leaves failed/cancelled reports unread; acknowledge persisted work.
+		if len(processed) > 0 {
+			err := mailServer.MarkAsRead(processed)
 			if err != nil {
-				log.Error("Unable to mark emails as unread: ", err.Error())
+				log.Error("Unable to acknowledge processed emails: ", err.Error())
 			}
 		}
 		// If the DeleteReportedCampaignEmail flag is set, delete reported Darkphish campaign emails
@@ -204,24 +279,57 @@ func checkForNewEmails(im models.IMAP) {
 	}
 }
 
-func checkRIDs(em *email.Email, rids map[string]bool) {
-	// Check Text and HTML
-	emailContent := string(em.Text) + string(em.HTML)
-	for _, r := range resultIDRegex.FindAllStringSubmatch(emailContent, -1) {
-		newrid := r[len(r)-1]
-		if !rids[newrid] {
-			rids[newrid] = true
+func processReportRIDs(ctx context.Context, rids map[string]bool, report func(string) error) error {
+	if len(rids) > maxReportRIDs {
+		return errors.New("IMAP report exceeds RID processing limit")
+	}
+	var failures error
+	for rid := range rids {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		failures = errors.Join(failures, report(rid))
+	}
+	return errors.Join(failures, ctx.Err())
+}
+
+func checkRIDs(ctx context.Context, em *email.Email, rids map[string]bool) error {
+	for _, content := range [][]byte{em.Text, em.HTML} {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		matches := resultIDRegex.FindAllSubmatch(content, maxReportRIDs+1)
+		if len(matches) > maxReportRIDs {
+			return errors.New("IMAP report exceeds RID processing limit")
+		}
+		for _, match := range matches {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			rids[string(match[len(match)-1])] = true
+			if len(rids) > maxReportRIDs {
+				return errors.New("IMAP report exceeds RID processing limit")
+			}
 		}
 	}
+	return ctx.Err()
 }
 
 // returns a slice of darkphish rid paramters found in the email HTML, Text, and attachments
-func matchEmail(em *email.Email) (map[string]bool, error) {
+func matchEmail(ctx context.Context, em *email.Email) (map[string]bool, error) {
 	rids := make(map[string]bool)
-	checkRIDs(em, rids)
+	if err := checkRIDs(ctx, em, rids); err != nil {
+		return nil, err
+	}
+	if len(em.Attachments) > maxReportAttachments {
+		return nil, errors.New("IMAP report exceeds attachment processing limit")
+	}
 
 	// Next check each attachment
 	for _, a := range em.Attachments {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		ext := filepath.Ext(a.Filename)
 		if a.Header.Get("Content-Type") == "message/rfc822" || ext == ".eml" {
 
@@ -232,9 +340,11 @@ func matchEmail(em *email.Email) (map[string]bool, error) {
 				return rids, err
 			}
 
-			checkRIDs(attachmentEmail, rids)
+			if err := checkRIDs(ctx, attachmentEmail, rids); err != nil {
+				return nil, err
+			}
 		}
 	}
 
-	return rids, nil
+	return rids, ctx.Err()
 }

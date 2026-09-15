@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/mail"
 	"os"
 	"regexp"
@@ -28,7 +29,11 @@ type Dialer struct {
 
 // Dial wraps the gomail dialer's Dial command
 func (d *Dialer) Dial() (mailer.Sender, error) {
-	return d.Dialer.Dial()
+	conn, err := dialer.Dialer().Dial("tcp", net.JoinHostPort(d.Host, strconv.Itoa(d.Port)))
+	if err != nil {
+		return nil, err
+	}
+	return newBoundedSMTPSender(conn, d.Dialer, 30*time.Second)
 }
 
 // SMTP contains the attributes needed to handle the sending of campaign emails

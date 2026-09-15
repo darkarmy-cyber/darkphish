@@ -1,0 +1,14 @@
+{{define "settings_tabs"}}
+<ul class="nav nav-tabs" aria-label="Settings sections">
+    <li {{if eq .SettingsTab "account"}}class="active"{{end}}><a href="/settings?tab=account">Account</a></li>
+    <li {{if eq .SettingsTab "ui"}}class="active"{{end}}><a href="/settings?tab=ui">UI</a></li>
+    <li {{if eq .SettingsTab "reporting"}}class="active"{{end}}><a href="/settings?tab=reporting">Reporting/IMAP</a></li>
+    <li {{if eq .SettingsTab "api"}}class="active"{{end}}><a href="/settings?tab=api">API/PATs</a></li>
+    {{if .ModifySystem}}
+    <li {{if eq .SettingsTab "users"}}class="active"{{end}}><a href="/settings?tab=users">Users</a></li>
+    <li {{if eq .SettingsTab "webhooks"}}class="active"{{end}}><a href="/settings?tab=webhooks">Webhooks</a></li>
+    <li {{if eq .SettingsTab "audit"}}class="active"{{end}}><a href="/settings?tab=audit">Audit</a></li>
+    <li {{if eq .SettingsTab "update"}}class="active"{{end}}><a href="/settings?tab=update">Update</a></li>
+    {{end}}
+</ul>
+{{end}}

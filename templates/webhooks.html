@@ -1,8 +1,7 @@
 {{define "body"}}
 <div class="col-sm-9 col-sm-offset-3 col-md-10 col-md-offset-2 main">
-    <h1 class="page-header">
-        {{.Title}}
-    </h1>
+    <h1 class="page-header">Settings</h1>
+    {{template "settings_tabs" .}}
     <div id="flashes" class="row"></div>
     <div class="row">
         <button type="button" class="btn btn-primary" id="new_button" data-toggle="modal" data-backdrop="static"

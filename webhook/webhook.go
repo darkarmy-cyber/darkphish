@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	log "github.com/darkarmy-cyber/darkphish/logger"
@@ -51,6 +52,37 @@ var senderInstance = &defaultSender{
 	},
 }
 
+type deliveryGroup struct {
+	mu      sync.Mutex
+	wg      sync.WaitGroup
+	closing bool
+}
+
+func (g *deliveryGroup) start(send func()) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closing {
+		return
+	}
+	g.wg.Add(1)
+	go func() {
+		defer g.wg.Done()
+		send()
+	}()
+}
+
+func (g *deliveryGroup) shutdown() {
+	g.mu.Lock()
+	g.closing = true
+	g.mu.Unlock()
+	g.wg.Wait()
+}
+
+var deliveries deliveryGroup
+
+// Shutdown joins accepted deliveries after all event producers have stopped.
+func Shutdown() { deliveries.shutdown() }
+
 // SetTransport sets the underlying transport for the default webhook client.
 func SetTransport(tr *http.Transport) {
 	senderInstance.client.Transport = tr
@@ -71,9 +103,9 @@ func Send(endPoint EndPoint, data interface{}) error {
 // SendAll sends data to multiple EndPoints
 func SendAll(endPoints []EndPoint, data interface{}) {
 	for _, e := range endPoints {
-		go func(e EndPoint) {
+		deliveries.start(func() {
 			senderInstance.Send(e, data)
-		}(e)
+		})
 	}
 }
 

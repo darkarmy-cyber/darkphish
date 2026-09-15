@@ -328,7 +328,7 @@ func RequireLogin(handler http.Handler) http.HandlerFunc {
 			}
 			if err == auth.ErrPasswordChangeRequired {
 				q := r.URL.Query()
-				q.Set("next", r.URL.Path)
+				q.Set("next", loginReturnTarget(r))
 				http.Redirect(w, r, fmt.Sprintf("/reset_password?%s", q.Encode()), http.StatusTemporaryRedirect)
 				return
 			}
@@ -336,9 +336,18 @@ func RequireLogin(handler http.Handler) http.HandlerFunc {
 			return
 		}
 		q := r.URL.Query()
-		q.Set("next", r.URL.Path)
+		q.Set("next", loginReturnTarget(r))
 		http.Redirect(w, r, fmt.Sprintf("/login?%s", q.Encode()), http.StatusTemporaryRedirect)
 	}
+}
+
+func loginReturnTarget(r *http.Request) string {
+	if r.URL.Path == "/settings" {
+		if tab := r.URL.Query().Get("tab"); auth.SettingsTabAllowed(tab) {
+			return "/settings?tab=" + tab
+		}
+	}
+	return r.URL.Path
 }
 
 // CORS enables cross-origin administrative API access only for exact,

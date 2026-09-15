@@ -34,6 +34,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
@@ -44,6 +45,7 @@ import (
 	"github.com/darkarmy-cyber/darkphish/imap"
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	"github.com/darkarmy-cyber/darkphish/internal/migrationcheck"
+	"github.com/darkarmy-cyber/darkphish/internal/update"
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/middleware"
 	"github.com/darkarmy-cyber/darkphish/models"
@@ -127,6 +129,10 @@ func writeExclusive(path string, value []byte) error {
 	return nil
 }
 
+func notifyShutdown(c chan<- os.Signal) {
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+}
+
 func main() {
 	kingpin.Version(versionSummary())
 
@@ -138,6 +144,14 @@ func main() {
 		return
 	}
 
+	if command == serveCommand.FullCommand() {
+		if handled, err := recoverPendingUpdate(); handled {
+			if err != nil {
+				log.Fatal(err)
+			}
+			return
+		}
+	}
 	// Load the config
 	conf, err := config.LoadConfig(*configPath)
 	// Just warn if a contact address hasn't been configured
@@ -190,6 +204,14 @@ func main() {
 
 	// Provide the option to disable the built-in mailer
 	// Setup the global variables and settings
+	if command == serveCommand.FullCommand() {
+		if handled, supervisorErr := superviseUpdates(conf); handled {
+			if supervisorErr != nil {
+				log.Fatal(supervisorErr)
+			}
+			return
+		}
+	}
 	err = models.Setup(conf)
 	if err != nil {
 		log.Fatal(err)
@@ -278,6 +300,7 @@ func main() {
 
 	// Create our servers
 	adminOptions := []controllers.AdminServerOption{}
+	adminOptions = append(adminOptions, controllers.WithUpdates(configureUpdates(conf)))
 	if *disableMailer {
 		adminOptions = append(adminOptions, controllers.WithWorker(nil))
 	}
@@ -288,19 +311,25 @@ func main() {
 	phishServer := controllers.NewPhishingServer(phishConfig)
 
 	imapMonitor := imap.NewMonitor()
+	c := make(chan os.Signal, 1)
+	notifyShutdown(c)
+	defer signal.Stop(c)
 	if *mode == "admin" || *mode == "all" {
 		go adminServer.Start()
-		go imapMonitor.Start()
+		go func() {
+			if update.WaitServing != nil {
+				update.WaitServing()
+			}
+			imapMonitor.Start()
+		}()
 	}
 	if *mode == "phish" || *mode == "all" {
 		go phishServer.Start()
 	}
 
 	// Handle graceful shutdown
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
 	<-c
-	log.Info("CTRL+C Received... Gracefully shutting down servers")
+	log.Info("Shutdown signal received; gracefully shutting down servers")
 	if *mode == modeAdmin || *mode == modeAll {
 		adminServer.Shutdown()
 		imapMonitor.Shutdown()
@@ -308,5 +337,6 @@ func main() {
 	if *mode == modePhish || *mode == modeAll {
 		phishServer.Shutdown()
 	}
+	webhook.Shutdown()
 
 }

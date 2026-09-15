@@ -37,7 +37,9 @@ function summaryFindingIDs(repo, number, body) {
       requireReview(remaining === 0 && !groups.has(group[1]) && Number(group[2]) <= 2000, "Invalid findings summary count")
       groups.add(group[1]); remaining = Number(group[2]); continue
     }
-    const item = /^- \S+ \[[^\]\n]+\]\((https:\/\/github\.com\/[^\s)]+)\) · \*\*(Critical|High|Medium|Low)\*\*$/.exec(line)
+    // The observed Resolved suffix is display-only, never resolution evidence.
+    // Retain every ID for independent history and GraphQL thread verification.
+    const item = /^- \S+ \[[^\]\n]+\]\((https:\/\/github\.com\/[^\s)]+)\) · \*\*(Critical|High|Medium|Low)\*\*(?: · \*\*Resolved\*\*)?$/.exec(line)
     requireReview(item && remaining > 0, "Unrecognized findings summary item")
     let url
     try { url = new URL(item[1]) } catch { throw new ReviewGateError("Invalid findings summary link") }

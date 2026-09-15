@@ -6,6 +6,10 @@
 
 - Add a hardened `./install.sh` for fresh systemd-based Linux deployments that verifies the host and pinned Go toolchain, builds only the exact tracked source snapshot, creates a dedicated service account, generates production security material, installs the native runtime, validates application readiness, and rolls back installer-created artifacts on failure.
 
+### Fixed
+
+- Harden the native Linux installer against inherited command-bearing environments, require systemd 245+ with a reachable manager, reject unusable `noexec` build locations before persistent mutation, and require stable readiness from both the administrative and simulation listeners before reporting success.
+
 ## 0.9.0 - 2026-09-15
 
 ### Fixed

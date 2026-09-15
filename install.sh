@@ -50,7 +50,7 @@ die() {
 }
 
 usage() {
-    cat <<'EOF'
+    cat <<'USAGE_EOF'
 Darkphish Linux installer
 
 Usage:
@@ -59,14 +59,14 @@ Usage:
 
 The installer performs a fresh production installation only. It refuses to
 replace an existing Darkphish installation. Supported hosts are Linux amd64 or
-arm64 systems using systemd 229 or newer and an apt, dnf, or yum package family.
+arm64 systems using systemd 245 or newer and an apt, dnf, or yum package family.
 
 Default layout:
   Application: /opt/darkphish
   Secrets/TLS: /etc/darkphish
   Bootstrap:   /var/lib/darkphish/bootstrap
   Service:     darkphish.service
-EOF
+USAGE_EOF
 }
 
 path_entry_exists() {
@@ -74,10 +74,19 @@ path_entry_exists() {
 }
 
 git_source() {
-    git --no-replace-objects \
+    env -i PATH="${PATH}" HOME="/root" LC_ALL=C \
+        git --no-replace-objects \
         -c "safe.directory=${SOURCE_DIR}" \
         -c core.fsmonitor=false \
         -C "${SOURCE_DIR}" "$@"
+}
+
+safe_tar() {
+    env -i PATH="${PATH}" LC_ALL=C tar "$@"
+}
+
+openssl_safe() {
+    env -i PATH="${PATH}" LC_ALL=C openssl "$@"
 }
 
 rollback_install() {
@@ -132,10 +141,31 @@ require_root() {
     [[ ${EUID} -eq 0 ]] || die "root privileges are required; run: sudo ./install.sh"
 }
 
+prepare_build_root() {
+    local base probe candidate
+    for base in /var/tmp /tmp /root; do
+        [[ -d "${base}" && -w "${base}" ]] || continue
+        candidate="$(mktemp -d "${base%/}/darkphish-install.XXXXXX" 2>/dev/null || true)"
+        [[ -n "${candidate}" ]] || continue
+        chmod 0700 "${candidate}"
+        probe="${candidate}/exec-probe"
+        printf '#!/bin/sh\nexit 0\n' > "${probe}"
+        chmod 0700 "${probe}"
+        if env -i PATH="${PATH}" "${probe}" >/dev/null 2>&1; then
+            rm -f -- "${probe}"
+            BUILD_ROOT="${candidate}"
+            return
+        fi
+        rm -rf -- "${candidate}"
+    done
+    die "no executable private temporary filesystem is available for the verified build; /var/tmp, /tmp, or /root must allow root execution"
+}
+
 verify_source_tree() {
     [[ -f "${SOURCE_DIR}/go.mod" && -f "${SOURCE_DIR}/go.sum" && -f "${SOURCE_DIR}/VERSION" && -f "${SOURCE_DIR}/config.json" ]] || die "run install.sh from the Darkphish repository root"
     [[ -d "${SOURCE_DIR}/db" && -d "${SOURCE_DIR}/templates" && -d "${SOURCE_DIR}/static/js/dist" && -d "${SOURCE_DIR}/static/css/dist" ]] || die "required runtime assets are missing from the repository"
     command -v git >/dev/null 2>&1 || die "git is required to verify the source tree"
+    command -v tar >/dev/null 2>&1 || die "tar is required to prepare the verified source snapshot before host mutation"
 
     local top_level status_output
     if ! top_level="$(git_source rev-parse --show-toplevel 2>/dev/null)"; then
@@ -169,7 +199,7 @@ prepare_source_snapshot() {
 
     SOURCE_SNAPSHOT="${BUILD_ROOT}/source"
     mkdir -p -- "${SOURCE_SNAPSHOT}"
-    if ! git_source archive --format=tar "${SOURCE_SHA}" | tar -xf - -C "${SOURCE_SNAPSHOT}"; then
+    if ! git_source archive --format=tar "${SOURCE_SHA}" | safe_tar -xf - -C "${SOURCE_SNAPSHOT}"; then
         die "failed to create immutable source snapshot from Git"
     fi
 
@@ -216,10 +246,13 @@ detect_platform() {
     command -v getent >/dev/null 2>&1 || die "getent is required for account preflight checks"
     [[ -d /run/systemd/system ]] || die "systemd is not running on this host"
 
-    local systemd_version
-    systemd_version="$(systemctl --version | awk 'NR==1 {print $2}')"
-    [[ "${systemd_version}" =~ ^[0-9]+$ ]] || die "cannot determine systemd version"
-    (( systemd_version >= 229 )) || die "systemd 229 or newer is required for AmbientCapabilities; found systemd ${systemd_version}"
+    local manager_version systemd_version
+    if ! manager_version="$(systemctl show --property=Version --value 2>/dev/null)"; then
+        die "cannot connect to the running systemd manager"
+    fi
+    [[ "${manager_version}" =~ ^([0-9]+) ]] || die "cannot determine running systemd manager version"
+    systemd_version="${BASH_REMATCH[1]}"
+    (( systemd_version >= 245 )) || die "systemd 245 or newer is required for the configured hardening directives; found systemd ${systemd_version}"
 }
 
 refuse_existing_install() {
@@ -277,7 +310,7 @@ install_system_packages() {
 curl_https() {
     local url="$1"
     local output="$2"
-    curl --fail --location --silent --show-error \
+    curl --disable --fail --location --silent --show-error \
         --proto '=https' --tlsv1.2 --retry 3 --retry-delay 2 \
         --output "${output}" "${url}"
 }
@@ -285,7 +318,7 @@ curl_https() {
 ensure_go() {
     local installed=""
     if command -v go >/dev/null 2>&1; then
-        installed="$(env -u GOROOT go version 2>/dev/null | awk '{print $3}' || true)"
+        installed="$(env -i PATH="${PATH}" HOME="/root" GOENV=off GOTOOLCHAIN=local go version 2>/dev/null | awk '{print $3}' || true)"
     fi
     if [[ "${installed}" == "go${GO_REQUIRED}" ]]; then
         GO_BIN="$(command -v go)"
@@ -302,10 +335,10 @@ ensure_go() {
     printf '%s  %s\n' "${GO_EXPECTED_SHA256}" "${archive}" | sha256sum --check --status - || die "Go toolchain checksum verification failed"
 
     mkdir -p -- "${BUILD_ROOT}/toolchain"
-    tar -xzf "${archive}" -C "${BUILD_ROOT}/toolchain"
+    safe_tar -xzf "${archive}" -C "${BUILD_ROOT}/toolchain"
     GO_BIN="${BUILD_ROOT}/toolchain/go/bin/go"
     [[ -x "${GO_BIN}" ]] || die "verified Go toolchain did not extract correctly"
-    [[ "$(env -u GOROOT "${GO_BIN}" version | awk '{print $3}')" == "go${GO_REQUIRED}" ]] || die "unexpected Go toolchain version after extraction"
+    [[ "$(env -i PATH="${PATH}" HOME="/root" GOENV=off GOTOOLCHAIN=local "${GO_BIN}" version | awk '{print $3}')" == "go${GO_REQUIRED}" ]] || die "unexpected Go toolchain version after extraction"
 }
 
 build_darkphish() {
@@ -320,12 +353,8 @@ build_darkphish() {
 
     (
         cd -- "${SOURCE_SNAPSHOT}"
-        env \
-            -u GOROOT \
-            -u CGO_CFLAGS \
-            -u CGO_CPPFLAGS \
-            -u CGO_CXXFLAGS \
-            -u CGO_LDFLAGS \
+        env -i \
+            PATH="${PATH}" \
             HOME="${BUILD_ROOT}/home" \
             GOCACHE="${BUILD_ROOT}/gocache" \
             GOMODCACHE="${BUILD_ROOT}/gomodcache" \
@@ -346,7 +375,7 @@ build_darkphish() {
     )
 
     [[ -x "${BUILD_ROOT}/darkphish" ]] || die "Darkphish build did not produce an executable"
-    "${BUILD_ROOT}/darkphish" version >/dev/null || die "built Darkphish executable failed its version smoke check"
+    env -i PATH="${PATH}" "${BUILD_ROOT}/darkphish" version >/dev/null || die "built Darkphish executable failed its version smoke check"
 }
 
 create_service_account() {
@@ -364,7 +393,7 @@ create_service_account() {
 generate_key_file() {
     local path="$1"
     local value
-    value="$(openssl rand -base64 32 | tr -d '\r\n')"
+    value="$(openssl_safe rand -base64 32 | tr -d '\r\n')"
     [[ -n "${value}" ]] || die "failed to generate cryptographic key material"
     umask 0077
     printf 'base64:%s\n' "${value}" > "${path}"
@@ -406,7 +435,7 @@ create_security_material() {
     generate_key_file "${CONFIG_DIR}/audit-signing.key"
 
     local openssl_config="${BUILD_ROOT}/openssl-admin.cnf"
-    cat > "${openssl_config}" <<'EOF'
+    cat > "${openssl_config}" <<'OPENSSL_EOF'
 [req]
 distinguished_name = dn
 prompt = no
@@ -421,9 +450,9 @@ subjectAltName = @alt_names
 [alt_names]
 DNS.1 = localhost
 IP.1 = 127.0.0.1
-EOF
+OPENSSL_EOF
 
-    openssl req -x509 -newkey rsa:3072 -sha256 -days 825 -nodes \
+    openssl_safe req -x509 -newkey rsa:3072 -sha256 -days 825 -nodes \
         -keyout "${CONFIG_DIR}/tls/admin.key" \
         -out "${CONFIG_DIR}/tls/admin.crt" \
         -config "${openssl_config}" \
@@ -448,7 +477,7 @@ EOF
 create_production_config() {
     log "Writing production configuration"
     umask 0077
-    cat > "${INSTALL_DIR}/config.json" <<EOF
+    cat > "${INSTALL_DIR}/config.json" <<EOF_CONFIG
 {
   "admin_server": {
     "listen_url": "127.0.0.1:3333",
@@ -521,7 +550,7 @@ create_production_config() {
     "level": "info"
   }
 }
-EOF
+EOF_CONFIG
     chown "${APP_USER}:${APP_GROUP}" "${INSTALL_DIR}/config.json"
     chmod 0640 "${INSTALL_DIR}/config.json"
 }
@@ -529,7 +558,7 @@ EOF
 create_systemd_unit() {
     log "Creating hardened systemd service"
     SERVICE_FILE_CREATED=1
-    cat > "${SERVICE_FILE}" <<EOF
+    cat > "${SERVICE_FILE}" <<EOF_SERVICE
 [Unit]
 Description=Darkphish authorized phishing simulation platform
 Documentation=https://github.com/darkarmy-cyber/darkphish
@@ -571,7 +600,7 @@ ReadWritePaths=${INSTALL_DIR} ${BOOTSTRAP_DIR}
 
 [Install]
 WantedBy=multi-user.target
-EOF
+EOF_SERVICE
     chown root:root "${SERVICE_FILE}"
     chmod 0644 "${SERVICE_FILE}"
 
@@ -600,22 +629,37 @@ start_service() {
     verify_loaded_systemd_unit
     systemctl enable --now "${SERVICE_NAME}" >/dev/null
 
-    local attempt password_file
+    local attempt password_file current_pid stable_pid="" ready_streak=0
     password_file="${BOOTSTRAP_DIR}/darkphish_initial_admin_password"
     for attempt in $(seq 1 60); do
-        if systemctl is-active --quiet "${SERVICE_NAME}" && \
-            curl --fail --silent --show-error --max-time 2 \
+        current_pid="$(systemctl show "${SERVICE_NAME}" -p MainPID --value 2>/dev/null || true)"
+        if [[ "${current_pid}" =~ ^[1-9][0-9]*$ ]] && \
+            systemctl is-active --quiet "${SERVICE_NAME}" && \
+            curl --disable --noproxy '*' --fail --silent --show-error --max-time 2 \
                 --cacert "${CONFIG_DIR}/tls/admin.crt" \
                 "https://127.0.0.1:3333/readyz" >/dev/null 2>&1 && \
+            curl --disable --noproxy '*' --silent --show-error --max-time 2 \
+                --output /dev/null "http://127.0.0.1:80/" >/dev/null 2>&1 && \
             [[ -f "${password_file}" && ! -L "${password_file}" && -s "${password_file}" ]]; then
-            return
+            if [[ "${current_pid}" == "${stable_pid}" ]]; then
+                ready_streak=$((ready_streak + 1))
+            else
+                stable_pid="${current_pid}"
+                ready_streak=1
+            fi
+            if (( ready_streak >= 5 )); then
+                return
+            fi
+        else
+            stable_pid=""
+            ready_streak=0
         fi
         sleep 1
     done
 
     systemctl --no-pager --full status "${SERVICE_NAME}" || true
     journalctl --no-pager -u "${SERVICE_NAME}" -n 50 || true
-    die "Darkphish did not become application-ready; inspect: journalctl -u ${SERVICE_NAME}"
+    die "Darkphish did not become application-ready on both admin and simulation listeners; inspect: journalctl -u ${SERVICE_NAME}"
 }
 
 print_completion() {
@@ -657,9 +701,7 @@ main() {
     require_root
     detect_platform
     refuse_existing_install
-
-    BUILD_ROOT="$(mktemp -d /var/tmp/darkphish-install.XXXXXX)"
-    chmod 0700 "${BUILD_ROOT}"
+    prepare_build_root
 
     verify_source_tree
     prepare_source_snapshot

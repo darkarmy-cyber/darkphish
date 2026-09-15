@@ -259,6 +259,58 @@ test("retained historical findings require original-review proof and both newer 
   }
 })
 
+test("resolved display suffix retains every historical identity and independent gate", async () => {
+  const annotated = () => {
+    const f = historicalFixture()
+    f.comments[0].body = f.comments[0].body.replace("**Medium**", "**Medium** · **Resolved**")
+    return f
+  }
+  const f = annotated()
+  assert.deepEqual((await f.verify()).summaryFindings, [5])
+  assert.equal(await f.merge(), true)
+  for (const mutate of [
+    g => { g.threads[0].isResolved = false },
+    g => { g.threads[0] = {} },
+    g => { g.reviewComments = [] },
+    g => { g.reviewComments[0].user.id = 99 },
+    g => { g.reviewComments[0].original_commit_id = sha },
+    g => { g.reviewComments[0].pull_request_review_id = 99 },
+    g => { g.reviewComments[0].updated_at = at(9) },
+    g => { g.reviews[0].submitted_at = at(9) },
+    g => { g.comments.splice(2, 1) },
+    g => { g.comments[0].body = g.comments[0].body.replace("findings (1)", "findings (2)") },
+    g => { g.comments[0].body = g.comments[0].body.replace("/pull/42#", "/pull/43#") },
+    g => { const nodes = g.nodes(); nodes[0].editor.databaseId = 99; g.nodes = () => nodes },
+    g => { g.query = async () => ({ errors: [{ message: "denied" }] }) },
+  ]) {
+    const g = annotated(); mutate(g)
+    await assert.rejects(g.verify(), ReviewGateError)
+    assert.equal(await g.merge(), false)
+    assert.deepEqual(g.writes, [])
+  }
+})
+
+test("mixed resolved display and legacy items retain both identities", async () => {
+  const f = historicalFixture()
+  f.comments[0].body = f.comments[0].body.replace("findings (1)", "findings (2)")
+    .replace("**Medium**", `**Medium** · **Resolved**\n- 🟡 [Second historical issue](https://github.com/${repo}/pull/42#discussion_r6) · **Low**`)
+  f.reviewComments.push({ ...f.reviewComments[0], id: 6 })
+  f.threads.push({ isResolved: true })
+  assert.deepEqual((await f.verify()).summaryFindings, [5, 6])
+  f.threads[1].isResolved = false
+  await assert.rejects(f.verify(), /Unresolved/)
+})
+
+test("unknown or repeated resolution suffixes remain unrecognized", async () => {
+  for (const suffix of [" · **Dismissed**", " · **resolved**", " · Resolved", " · **Resolved** extra", " · **Resolved** · **Resolved**"]) {
+    const f = historicalFixture()
+    f.comments[0].body = f.comments[0].body.replace("**Medium**", "**Medium**" + suffix)
+    await assert.rejects(f.verify(), /Unrecognized findings summary item/)
+    assert.equal(await f.merge(), false)
+    assert.deepEqual(f.writes, [])
+  }
+})
+
 test("unknown, foreign, incomplete and duplicate historical summary mappings fail closed", async () => {
   const mutations = [
     body => body.replace("findings (1)", "findings (2)"),

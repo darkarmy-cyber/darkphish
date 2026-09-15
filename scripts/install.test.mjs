@@ -52,7 +52,8 @@ test('installer sanitizes privileged helper environments', () => {
   assert.match(installer, /safe_tar\(\).*env -i/s);
   assert.match(installer, /openssl_safe\(\).*env -i/s);
   assert.match(installer, /curl --disable/);
-  assert.doesNotMatch(installer, /tar -xzf/);
+  assert.match(installer, /safe_tar -xzf/);
+  assert.doesNotMatch(installer, /^\s*tar\s+-xzf/m);
   assert.doesNotMatch(installer, /openssl rand -base64 32/);
 });
 

@@ -14,30 +14,36 @@ For later releases, replace `v0.10.0` with the release tag you intend to deploy.
 An untagged checkout can still be built deliberately, but DarkPhish marks it as a
 development build and verified in-product updates remain unavailable.
 
-The installer currently supports amd64 and arm64 hosts using systemd and the apt,
-dnf, or yum package families. It refuses upgrades or partial replacement of an
-existing deployment; use the documented native update path for an installed instance.
+The installer currently supports amd64 and arm64 hosts using systemd 229 or newer and
+the apt, dnf, or yum package families. systemd 229 is the minimum because the hardened
+service uses `AmbientCapabilities=CAP_NET_BIND_SERVICE` to bind TCP/80 without running
+DarkPhish as root. It refuses upgrades or partial replacement of an existing deployment;
+use the documented native update path for an installed instance.
 
 ## What the installer does
 
 The installer:
 
 1. verifies that it is running as root from a valid, clean DarkPhish Git checkout;
-2. refuses existing runtime paths, dangling links, systemd units and drop-in overrides;
-3. identifies the Linux distribution and CPU architecture;
-4. installs the required compiler/runtime packages;
-5. uses Go 1.27.1 when already present or downloads the official toolchain from
+2. performs privileged Git inspection with replacement objects disabled and repository
+   filesystem monitors disabled, so local Git metadata cannot substitute source objects
+   or execute a checkout-controlled fsmonitor command during verification;
+3. refuses existing runtime paths, dangling links, systemd units and drop-in overrides;
+4. identifies the Linux distribution and CPU architecture and requires systemd 229+;
+5. installs the required compiler/runtime packages;
+6. uses Go 1.27.1 when already present or downloads the official toolchain from
    `go.dev` and verifies it against a reviewed SHA-256 digest pinned inside the installer;
-6. creates an immutable source snapshot from the exact Git commit and builds only that
-   tracked content with external Go workspaces and user Go environment disabled;
-7. creates the unprivileged `darkphish` system account;
-8. installs the runtime below `/opt/darkphish` with the executable, database
+7. clears any inherited `GOROOT`, creates an immutable source snapshot from the exact
+   Git commit, and builds only that tracked content with external Go workspaces and user
+   Go environment disabled;
+8. creates the unprivileged `darkphish` system account;
+9. installs the runtime below `/opt/darkphish` with the executable, database
    migrations, templates, static assets, documentation, and configuration;
-9. generates independent production session, envelope-encryption, and audit-signing
-   keys below `/etc/darkphish` plus a temporary self-signed administrative TLS certificate;
-10. configures SQLite, production mode, and the owner-only initial administrator
+10. generates independent production session, envelope-encryption, and audit-signing
+    keys below `/etc/darkphish` plus a temporary self-signed administrative TLS certificate;
+11. configures SQLite, production mode, and the owner-only initial administrator
     password output directory;
-11. creates and validates a hardened `darkphish.service`, verifies the loaded unit has
+12. creates and validates a hardened `darkphish.service`, verifies the loaded unit has
     no unexpected drop-ins, starts it, and waits for `/readyz` plus bootstrap-password
     creation before reporting success.
 
@@ -106,10 +112,10 @@ verified native update feature requires a separately installed root-owned
 
 The installer intentionally fails closed when it finds an existing DarkPhish
 service, user/group, runtime/configuration/state directory, dangling managed path,
-systemd drop-in, unsupported platform, unverified Git state, symbolic links in the
-managed runtime payload, failed pinned Go checksum verification, failed build,
-unexpected loaded systemd unit, failed application readiness, or missing bootstrap
-output.
+systemd drop-in, unsupported platform or systemd version, unverified Git state,
+symbolic links in the managed runtime payload, failed pinned Go checksum verification,
+failed build, unexpected loaded systemd unit, failed application readiness, or missing
+bootstrap output.
 
 It is not an unattended upgrade mechanism. Re-running it against an installed host
 is expected to stop with an error rather than mutate an existing instance.

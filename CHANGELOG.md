@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.0 - 2026-09-15
+
+### Added
+
+- Add a hardened `./install.sh` for fresh systemd-based Linux deployments that verifies the host and pinned Go toolchain, builds only the exact tracked source snapshot, creates a dedicated service account, generates production security material, installs the native runtime, validates application readiness, and rolls back installer-created artifacts on failure.
+
 ## 0.9.0 - 2026-09-15
 
 ### Fixed

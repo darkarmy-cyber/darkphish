@@ -114,7 +114,7 @@ func GetGroups(uid int64) ([]Group, error) {
 		return gs, err
 	}
 	for i := range gs {
-		err = gs[i].getDetails()
+		gs[i].Targets, err = GetTargets(gs[i].Id)
 		if err != nil {
 			log.Error(err)
 		}
@@ -370,7 +370,7 @@ func UpdateTarget(tx *gorm.DB, target Target) error {
 	if err != nil {
 		log.WithFields(logrus.Fields{
 			"email": target.Email,
-		}).Error("Error updating target information")
+		}).Error(err)
 	}
 	return err
 }

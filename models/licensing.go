@@ -38,18 +38,21 @@ func enforceGroupLicense(tx *gorm.DB, group *Group) error {
 	if verifyErr != nil && state != licensing.StateInvalid {
 		return fmt.Errorf("verify Community license: %w", verifyErr)
 	}
-	existing, err := managedUserEmailsExcludingGroup(tx, group.Id)
+	currentEmails, err := managedUserEmailsExcludingGroup(tx, 0)
 	if err != nil {
-		return fmt.Errorf("count managed users: %w", err)
+		return fmt.Errorf("count current managed users: %w", err)
+	}
+	existingOutsideGroup, err := managedUserEmailsExcludingGroup(tx, group.Id)
+	if err != nil {
+		return fmt.Errorf("count managed users outside group: %w", err)
 	}
 	proposed := make([]string, 0, len(group.Targets))
 	for _, target := range group.Targets {
 		proposed = append(proposed, target.Email)
 	}
-	if err := licensing.EnforceManagedUsers(state, lease.Entitlements.ManagedUsers, existing, proposed); err != nil {
-		return err
-	}
-	return nil
+	current := licensing.ProjectManagedUsers(currentEmails, nil)
+	projected := licensing.ProjectManagedUsers(existingOutsideGroup, proposed)
+	return licensing.EnforceManagedUserCounts(state, lease.Entitlements.ManagedUsers, current, projected)
 }
 
 func managedUserEmailsExcludingGroup(tx *gorm.DB, excludedGroupID int64) ([]string, error) {

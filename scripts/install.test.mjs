@@ -13,6 +13,7 @@ test('installer fails closed and targets the supported native layout', () => {
   assert.match(installer, /working tree is not clean/);
   assert.match(installer, /fresh production installation only/);
   assert.match(installer, /systemd is required/);
+  assert.match(installer, /systemd 229 or newer is required/);
   assert.match(installer, /path_entry_exists/);
   assert.match(installer, /SERVICE_DROPIN_ETC/);
   assert.match(installer, /SERVICE_DROPIN_RUN/);
@@ -25,12 +26,17 @@ test('installer pins the Go toolchain independently before executing it', () => 
   assert.match(installer, /https:\/\/go\.dev\/dl\/go\$\{GO_REQUIRED\}/);
   assert.match(installer, /GO_EXPECTED_SHA256/);
   assert.match(installer, /sha256sum --check --status/);
+  assert.match(installer, /env -u GOROOT go version/);
+  assert.match(installer, /env -u GOROOT "\$\{GO_BIN\}" version/);
   assert.doesNotMatch(installer, /\.sha256"/);
 });
 
-test('installer builds only the committed source snapshot with isolated Go state', () => {
+test('installer builds only the committed source snapshot with isolated Git and Go state', () => {
+  assert.match(installer, /git --no-replace-objects/);
+  assert.match(installer, /-c core\.fsmonitor=false/);
   assert.match(installer, /git_source archive --format=tar/);
   assert.match(installer, /SOURCE_SNAPSHOT/);
+  assert.match(installer, /-u GOROOT/);
   assert.match(installer, /GOWORK=off/);
   assert.match(installer, /GOENV=off/);
   assert.match(installer, /GOTOOLCHAIN=local/);

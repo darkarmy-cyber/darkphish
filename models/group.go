@@ -114,7 +114,7 @@ func GetGroups(uid int64) ([]Group, error) {
 		return gs, err
 	}
 	for i := range gs {
-		gs[i].Targets, err = GetTargets(gs[i].Id)
+		err = gs[i].getDetails()
 		if err != nil {
 			log.Error(err)
 		}
@@ -201,6 +201,9 @@ func PostGroup(g *Group) error {
 		return tx.Error
 	}
 	defer tx.Rollback()
+	if err := enforceGroupLicense(tx, g); err != nil {
+		return err
+	}
 	err := tx.Save(g).Error
 	if err != nil {
 		tx.Rollback()
@@ -253,6 +256,9 @@ func PutGroup(g *Group) error {
 		return tx.Error
 	}
 	defer tx.Rollback()
+	if err := enforceGroupLicense(tx, g); err != nil {
+		return err
+	}
 	// Check existing targets, removing any that are no longer in the group.
 	for _, t := range ts {
 		if _, ok := cacheNew[t.Email]; ok {

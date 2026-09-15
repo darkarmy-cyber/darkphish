@@ -15,26 +15,29 @@ DarkPhish is designed as a native, self-hosted platform with a Go backend, web a
 
 ## Install
 
-For a fresh installation on a supported Linux server:
+For a fresh production installation, clone an immutable published release tag. Starting with v0.10.0:
 
 ```sh
-git clone https://github.com/darkarmy-cyber/darkphish.git
+git clone --branch v0.10.0 --depth 1 https://github.com/darkarmy-cyber/darkphish.git
 cd darkphish
 sudo ./install.sh
 ```
+
+For later releases, replace `v0.10.0` with the release tag you intend to deploy. Do not use the moving `main` branch for a production installation; an untagged checkout is treated as a development build and verified in-product updates remain disabled.
 
 The installer automatically:
 
 - detects the Linux distribution and CPU architecture;
 - installs required system dependencies;
-- verifies or installs the required Go toolchain;
-- builds DarkPhish from the checked-out source;
+- verifies or installs the pinned Go toolchain;
+- builds DarkPhish from the exact committed source snapshot;
 - creates the dedicated `darkphish` system account;
 - prepares the application, configuration, database, permissions, and production security keys;
 - creates and enables a hardened `systemd` service;
-- starts DarkPhish and prints the administration URL and next steps.
+- verifies application readiness and starts DarkPhish;
+- prints the administration URL and next steps.
 
-The installer supports fresh `systemd`-based Linux deployments on `amd64` and `arm64`. It deliberately refuses to overwrite an existing DarkPhish installation.
+The installer supports fresh `systemd`-based Linux deployments on `amd64` and `arm64`. It deliberately refuses to overwrite an existing or partial DarkPhish installation.
 
 Full installation details: [docs/INSTALLATION.md](docs/INSTALLATION.md)
 

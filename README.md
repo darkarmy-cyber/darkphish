@@ -1,22 +1,21 @@
-# Darkphish
+# DarkPhish
 
-![Darkphish](docs/assets/DarkPhish.png)
+![DarkPhish](docs/assets/DarkPhish.png)
 
 [![CI](https://github.com/darkarmy-cyber/darkphish/actions/workflows/ci.yml/badge.svg)](https://github.com/darkarmy-cyber/darkphish/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/darkarmy-cyber/darkphish/actions/workflows/codeql.yml/badge.svg)](https://github.com/darkarmy-cyber/darkphish/actions/workflows/codeql.yml)
 
-Darkphish is an open-source platform for authorized phishing simulations,
-security-awareness training, internal security testing, and defensive research.
-It is derived from Gophish and keeps its straightforward single-binary design
-while establishing a secure, actively maintained foundation.
+DarkPhish is an open-source platform for authorized phishing simulations, human-risk testing, security-awareness programs, and defensive research.
 
-Use Darkphish only where you have explicit authorization. It is not intended
-for credential theft, malware delivery, security-control evasion, or targeting
-third parties.
+It gives security teams a central place to prepare campaigns, manage users and groups, build email templates and landing pages, monitor results, investigate user risk, and maintain an auditable phishing-simulation program.
 
-## Quick Linux installation
+DarkPhish is designed as a native, self-hosted platform with a Go backend, web administration interface, REST API, SQLite/MySQL/PostgreSQL support, protected secrets, audit logging, and verified native release updates.
 
-For a fresh production installation on a supported systemd-based Linux host:
+> DarkPhish is intended only for environments where you have explicit authorization to perform phishing simulations or security testing.
+
+## Install
+
+For a fresh installation on a supported Linux server:
 
 ```sh
 git clone https://github.com/darkarmy-cyber/darkphish.git
@@ -24,97 +23,102 @@ cd darkphish
 sudo ./install.sh
 ```
 
-The installer detects Linux distribution and CPU architecture, installs required
-build dependencies, verifies or bootstraps the pinned Go toolchain, builds the
-current checkout, creates a dedicated `darkphish` system user, generates
-production key material, creates the native runtime layout and hardened systemd
-service, starts Darkphish, and prints the local administration URL plus the
-bootstrap-password location.
+The installer automatically:
 
-The installer is deliberately fresh-install only and refuses to overwrite an
-existing deployment. See [Linux installer](docs/INSTALLATION.md) and
-[production deployment](docs/DEPLOYMENT.md) before exposing an instance to a
-network.
+- detects the Linux distribution and CPU architecture;
+- installs required system dependencies;
+- verifies or installs the required Go toolchain;
+- builds DarkPhish from the checked-out source;
+- creates the dedicated `darkphish` system account;
+- prepares the application, configuration, database, permissions, and production security keys;
+- creates and enables a hardened `systemd` service;
+- starts DarkPhish and prints the administration URL and next steps.
 
-## Build from source
+The installer supports fresh `systemd`-based Linux deployments on `amd64` and `arm64`. It deliberately refuses to overwrite an existing DarkPhish installation.
 
-Requirements:
+Full installation details: [docs/INSTALLATION.md](docs/INSTALLATION.md)
 
-- Go 1.27.1 (CGO and a C compiler are required for SQLite)
-- Node.js 24.x and pnpm 11.19.0 for frontend changes
+## First login
 
-```sh
-go test ./...
-go build -trimpath -o darkphish ./
-pnpm install --frozen-lockfile
-pnpm run build
+The administration interface listens on localhost by default:
+
+```text
+https://127.0.0.1:3333
 ```
 
-Start the development configuration with:
+For a remote server, use an SSH tunnel:
 
 ```sh
-./darkphish --config config.json
+ssh -L 3333:127.0.0.1:3333 <user>@<server>
 ```
 
-The initial administrator password is written with owner-only permissions to
-`darkphish_initial_admin_password` beside the SQLite database. The password is
-never printed to logs and the file is removed after the required first password
-change. You can instead set `DARKPHISH_INITIAL_ADMIN_PASSWORD` or configure
-`DARKPHISH_INITIAL_ADMIN_PASSWORD_FILE` (generated output filename), or set
-`bootstrap_directory`. Production requires an explicit choice. Network DSNs
-never determine file paths; see [deployment guidance](docs/DEPLOYMENT.md).
+Then open:
 
-Development defaults are deliberately separate from production. Read
-[development setup](docs/DEVELOPMENT.md) and [production deployment](docs/DEPLOYMENT.md)
-before exposing an instance to a network.
+```text
+https://localhost:3333
+```
 
-## Deployment
+Default administrator username:
 
-Native binaries are the supported release artifacts. Historical container
-files remain optional community tooling, but container builds and publishing
-are not required CI or release gates. See [deployment](docs/DEPLOYMENT.md) for
-key generation, persistence, TLS, database, and health-check guidance.
+```text
+admin
+```
 
-## Security baseline
+The installer creates the initial administrator password in an owner-protected bootstrap file. Display it with:
 
-- Browser clients use encrypted, signed, `HttpOnly`, `SameSite=Lax` sessions.
-- External API clients authenticate with scoped, expiring personal access tokens
-  sent as `Authorization: Bearer <token>`.
-- API tokens in query strings are rejected.
-- Administrative CORS is off unless exact trusted origins are configured.
-- Production mode requires persistent session, envelope-encryption, and audit-signing keys.
-- Stored SMTP, IMAP, and webhook secrets are write-only in normal API responses.
-- Campaigns default to disabled credential handling. Policy-only mode stores
-  irreversible findings; encrypted review requires explicit authorization,
-  short retention, a campaign-scoped reviewer or administrator, fresh browser
-  reauthentication, and an individually audited reveal.
-- Local versioned keys and Vault Transit protect v3 per-record data keys; v1/v2
-  local envelopes remain readable during migration.
-- Administrative changes and sensitive reads emit persistent, indexed,
-  hash-chained audit events with signed checkpoints and export manifests.
-- SQLite, MySQL/MariaDB, and PostgreSQL are supported with independent migrations
-  and database CI coverage.
+```sh
+sudo cat /var/lib/darkphish/bootstrap/darkphish_initial_admin_password
+```
 
-Raw personal access tokens are displayed once and never stored. Legacy
-permanent API keys no longer authenticate.
+Change the bootstrap password immediately after the first login.
+
+## Service management
+
+```sh
+sudo systemctl status darkphish
+sudo systemctl restart darkphish
+sudo journalctl -u darkphish -f
+```
+
+Default application directory:
+
+```text
+/opt/darkphish
+```
+
+Production security material is stored separately under:
+
+```text
+/etc/darkphish
+```
+
+## Core capabilities
+
+- Phishing campaign creation and scheduling
+- Email templates and landing pages
+- User and group management
+- Sending profiles and campaign delivery
+- Campaign results and reporting
+- Human-risk and security-awareness workflows
+- Reporting mailbox / IMAP processing
+- REST API with scoped personal access tokens
+- Tamper-evident administrative audit trail
+- Protected integration and credential secrets
+- SQLite, MySQL/MariaDB, and PostgreSQL support
+- Verified native application updates
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Development](docs/DEVELOPMENT.md)
-- [Linux installer](docs/INSTALLATION.md)
-- [Version and release policy](docs/RELEASES.md)
+- [Installation](docs/INSTALLATION.md)
 - [Production deployment](docs/DEPLOYMENT.md)
-- [Credential review](docs/CREDENTIAL_REVIEW.md)
-- [Personal access tokens](docs/API_TOKENS.md)
-- [Migration from the upstream baseline and 0.2](docs/MIGRATION.md)
-- [Audit integrity and export verification](docs/AUDIT_INTEGRITY.md)
-- [Envelope key management](docs/KEY_MANAGEMENT.md)
+- [Native updates](docs/UPDATES.md)
+- [Development](docs/DEVELOPMENT.md)
+- [Architecture](docs/ARCHITECTURE.md)
 - [Security policy](SECURITY.md)
 - [Changelog](CHANGELOG.md)
 
-## License and origin
+## License
 
-Darkphish is MIT licensed. The original copyright and permission notice are
-preserved in [LICENSE](LICENSE). See [NOTICE.md](NOTICE.md) for derivation and
-attribution details.
+DarkPhish is distributed under the MIT License.
+
+The project is derived from Gophish. Original copyright and license notices are preserved in [LICENSE](LICENSE), with additional project attribution in [NOTICE.md](NOTICE.md).

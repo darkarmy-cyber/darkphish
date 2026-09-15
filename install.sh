@@ -59,7 +59,7 @@ Usage:
 
 The installer performs a fresh production installation only. It refuses to
 replace an existing Darkphish installation. Supported hosts are Linux amd64 or
-arm64 systems using systemd and an apt, dnf, or yum package family.
+arm64 systems using systemd 229 or newer and an apt, dnf, or yum package family.
 
 Default layout:
   Application: /opt/darkphish
@@ -74,7 +74,10 @@ path_entry_exists() {
 }
 
 git_source() {
-    git -c "safe.directory=${SOURCE_DIR}" -C "${SOURCE_DIR}" "$@"
+    git --no-replace-objects \
+        -c "safe.directory=${SOURCE_DIR}" \
+        -c core.fsmonitor=false \
+        -C "${SOURCE_DIR}" "$@"
 }
 
 rollback_install() {
@@ -212,6 +215,11 @@ detect_platform() {
     command -v systemctl >/dev/null 2>&1 || die "systemd is required"
     command -v getent >/dev/null 2>&1 || die "getent is required for account preflight checks"
     [[ -d /run/systemd/system ]] || die "systemd is not running on this host"
+
+    local systemd_version
+    systemd_version="$(systemctl --version | awk 'NR==1 {print $2}')"
+    [[ "${systemd_version}" =~ ^[0-9]+$ ]] || die "cannot determine systemd version"
+    (( systemd_version >= 229 )) || die "systemd 229 or newer is required for AmbientCapabilities; found systemd ${systemd_version}"
 }
 
 refuse_existing_install() {
@@ -277,7 +285,7 @@ curl_https() {
 ensure_go() {
     local installed=""
     if command -v go >/dev/null 2>&1; then
-        installed="$(go version 2>/dev/null | awk '{print $3}' || true)"
+        installed="$(env -u GOROOT go version 2>/dev/null | awk '{print $3}' || true)"
     fi
     if [[ "${installed}" == "go${GO_REQUIRED}" ]]; then
         GO_BIN="$(command -v go)"
@@ -297,7 +305,7 @@ ensure_go() {
     tar -xzf "${archive}" -C "${BUILD_ROOT}/toolchain"
     GO_BIN="${BUILD_ROOT}/toolchain/go/bin/go"
     [[ -x "${GO_BIN}" ]] || die "verified Go toolchain did not extract correctly"
-    [[ "$(${GO_BIN} version | awk '{print $3}')" == "go${GO_REQUIRED}" ]] || die "unexpected Go toolchain version after extraction"
+    [[ "$(env -u GOROOT "${GO_BIN}" version | awk '{print $3}')" == "go${GO_REQUIRED}" ]] || die "unexpected Go toolchain version after extraction"
 }
 
 build_darkphish() {
@@ -313,6 +321,7 @@ build_darkphish() {
     (
         cd -- "${SOURCE_SNAPSHOT}"
         env \
+            -u GOROOT \
             -u CGO_CFLAGS \
             -u CGO_CPPFLAGS \
             -u CGO_CXXFLAGS \

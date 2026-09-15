@@ -14,6 +14,28 @@ Use Darkphish only where you have explicit authorization. It is not intended
 for credential theft, malware delivery, security-control evasion, or targeting
 third parties.
 
+## Quick Linux installation
+
+For a fresh production installation on a supported systemd-based Linux host:
+
+```sh
+git clone https://github.com/darkarmy-cyber/darkphish.git
+cd darkphish
+sudo ./install.sh
+```
+
+The installer detects Linux distribution and CPU architecture, installs required
+build dependencies, verifies or bootstraps the pinned Go toolchain, builds the
+current checkout, creates a dedicated `darkphish` system user, generates
+production key material, creates the native runtime layout and hardened systemd
+service, starts Darkphish, and prints the local administration URL plus the
+bootstrap-password location.
+
+The installer is deliberately fresh-install only and refuses to overwrite an
+existing deployment. See [Linux installer](docs/INSTALLATION.md) and
+[production deployment](docs/DEPLOYMENT.md) before exposing an instance to a
+network.
+
 ## Build from source
 
 Requirements:
@@ -80,6 +102,7 @@ permanent API keys no longer authenticate.
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Development](docs/DEVELOPMENT.md)
+- [Linux installer](docs/INSTALLATION.md)
 - [Version and release policy](docs/RELEASES.md)
 - [Production deployment](docs/DEPLOYMENT.md)
 - [Credential review](docs/CREDENTIAL_REVIEW.md)

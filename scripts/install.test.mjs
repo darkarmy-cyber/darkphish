@@ -13,7 +13,8 @@ test('installer fails closed and targets the supported native layout', () => {
   assert.match(installer, /working tree is not clean/);
   assert.match(installer, /fresh production installation only/);
   assert.match(installer, /systemd is required/);
-  assert.match(installer, /systemd 229 or newer is required/);
+  assert.match(installer, /cannot connect to the running systemd manager/);
+  assert.match(installer, /systemd 245 or newer is required/);
   assert.match(installer, /path_entry_exists/);
   assert.match(installer, /SERVICE_DROPIN_ETC/);
   assert.match(installer, /SERVICE_DROPIN_RUN/);
@@ -26,8 +27,8 @@ test('installer pins the Go toolchain independently before executing it', () => 
   assert.match(installer, /https:\/\/go\.dev\/dl\/go\$\{GO_REQUIRED\}/);
   assert.match(installer, /GO_EXPECTED_SHA256/);
   assert.match(installer, /sha256sum --check --status/);
-  assert.match(installer, /env -u GOROOT go version/);
-  assert.match(installer, /env -u GOROOT "\$\{GO_BIN\}" version/);
+  assert.match(installer, /env -i PATH="\$\{PATH\}" HOME="\/root" GOENV=off GOTOOLCHAIN=local go version/);
+  assert.match(installer, /env -i PATH="\$\{PATH\}" HOME="\/root" GOENV=off GOTOOLCHAIN=local "\$\{GO_BIN\}" version/);
   assert.doesNotMatch(installer, /\.sha256"/);
 });
 
@@ -36,19 +37,38 @@ test('installer builds only the committed source snapshot with isolated Git and 
   assert.match(installer, /-c core\.fsmonitor=false/);
   assert.match(installer, /git_source archive --format=tar/);
   assert.match(installer, /SOURCE_SNAPSHOT/);
-  assert.match(installer, /-u GOROOT/);
-  assert.match(installer, /GOWORK=off/);
+  assert.match(installer, /env -i \\\n            PATH=/);
   assert.match(installer, /GOENV=off/);
+  assert.match(installer, /GOWORK=off/);
   assert.match(installer, /GOTOOLCHAIN=local/);
   assert.match(installer, /GOFLAGS='-mod=readonly'/);
   assert.match(installer, /GOSUMDB='sum\.golang\.org'/);
   assert.match(installer, /CGO_ENABLED=1/);
+  assert.doesNotMatch(installer, /GOAUTH=/);
+});
+
+test('installer sanitizes privileged helper environments', () => {
+  assert.match(installer, /git_source\(\).*env -i/s);
+  assert.match(installer, /safe_tar\(\).*env -i/s);
+  assert.match(installer, /openssl_safe\(\).*env -i/s);
+  assert.match(installer, /curl --disable/);
+  assert.doesNotMatch(installer, /tar -xzf/);
+  assert.doesNotMatch(installer, /openssl rand -base64 32/);
+});
+
+test('installer requires an executable private build filesystem before mutation', () => {
+  assert.match(installer, /prepare_build_root/);
+  assert.match(installer, /darkphish-install\.XXXXXX/);
+  assert.match(installer, /exec-probe/);
+  assert.match(installer, /no executable private temporary filesystem is available/);
+  assert.ok(installer.indexOf('prepare_build_root') < installer.indexOf('install_system_packages'));
 });
 
 test('installer creates an unprivileged hardened systemd service and rejects overrides', () => {
   assert.match(installer, /User=\$\{APP_USER\}/);
   assert.match(installer, /NoNewPrivileges=true/);
   assert.match(installer, /ProtectSystem=strict/);
+  assert.match(installer, /ProtectClock=true/);
   assert.match(installer, /CapabilityBoundingSet=CAP_NET_BIND_SERVICE/);
   assert.match(installer, /AmbientCapabilities=CAP_NET_BIND_SERVICE/);
   assert.match(installer, /KillMode=control-group/);
@@ -57,11 +77,14 @@ test('installer creates an unprivileged hardened systemd service and rejects ove
   assert.match(installer, /FragmentPath/);
 });
 
-test('installer requires application readiness and bootstrap completion', () => {
+test('installer requires stable readiness from both listeners and bootstrap completion', () => {
   assert.match(installer, /https:\/\/127\.0\.0\.1:3333\/readyz/);
+  assert.match(installer, /http:\/\/127\.0\.0\.1:80\//);
   assert.match(installer, /--cacert/);
   assert.match(installer, /darkphish_initial_admin_password/);
-  assert.match(installer, /did not become application-ready/);
+  assert.match(installer, /ready_streak >= 5/);
+  assert.match(installer, /MainPID/);
+  assert.match(installer, /both admin and simulation listeners/);
 });
 
 test('installer rolls back only artifacts it created on failure', () => {
@@ -76,7 +99,7 @@ test('installer rolls back only artifacts it created on failure', () => {
 });
 
 test('installer generates production secrets without printing them', () => {
-  assert.match(installer, /openssl rand -base64 32/);
+  assert.match(installer, /openssl_safe rand -base64 32/);
   assert.match(installer, /"production_mode": true/);
   assert.match(installer, /session-auth\.key/);
   assert.match(installer, /session-encryption\.key/);
@@ -88,7 +111,7 @@ test('installer generates production secrets without printing them', () => {
   assert.doesNotMatch(installer, /cat .*audit-signing\.key/);
 });
 
-test('installer uses OpenSSL configuration compatible with older supported command lines', () => {
+test('installer uses OpenSSL configuration compatible with supported command lines', () => {
   assert.match(installer, /openssl-admin\.cnf/);
   assert.match(installer, /subjectAltName = @alt_names/);
   assert.match(installer, /-extensions v3_req/);

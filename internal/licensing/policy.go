@@ -31,9 +31,18 @@ func ProjectManagedUsers(existing []string, proposed []string) int {
 }
 
 func EnforceManagedUsers(state State, entitlement int, existing []string, proposed []string) error {
-	projected := ProjectManagedUsers(existing, proposed)
-	current := ProjectManagedUsers(existing, nil)
+	return EnforceManagedUserCounts(
+		state,
+		entitlement,
+		ProjectManagedUsers(existing, nil),
+		ProjectManagedUsers(existing, proposed),
+	)
+}
 
+func EnforceManagedUserCounts(state State, entitlement, current, projected int) error {
+	if current < 0 || projected < 0 {
+		return fmt.Errorf("%w: invalid usage count", ErrManagedUserLimitReached)
+	}
 	// Safe degraded mode permits operations that do not increase licensed use.
 	if !state.AllowsExpansion() {
 		if projected > current {

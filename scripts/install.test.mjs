@@ -80,6 +80,7 @@ test('installer creates an unprivileged hardened systemd service and rejects ove
 test('installer requires stable readiness from both listeners and bootstrap completion', () => {
   assert.match(installer, /https:\/\/127\.0\.0\.1:3333\/readyz/);
   assert.match(installer, /http:\/\/127\.0\.0\.1:80\//);
+  assert.match(installer, /--noproxy '\*'/);
   assert.match(installer, /--cacert/);
   assert.match(installer, /darkphish_initial_admin_password/);
   assert.match(installer, /ready_streak >= 5/);

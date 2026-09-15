@@ -201,6 +201,9 @@ func PostGroup(g *Group) error {
 		return tx.Error
 	}
 	defer tx.Rollback()
+	if err := enforceGroupLicense(tx, g); err != nil {
+		return err
+	}
 	err := tx.Save(g).Error
 	if err != nil {
 		tx.Rollback()
@@ -253,6 +256,9 @@ func PutGroup(g *Group) error {
 		return tx.Error
 	}
 	defer tx.Rollback()
+	if err := enforceGroupLicense(tx, g); err != nil {
+		return err
+	}
 	// Check existing targets, removing any that are no longer in the group.
 	for _, t := range ts {
 		if _, ok := cacheNew[t.Email]; ok {
@@ -364,7 +370,7 @@ func UpdateTarget(tx *gorm.DB, target Target) error {
 	if err != nil {
 		log.WithFields(logrus.Fields{
 			"email": target.Email,
-		}).Error("Error updating target information")
+		}).Error(err)
 	}
 	return err
 }

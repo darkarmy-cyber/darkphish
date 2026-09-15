@@ -3,6 +3,8 @@ import { createHash } from "node:crypto"
 import { api, assetDisposition, assertReleaseState, generatedPath, git, greenCommit, pages, protectedMain, publicationReceiptName, repository, verifyChecksums, versionTag } from "./release-lib.mjs"
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "./release-maintainer-review.mjs"
+import { discoverRelease, assertStagingMetadata } from "./release-discovery.mjs"
+import { releaseBody } from "./release-notes.mjs"
 
 const trustedActionsActor = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 
@@ -69,15 +71,17 @@ async function source() {
   const files = await pages(`repos/${repo}/pulls/${pr.number}/files`)
   if (!files.length || files.some((file) => !generatedPath(file.filename))) throw new Error("release PR includes application changes")
   verifyRetainedFragments(version)
-  const changelog = readFileSync("CHANGELOG.md", "utf8"), start = changelog.indexOf(`## ${version} - `)
-  if (start < 0) throw new Error("release changelog is missing")
-  const end = changelog.indexOf("\n## ", start + 1)
+  const body = releaseBody(readFileSync("CHANGELOG.md", "utf8"), version, sha)
+  const name = `Darkphish ${version.split(".").slice(0, 2).join(".")}`
   let ref = await api(`repos/${repo}/git/ref/tags/${tag}`, { missing: true })
   if (ref?.object.type === "tag") ref = await api(`repos/${repo}/git/tags/${ref.object.sha}`)
-  const release = await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })
+  const release = await discoverRelease(repo, tag)
   const state = assertReleaseState(ref?.object.sha, release, sha)
-  if (release?.draft) assertTrustedDraftRelease(release, sha)
-  return { repo, sha, version, tag, release, state, notes: changelog.slice(start, end < 0 ? undefined : end).trim(), builtAt: git("show", "-s", "--format=%cI", sha) }
+  if (release?.draft) {
+    assertTrustedDraftRelease(release, sha)
+    assertStagingMetadata(release, { tag, name, body })
+  }
+  return { repo, sha, version, tag, release, state, name, body, builtAt: git("show", "-s", "--format=%cI", sha) }
 }
 
 async function run() {
@@ -109,12 +113,14 @@ async function run() {
   let release = finalSource.release
   if (!release) {
     release = await api(`repos/${repo}/releases`, { method: "POST", body: {
-      tag_name: tag, target_commitish: sha, name: `Darkphish ${version.split(".").slice(0, 2).join(".")}`,
+      tag_name: tag, target_commitish: sha, name: current.name,
       draft: true, prerelease: false, make_latest: "true",
-      body: `${current.notes}\n\nSource commit: ${sha}\n\n<!-- darkphish-release-source:${sha} -->\n\nNative binaries, SHA-256 checksums and SPDX SBOM are attached.`,
+      body: current.body,
     } })
   }
   assertTrustedDraftRelease(release, sha)
+  const staging = { id: release.id, tag, name: current.name, body: current.body }
+  assertStagingMetadata(release, staging)
 
   const assets = await pages(`repos/${repo}/releases/${release.id}/assets`)
   const allowedNames = new Set([...names, receiptName])
@@ -138,8 +144,10 @@ async function run() {
   await verifyCodeQLBaseline(repo, sha)
   const beforePublish = await api(`repos/${repo}/releases/${release.id}`)
   assertTrustedDraftRelease(beforePublish, sha)
+  assertStagingMetadata(beforePublish, staging)
   const publishSource = await source()
   if (!publishSource || publishSource.sha !== sha || publishSource.tag !== tag || publishSource.state !== "resume") throw new Error("release source changed before final publication")
+  assertStagingMetadata(publishSource.release, staging)
 
   const receipt = Buffer.from(`${JSON.stringify({
     schema: "darkphish-release-publication-receipt/v1",
@@ -150,6 +158,7 @@ async function run() {
   const receiptHash = createHash("sha256").update(receipt).digest("hex")
   const beforeReceipt = await api(`repos/${repo}/releases/${release.id}`)
   assertTrustedDraftRelease(beforeReceipt, sha)
+  assertStagingMetadata(beforeReceipt, staging)
   let receiptAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
   const existingReceipt = receiptAssets.find((asset) => asset.name === receiptName)
   if (assetDisposition(existingReceipt, receiptHash, receipt.length) === "upload") await uploadAsset(release, receiptName, receipt)
@@ -159,13 +168,16 @@ async function run() {
 
   const finalDraft = await api(`repos/${repo}/releases/${release.id}`)
   assertTrustedDraftRelease(finalDraft, sha)
+  assertStagingMetadata(finalDraft, staging)
   const finalAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
   assertExactAssetSet(finalAssets, names, hashes, bytes, receiptName, receiptHash, receipt.length)
 
   const published = await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, prerelease: false, make_latest: "true" } })
   assertTrustedPublishedRelease(published, sha)
+  assertStagingMetadata(published, staging)
   const verified = await api(`repos/${repo}/releases/${release.id}`)
   assertTrustedPublishedRelease(verified, sha)
+  assertStagingMetadata(verified, staging)
   const publishedAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
   assertExactAssetSet(publishedAssets, names, hashes, bytes, receiptName, receiptHash, receipt.length)
   console.log(`Published and verified https://github.com/${repo}/releases/tag/${tag}`)

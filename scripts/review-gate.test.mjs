@@ -259,10 +259,37 @@ test("retained historical findings require original-review proof and both newer 
   }
 })
 
+test("observed Resolved display suffix still requires authentic history and resolved live threads", async () => {
+  const resolved = () => {
+    const f = historicalFixture()
+    f.comments[0].body = f.comments[0].body.replace("**Medium**", "**Medium** · **Resolved**")
+    return f
+  }
+  const f = resolved()
+  assert.deepEqual((await f.verify()).summaryFindings, [5])
+  assert.equal(await f.merge(), true)
+  for (const mutate of [
+    value => { value.threads[0].isResolved = false },
+    value => { value.reviewComments = [] },
+    value => { value.reviewComments[0].original_commit_id = sha },
+    value => { value.comments[0].performed_via_github_app.id = 1 },
+    value => { value.reviews[0].submitted_at = at(9) },
+    value => { value.comments[2].body = value.comments[2].body.replace(sha.slice(0, 10), "b".repeat(10)) },
+  ]) {
+    const value = resolved(); mutate(value)
+    await assert.rejects(value.verify(), ReviewGateError)
+    assert.equal(await value.merge(), false)
+    assert.deepEqual(value.writes, [])
+  }
+})
+
 test("unknown, foreign, incomplete and duplicate historical summary mappings fail closed", async () => {
   const mutations = [
     body => body.replace("findings (1)", "findings (2)"),
     body => body.replace("findings (1)", "findings (0)"),
+    body => body.replace("**Medium**", "**Medium** · **Unresolved**"),
+    body => body.replace("**Medium**", "**Medium** · **resolved**"),
+    body => body.replace("**Medium**", "**Medium** · **Resolved** extra"),
     body => body.replace("/pull/42#", "/pull/43#"),
     body => body.replace(`/${repo}/pull`, "/foreign/repository/pull"),
     body => body.replace("discussion_r5", "discussion_r99"),

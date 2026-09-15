@@ -14,5 +14,5 @@ func settingsTabAllowed(tab string) bool {
 }
 
 func adminSettingsTab(tab string) bool {
-	return tab == "users" || tab == "webhooks" || tab == "audit" || tab == "update"
+	return tab == "users" || tab == "webhooks" || tab == "audit" || tab == "update" || tab == "licensing"
 }

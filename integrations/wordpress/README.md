@@ -14,7 +14,7 @@ nevytvorí produkčný podpisový kľúč ani nezačne posielať správy použí
 4. Fungujúce odosielanie e-mailov vo WordPresse. Plugin používa `wp_mail()`;
    prijatie správy poštovým serverom treba následne overiť v reálnej schránke.
 5. Cloudflare Turnstile widget: **Turnstile → Add widget**, režim Managed,
-   povolená doména `darkphish.sk` pre statický formulár (alebo `fsociety.sk` pre shortcode) a samostatne testovacia doména. DNS webu nemusí
+   povolená doména `www.darkphish.sk` pre statický formulár (alebo `fsociety.sk` pre shortcode) a samostatne testovacia doména. DNS webu nemusí
    byť vedené cez Cloudflare. Site key je verejný, Secret key patrí iba na server.
 6. Schválenú stránku podmienok Community licencie a označenie jej verzie.
    Plugin právne podmienky nevymýšľa; verejnú registráciu bez ich konfigurácie nepovolí.
@@ -82,15 +82,15 @@ zostávajú iba na tomto serveri. Do HTML webu nepridávaj PHP ani WordPress.
 1. Vo wp-config.php nastav presný povolený origin bez koncového lomítka:
 
    ```php
-   define('DARKPHISH_LICENSE_REGISTRATION_ORIGIN', 'https://darkphish.sk');
+   define('DARKPHISH_LICENSE_REGISTRATION_ORIGIN', 'https://www.darkphish.sk');
    ```
 
-2. Nahraj obsah `static-site/licencia/` do priečinka `licencia` vo verejnom
-   koreni HTML webu. Výsledná stránka je `https://darkphish.sk/licencia/`.
+2. Nahraj obsah `static-site/license/` do priečinka `license` vo verejnom
+   koreni HTML webu. Výsledná stránka je `https://www.darkphish.sk/license/`.
    Existujúcu hlavnú stránku neprepisuj. Na registráciu nepridávaj analytiku,
    reklamy ani iné skripty, ktoré môžu čítať token alebo zobrazený kľúč.
 3. V administrácii WordPressu **Nastavenia → Darkphish licensing** nastav
-   **Registration page URL** na `https://darkphish.sk/licencia/`, URL
+   **Registration page URL** na `https://www.darkphish.sk/license/`, URL
    schválených podmienok a ich skutočnú verziu. Toto nastavenie určuje aj
    cieľ overovacieho e-mailu; ľubovoľné cudzie domény sú odmietnuté.
 4. V existujúcom Turnstile widgete povoľ `darkphish.sk`. Secret key ponechaj

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self'; connect-src https://fsociety.sk https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Community License — DarkPhish</title>
+  <link rel="stylesheet" href="./registration.css?v=20260916-en1">
+  <script src="./registration.js?v=20260916-en1" defer></script>
+</head>
+<body>
+  <header><a class="brand" href="/">DARKPHISH<span>COMMUNITY</span></a><a class="back" href="/">Back to website ↗</a></header>
+  <main id="darkphish-license" data-api="https://fsociety.sk/wp-json/darkphish-license/v1/">
+    <section class="intro"><p class="eyebrow">COMMUNITY LICENSE</p><h1>Get started with<br>DarkPhish.</h1><p class="lead">Get a free license for one installation. Verify your email address, then activate your application.</p><ul class="features"><li><strong>100</strong> managed users</li><li><strong>1</strong> active campaign</li><li><strong>365 days</strong> license validity</li></ul><p class="note">For authorized security awareness training and testing.</p></section>
+    <section class="card" aria-labelledby="form-title"><p class="eyebrow">REGISTRATION</p><h2 id="form-title">Your Community license</h2><p class="dp-status" role="status" aria-live="polite">Loading registration…</p>
+      <noscript>Enable JavaScript to register and verify your email address.</noscript>
+      <form class="dp-request" hidden>
+        <label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com" required>
+        <label class="terms"><input type="checkbox" name="terms" required><span>I agree to the <a class="dp-terms" target="_blank" rel="noopener noreferrer">Community license terms</a>.</span></label>
+        <div class="dp-challenge"></div><button type="submit" disabled>Send verification email →</button><p class="hint">The email link expires in 30 minutes. If you already have a license, use this form to get a new activation key.</p>
+      </form>
+      <button type="button" class="dp-verify" hidden>Verify email and show my key →</button><pre class="dp-key" tabindex="0" hidden></pre><a class="dp-restart" href="./" hidden>Request a new verification email</a>
+    </section>
+  </main>
+  <footer>DarkPhish Community · <a href="/">www.darkphish.sk</a></footer>
+</body>
+</html>

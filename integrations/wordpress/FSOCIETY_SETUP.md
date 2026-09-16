@@ -75,20 +75,20 @@ WordPress aj podpisový kľúč zostávajú na fsociety.sk. Nahraj aktualizovan�
 plugin 0.1.2 a do jeho wp-config.php pred wp-settings.php pridaj:
 
 ```php
-define('DARKPHISH_LICENSE_REGISTRATION_ORIGIN', 'https://darkphish.sk');
+define('DARKPHISH_LICENSE_REGISTRATION_ORIGIN', 'https://www.darkphish.sk');
 ```
 
 Existujúce podpisové a Turnstile konštanty zachovaj. Nový podpisový kľúč
-nevytváraj. Obsah balíka statickej stránky (`licencia/`) nahraj do verejného
-koreňa **darkphish.sk**, takže vznikne `https://darkphish.sk/licencia/`.
+nevytváraj. Obsah balíka statickej stránky (`license/`) nahraj do verejného
+koreňa **darkphish.sk**, takže vznikne `https://www.darkphish.sk/license/`.
 Neprepisuj existujúci index hlavnej stránky. Na stránku nedávaj ďalšie skripty.
 
 V nastaveniach pluginu ulož:
-- Registration page URL: `https://darkphish.sk/licencia/`
+- Registration page URL: `https://www.darkphish.sk/license/`
 - Community terms URL: skutočnú HTTPS stránku schválených licenčných podmienok
 - Terms version: označenie verzie týchto podmienok
 
-Do existujúceho Turnstile widgetu pridaj hostname `darkphish.sk`.
+Do existujúceho Turnstile widgetu pridaj hostname `www.darkphish.sk`.
 HTML formulár si verejné nastavenia načíta sám; žiadny secret doň nekopíruj.
 Ak web presmerúva na www, najprv zjednoť kanonickú doménu a origin v konfigurácii.
 Súbor otvor cez jeho HTTPS adresu, nie lokálne cez file://.
@@ -97,3 +97,5 @@ Súbor otvor cez jeho HTTPS adresu, nie lokálne cez file://.
 klienta. Overovací odkaz smeruje späť na darkphish.sk; kľúč sa zobrazí až
 po výslovnom kliknutí, samotné otvorenie odkazu ho nevydá. Plugin používa API
 `https://fsociety.sk/wp-json/darkphish-license/v1`.
+
+Konštanta originu musí byť presne https://www.darkphish.sk, bez koncového lomítka alebo /license/. Registračná URL v nastaveniach pluginu je naopak celá adresa https://www.darkphish.sk/license/. Statická stránka a jej stavové/chybové hlášky sú v angličtine. Pri aktualizácii prepíš všetky tri súbory v license/; HTML odkazuje na novú verziu JS/CSS, aby prehliadač nepoužil staré texty z cache.

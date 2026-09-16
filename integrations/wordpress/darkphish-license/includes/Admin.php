@@ -29,13 +29,15 @@ function licenseMenuOrder(array $order): array {
 }
 add_action('admin_enqueue_scripts', function (string $hook): void {
     if ($hook === 'toplevel_page_darkphish-licenses') {
+        wp_enqueue_script('darkphish-licenses-admin', plugins_url('assets/admin.js', dirname(__DIR__) . '/darkphish-license.php'), [], '0.2.0', true);
         wp_enqueue_style('darkphish-licenses-admin', plugins_url('assets/admin.css', dirname(__DIR__) . '/darkphish-license.php'), [], '0.2.0');
     }
 });
 
 function planDefaults(string $edition): array {
     $plans = get_option('darkphish_license_plans', []);
-    return is_array($plans[$edition] ?? null) ? $plans[$edition] : [];
+    $baseline = ['professional' => ['managed_users' => 250, 'active_campaigns' => -1, 'days' => ''], 'enterprise' => ['managed_users' => -1, 'active_campaigns' => -1, 'days' => '']];
+    return is_array($plans[$edition] ?? null) ? $plans[$edition] : ($baseline[$edition] ?? []);
 }
 add_action('admin_init', function (): void {
     register_setting('darkphish_license_plans', 'darkphish_license_plans', ['sanitize_callback' => __NAMESPACE__ . '\\sanitizePlans']);
@@ -45,8 +47,9 @@ function sanitizePlans(mixed $input): array {
     foreach (['professional', 'enterprise'] as $edition) {
         foreach (['managed_users' => 100000000, 'active_campaigns' => 1000000, 'days' => 3650] as $field => $maximum) {
             $raw = $input[$edition][$field] ?? '';
+            if ($field !== 'days' && (($input[$edition][$field . '_unlimited'] ?? '') === '1' || $raw === -1)) { $output[$edition][$field] = -1; continue; }
             if ($raw === '') { $output[$edition][$field] = ''; continue; }
-            $value = is_string($raw) && preg_match('/^[0-9]+$/D', $raw) ? filter_var($raw, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => $maximum]]) : false;
+            $value = (is_string($raw) || is_int($raw)) && preg_match('/^[0-9]+$/D', (string) $raw) ? filter_var($raw, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => $maximum]]) : false;
             if ($value === false) {
                 add_settings_error('darkphish_license_plans', 'invalid_plan', 'Plan defaults must be positive whole numbers within the displayed limits.');
                 return get_option('darkphish_license_plans', []);
@@ -62,14 +65,23 @@ function planSettings(): void {
     foreach (['professional', 'enterprise'] as $edition) {
         $defaults = planDefaults($edition);
         echo '<h3>' . esc_html(ucfirst($edition)) . '</h3><div class="dp-admin-fields">';
-        foreach (['managed_users' => ['Managed users', 100000000], 'active_campaigns' => ['Active campaigns', 1000000], 'days' => ['Validity in days', 3650]] as $field => [$label, $max]) {
-            echo '<label>' . esc_html($label) . '<input type="number" min="1" max="' . esc_attr((string) $max) . '" name="darkphish_license_plans[' . esc_attr($edition) . '][' . esc_attr($field) . ']" value="' . esc_attr((string) ($defaults[$field] ?? '')) . '"></label>';
+        foreach (['managed_users' => ['Managed users', 100000000], 'active_campaigns' => ['Active campaigns', 1000000]] as $field => [$label, $max]) {
+            limitField('darkphish_license_plans[' . $edition . '][' . $field . ']', 'darkphish_license_plans[' . $edition . '][' . $field . '_unlimited]', $label, $defaults[$field] ?? '', $max, false);
         }
+        echo '<label>Validity in days<input type="number" min="1" max="3650" name="darkphish_license_plans[' . esc_attr($edition) . '][days]" value="' . esc_attr((string) ($defaults['days'] ?? '')) . '"></label>';
         echo '</div>';
     }
     submit_button('Save plan defaults'); echo '</form>';
 }
 
+function adminLimit(string $field, int $maximum): int {
+    return ($_POST[$field . '_unlimited'] ?? '') === '1' ? -1 : adminNumber($field, 1, $maximum);
+}
+function limitLabel(mixed $value): string { return (int) $value === -1 ? 'Unlimited' : (string) $value; }
+function limitField(string $name, string $unlimitedName, string $label, mixed $value, int $maximum, bool $required): void {
+    $unlimited = (string) $value === '-1';
+    echo '<div class="dp-limit"><label>' . esc_html($label) . '<input type="number" name="' . esc_attr($name) . '" min="1" max="' . esc_attr((string) $maximum) . '" value="' . esc_attr($unlimited ? '' : (string) $value) . '"' . ($required ? ' required' : '') . ($unlimited ? ' disabled' : '') . '></label><label class="dp-unlimited"><input type="checkbox" name="' . esc_attr($unlimitedName) . '" value="1"' . ($unlimited ? ' checked' : '') . '> Unlimited</label></div>';
+}
 function adminNumber(string $field, int $min, int $max): int {
     $value = $_POST[$field] ?? null;
     if (!is_string($value) || !preg_match('/^[0-9]+$/D', $value)) { throw new \InvalidArgumentException('Invalid number'); }
@@ -87,7 +99,7 @@ function processLicenseForm(string $tab): ?array {
     $service = new Service(store());
     if ($operation === 'issue' && in_array($tab, ['professional', 'enterprise'], true)) {
         return $service->issuePaid($tab, sanitize_email(wp_unslash($_POST['email'] ?? '')),
-            adminNumber('managed_users', 1, 100000000), adminNumber('active_campaigns', 1, 1000000),
+            adminLimit('managed_users', 100000000), adminLimit('active_campaigns', 1000000),
             adminNumber('days', 1, 3650), sanitize_text_field(wp_unslash($_POST['terms_version'] ?? '')), get_current_user_id(), time());
     }
     if ($operation === 'edit' && in_array($tab, ['professional', 'enterprise'], true)) {
@@ -95,7 +107,7 @@ function processLicenseForm(string $tab): ?array {
         $date = is_string($_POST['expires_at'] ?? null) ? $_POST['expires_at'] : '';
         $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $date, new \DateTimeZone('UTC'));
         if (!$parsed || $parsed->format('Y-m-d') !== $date) { throw new \InvalidArgumentException('Invalid expiry'); }
-        $service->editPaid($id, $tab, adminNumber('managed_users', 1, 100000000), adminNumber('active_campaigns', 1, 1000000),
+        $service->editPaid($id, $tab, adminLimit('managed_users', 100000000), adminLimit('active_campaigns', 1000000),
             $parsed->getTimestamp() + 86399, get_current_user_id(), time());
         return ['message' => 'License updated. Changes apply to the next signed lease; existing offline leases keep their original limits and expiry.'];
     }
@@ -142,7 +154,7 @@ function adminDashboard(): void {
 function licenseFields(?array $license = null): void {
     echo '<div class="dp-admin-fields">';
     foreach (['managed_users' => ['Managed users', 100000000], 'active_campaigns' => ['Active campaigns', 1000000]] as $field => [$label, $max]) {
-        echo '<label>' . esc_html($label) . '<input type="number" name="' . esc_attr($field) . '" min="1" max="' . esc_attr((string) $max) . '" value="' . esc_attr(isset($license[$field]) ? (string) $license[$field] : '') . '" required></label>';
+        limitField($field, $field . '_unlimited', $label, $license[$field] ?? '', $max, true);
     }
     echo '</div>';
 }
@@ -163,7 +175,7 @@ function adminEdition(string $edition): void {
     if (!$licenses) { echo '<tr><td colspan="5">No licenses in this edition yet.</td></tr>'; }
     foreach ($licenses as $license) {
         $status = $license['status'] === 'active' && (int) $license['expires_at'] <= time() ? 'expired' : $license['status'];
-        echo '<tr><td><strong>' . esc_html($license['email']) . '</strong><br><code>' . esc_html($license['id']) . '</code></td><td>' . esc_html(ucfirst($status)) . '<br>' . esc_html(gmdate('Y-m-d H:i', (int) $license['expires_at'])) . '</td><td>' . esc_html($license['managed_users']) . ' users<br>' . esc_html($license['active_campaigns']) . ' campaigns</td><td>' . esc_html($license['installation'] ?: 'Not activated') . '</td><td><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        echo '<tr><td><strong>' . esc_html($license['email']) . '</strong><br><code>' . esc_html($license['id']) . '</code></td><td>' . esc_html(ucfirst($status)) . '<br>' . esc_html(gmdate('Y-m-d H:i', (int) $license['expires_at'])) . '</td><td>' . esc_html(limitLabel($license['managed_users'])) . ' users<br>' . esc_html(limitLabel($license['active_campaigns'])) . ' campaigns</td><td>' . esc_html($license['installation'] ?: 'Not activated') . '</td><td><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
         wp_nonce_field('darkphish-license:' . $license['id']);
         echo '<input type="hidden" name="action" value="darkphish_license_admin"><input type="hidden" name="license_id" value="' . esc_attr($license['id']) . '"><input type="hidden" name="edition" value="' . esc_attr($edition) . '"><label class="screen-reader-text" for="op-' . esc_attr($license['id']) . '">License action</label><select id="op-' . esc_attr($license['id']) . '" name="operation"><option value="revoke">Revoke</option><option value="restore">Restore</option><option value="reset">Reset installation</option><option value="renew">Renew for 365 days</option></select> <button class="button">Apply</button></form>';
         if ($edition !== 'community') {

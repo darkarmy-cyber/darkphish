@@ -39,6 +39,10 @@ final class Signer {
     public function lease(array $license, string $installation, int $now): array {
         $edition = $license['edition'] ?? 'community';
         if (!in_array($edition, ['community', 'professional', 'enterprise'], true)) { throw new \DomainException('Invalid edition'); }
+        foreach (['managed_users', 'active_campaigns'] as $field) {
+            $limit = (int) $license[$field];
+            if ($limit < 1 && !($limit === -1 && $edition !== 'community')) { throw new \DomainException('Invalid entitlement'); }
+        }
         $expiry = min($now + 30 * 86400, (int) $license['expires_at']);
         if ($expiry <= $now) {
             throw new \DomainException('License unavailable');

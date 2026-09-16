@@ -4,7 +4,7 @@ Requires PHP: 8.2
 Stable tag: 0.2.0
 License: MIT
 
-Email-verified Community registration and Ed25519 activation leases.
+Community registration, edition dashboards and manual Professional/Enterprise licensing with Ed25519 leases.
 
 == Installation ==
 
@@ -35,4 +35,4 @@ an installation does not invalidate its previously issued offline lease.
 Deactivation retains license records and audit events. No uninstall erasure
 is automatic. Exclude API request/response bodies from logs, analytics and caches.
 
-This staging candidate has not been deployed or validated on fsociety.sk.
+Version 0.2.0 is an upgrade candidate; production SMTP delivery and commercial client activation still require deployment validation.

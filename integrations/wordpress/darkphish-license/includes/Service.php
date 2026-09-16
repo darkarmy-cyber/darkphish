@@ -45,7 +45,7 @@ final class Service {
     public function issuePaid(string $edition, string $email, int $users, int $campaigns, int $days, string $terms, int $actor, int $now): array {
         $email = strtolower(trim($email));
         if (!in_array($edition, ['professional', 'enterprise'], true) || !is_email($email) || strlen($email) > 254 ||
-            $users < 1 || $users > 100000000 || $campaigns < 1 || $campaigns > 1000000 || $days < 1 || $days > 3650 ||
+            ($users !== -1 && ($users < 1 || $users > 100000000)) || ($campaigns !== -1 && ($campaigns < 1 || $campaigns > 1000000)) || $days < 1 || $days > 3650 ||
             trim($terms) === '' || strlen($terms) > 80 || $actor < 1) { throw new \InvalidArgumentException('Invalid license details'); }
         return $this->store->transaction(function () use ($edition, $email, $users, $campaigns, $days, $terms, $actor, $now): array {
             $emailHash = hash('sha256', $edition . ':' . $email);
@@ -61,8 +61,8 @@ final class Service {
     }
 
     public function editPaid(string $id, string $edition, int $users, int $campaigns, int $expiry, int $actor, int $now): void {
-        if (!in_array($edition, ['professional', 'enterprise'], true) || $users < 1 || $users > 100000000 ||
-            $campaigns < 1 || $campaigns > 1000000 || $expiry <= $now || $expiry > $now + 3651 * 86400 || $actor < 1) {
+        if (!in_array($edition, ['professional', 'enterprise'], true) || ($users !== -1 && ($users < 1 || $users > 100000000)) ||
+            ($campaigns !== -1 && ($campaigns < 1 || $campaigns > 1000000)) || $expiry <= $now || $expiry > $now + 3651 * 86400 || $actor < 1) {
             throw new \InvalidArgumentException('Invalid license details');
         }
         $this->store->transaction(function () use ($id, $edition, $users, $campaigns, $expiry, $actor): void {

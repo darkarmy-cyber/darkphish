@@ -14,11 +14,12 @@ $db->install();
 check($db->find('licenses', 'id', $license['license_id']) === $upgraded, 'Repeated upgrade changed license');
 
 $paid = $service->issuePaid('professional', 'owner@example.test', 500, 5, 365, 'contract-test', 1, time());
-$enterprise = $service->issuePaid('enterprise', 'owner@example.test', 2000, 20, 365, 'contract-test', 1, time());
+$enterprise = $service->issuePaid('enterprise', 'owner@example.test', -1, -1, 365, 'contract-test', 1, time());
 foreach (['professional' => $paid, 'enterprise' => $enterprise] as $edition => $issued) {
     $paidActivation = $service->exchange($issued['license_key'], $installation, '0.11.0', false, time());
     $payload = json_decode(base64_decode(strtr($paidActivation['lease']['payload'], '-_', '+/')), true);
     check($payload['edition'] === $edition, 'Signed edition incorrect');
+    if ($edition === 'enterprise') { check($payload['entitlements']['managed_users'] === -1 && $payload['entitlements']['active_campaigns'] === -1, 'Unlimited entitlement lost'); }
     $storedPaid = $db->find('licenses', 'id', $issued['license_id']);
     check(!str_contains(json_encode($storedPaid), $issued['license_key']), 'Paid key stored in plaintext');
 }
@@ -69,10 +70,15 @@ check(str_starts_with($fromForm['license_key'], 'DP-PRO-'), 'Authorized manual f
 $_POST['managed_users'] = '300x';
 try { Darkphish\Licensing\processLicenseForm('professional'); throw new LogicException('Malformed integer accepted'); } catch (InvalidArgumentException $expected) {}
 $_SERVER['REQUEST_METHOD'] = 'GET'; $_GET = ['tab' => 'dashboard'];
+check(Darkphish\Licensing\planDefaults('professional')['managed_users'] === 250 && Darkphish\Licensing\planDefaults('professional')['active_campaigns'] === -1, 'Published Professional defaults incorrect');
+check(Darkphish\Licensing\planDefaults('enterprise')['managed_users'] === -1, 'Published Enterprise defaults incorrect');
 $presets = ['professional' => ['managed_users' => '500', 'active_campaigns' => '5', 'days' => '365'], 'enterprise' => ['managed_users' => '', 'active_campaigns' => '', 'days' => '']];
 $cleanPlans = Darkphish\Licensing\sanitizePlans($presets);
+check(Darkphish\Licensing\sanitizePlans($cleanPlans) === $cleanPlans, 'Repeated WordPress sanitization changes defaults');
 update_option('darkphish_license_plans', $cleanPlans);
 check(Darkphish\Licensing\planDefaults('professional')['managed_users'] === 500, 'Plan defaults not stored');
+$unlimitedPlans = $presets; $unlimitedPlans['professional']['active_campaigns_unlimited'] = '1';
+check(Darkphish\Licensing\sanitizePlans($unlimitedPlans)['professional']['active_campaigns'] === -1, 'Unlimited preset not accepted');
 $presets['professional']['managed_users'] = '-5';
 check(Darkphish\Licensing\sanitizePlans($presets) === $cleanPlans, 'Invalid presets overwrote saved values');
 ob_start(); Darkphish\Licensing\adminPage(); $dashboard = ob_get_clean();

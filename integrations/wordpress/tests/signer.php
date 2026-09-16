@@ -22,6 +22,8 @@ $shortPayload = json_decode(base64_decode(strtr($short['payload'], '-_', '+/')),
 check($shortPayload['grace_until'] === $now + 600, 'Lease outlives license');
 try { $signer->lease(array_replace($license, ['expires_at' => $now]), 'installation', $now); throw new RuntimeException('Expired license accepted'); }
 catch (DomainException $expected) {}
+try { $signer->lease(array_replace($license, ['managed_users' => -1]), 'installation', $now); throw new RuntimeException('Community unlimited accepted'); }
+catch (DomainException $expected) {}
 foreach (['professional', 'enterprise'] as $edition) {
     $paid = $signer->lease(array_replace($license, ['edition' => $edition]), $decoded['installation_id'], $now);
     $body = base64_decode(strtr($paid['payload'], '-_', '+/'));

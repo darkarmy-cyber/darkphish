@@ -87,6 +87,7 @@ add_filter('pre_http_request', function ($pre, array $args, string $url) use (&$
     return ['response' => ['code' => 200], 'body' => json_encode(['success' => ($args['body']['response'] ?? '') === 'valid-test-token', 'hostname' => $challengeHostname, 'action' => 'darkphish-license'])];
 }, 10, 3);
 
+define('WP_ADMIN', true);
 do_action('admin_init');
 check(sanitize_option('darkphish_license_settings', $settings)['registration_url'] === $settings['registration_url'], 'Approved static registration URL rejected');
 foreach (['https://evil.test/licencia/', 'https://darkphish.test.evil.test/licencia/', 'http://darkphish.test/licencia/', 'https://darkphish.test/licencia/#token', 'https://user@darkphish.test/licencia/'] as $bad) {
@@ -100,7 +101,8 @@ foreach (['https://evil.test', 'null', 'http://darkphish.test', 'https://darkphi
 }
 check(call_api('request', ['email' => 'blocked@example.test'], 'https://evil.test')->get_status() === 403, 'Untrusted request dispatched');
 $request = ['email' => 'owner@example.test', 'terms_version' => 'test-v1', 'challenge_token' => 'invalid'];
-check(call_api('request', $request)->get_status() === 400 && count($mails) === 0, 'Failed anti-abuse check sent mail');
+$invalidChallenge = call_api('request', $request);
+check($invalidChallenge->get_status() === 400 && count($mails) === 0, 'Invalid challenge status: ' . $invalidChallenge->get_status());
 $request['challenge_token'] = 'valid-test-token';
 check(call_api('request', $request, 'https://darkphish.test')->get_status() === 400 && count($mails) === 0, 'Wrong Turnstile hostname accepted');
 $challengeHostname = 'darkphish.test';

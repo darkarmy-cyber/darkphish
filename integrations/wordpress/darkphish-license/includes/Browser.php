@@ -32,7 +32,7 @@ function licensingRoute(string $route): bool {
 // Limit only this plugin's namespace; other WordPress REST routes keep their policy.
 add_filter('rest_pre_dispatch', function ($result, $server, \WP_REST_Request $request) {
     if (!licensingRoute($request->get_route())) { return $result; }
-    $origin = $request->get_header('origin');
+    $origin = (string) $request->get_header('origin');
     if ($origin !== '' && !in_array($origin, browserOrigins(), true)) {
         return reply(['message' => 'Origin is not allowed.'], 403);
     }
@@ -55,7 +55,7 @@ add_filter('rest_pre_serve_request', function ($served, $result, \WP_REST_Reques
     foreach (['Origin', 'Credentials', 'Methods', 'Headers'] as $name) { header_remove('Access-Control-Allow-' . $name); }
     header_remove('Access-Control-Expose-Headers');
     header('Vary: Origin', false);
-    $origin = $request->get_header('origin');
+    $origin = (string) $request->get_header('origin');
     if (in_array($origin, browserOrigins(), true)) {
         header('Access-Control-Allow-Origin: ' . $origin);
         header('Access-Control-Allow-Methods: GET, POST, OPTIONS');

@@ -11,6 +11,7 @@ async function page(hash = '', reply = async () => ({ok: true, json: async () =>
     const submit = element(); submit.disabled = true;
     const fields = element(); fields.disabled = true;
     nodes['.dp-request'].hidden = false;
+    nodes['.dp-request'].emailValue = 'test@example.test';
     nodes['.dp-request'].querySelector = name => name === 'fieldset' ? fields : submit;
     nodes['.dp-request'].reportValidity = () => true;
     nodes['.dp-request'].reset = () => {};
@@ -23,7 +24,7 @@ async function page(hash = '', reply = async () => ({ok: true, json: async () =>
         document: {getElementById: () => ({dataset: {api: 'https://fsociety.test/wp-json/darkphish-license/v1/'}, querySelector: name => nodes[name]}),
             addEventListener: (_, fn) => { ready = fn; }, createElement: () => ({}), head: {appendChild: script => scripts.push(script)}},
         fetch: async (url, options) => { requests.push({url, options}); return reply(url, options); },
-        FormData: class { get() { return 'test@example.test'; } },
+        FormData: class { get() { return nodes['.dp-request'].emailValue; } },
         window: {turnstile: {render: (_, options) => { challenge = options; return 'widget'; }, reset: () => {}}}
     };
     vm.runInNewContext(source, context); await ready();
@@ -116,6 +117,8 @@ test('a pending request cannot be submitted twice even if the challenge refreshe
     assert.equal(p.submit.disabled, true);
     await p.nodes['.dp-request'].handlers.submit({preventDefault() {}});
     assert.equal(p.requests.length, 2);
+    p.nodes['.dp-request'].emailValue = 'edited-while-sending@example.test';
     complete(); await pending;
     assert.equal(p.nodes['.dp-confirmation'].hidden, false);
+    assert.equal(p.nodes['.dp-confirmation-email'].textContent, 'test@example.test');
 });

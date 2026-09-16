@@ -65,16 +65,17 @@ document.addEventListener('DOMContentLoaded', async function () {
     form.addEventListener('submit', async function (event) {
         event.preventDefault();
         if (requesting || accepted || fields.disabled || !form.reportValidity() || !challengeToken) return;
+        const email = new FormData(form).get('email');
         requesting = true;
         submit.disabled = true;
         submit.textContent = 'Sending request…';
         showStatus('Sending your request. Please wait…', 'pending');
         try {
-            await send('request', {email: new FormData(form).get('email'), terms_version: termsVersion, challenge_token: challengeToken});
+            await send('request', {email, terms_version: termsVersion, challenge_token: challengeToken});
             accepted = true;
             form.hidden = true;
             status.hidden = true;
-            root.querySelector('.dp-confirmation-email').textContent = new FormData(form).get('email');
+            root.querySelector('.dp-confirmation-email').textContent = email;
             confirmation.hidden = false;
             confirmationTitle.focus();
             form.reset();

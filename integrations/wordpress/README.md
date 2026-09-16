@@ -189,3 +189,11 @@ Referencie: [WordPress REST API](https://developer.wordpress.org/rest-api/extend
 [wp_mail](https://developer.wordpress.org/reference/functions/wp_mail/),
 [Turnstile server validation](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/),
 [PHP Ed25519 signing](https://www.php.net/manual/en/function.sodium-crypto-sign-detached.php).
+
+## Rozpracované podmienky a pošta
+
+Anglické návrhy podmienok a oznámenia o ochrane údajov sú v
+[legal-drafts/](legal-drafts/README.md). Obsahujú výslovne označenú pripravovanú
+spoločnosť a IČO `XXXX`; nie sú určené na publikovanie ani zapnutie registrácie.
+Postup pre potvrdenú schránku `info@darkarmy.sk` u SlovakNETu je v
+[návode na SMTP](legal-drafts/MAIL_SETUP.sk.md).

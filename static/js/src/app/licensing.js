@@ -1,14 +1,15 @@
 $(document).ready(function () {
     var configured = false;
     function busy(value) { $("#licenseActivate, #licenseRefresh").prop("disabled", value || !configured); }
+    function limitLabel(value) { return value === -1 ? "Unlimited" : value; }
     function render(status) {
         configured = status.configured === true;
         $("#licenseState").text(status.state || "missing");
         $("#licenseID").text(status.license_id || "Not activated");
         $("#licenseInstallation").text(status.installation_id || "—");
         $("#licenseExpiry").text(status.expires_at ? new Date(status.expires_at * 1000).toLocaleString() : "—");
-        $("#licenseUsers").text(status.managed_users + " / " + status.managed_users_limit);
-        $("#licenseCampaigns").text(status.active_campaigns + " / " + status.active_campaigns_limit);
+        $("#licenseUsers").text(status.managed_users + " / " + limitLabel(status.managed_users_limit));
+        $("#licenseCampaigns").text(status.active_campaigns + " / " + limitLabel(status.active_campaigns_limit));
         $("#licenseMessage").text(configured ? (status.state === "grace" ? "Your license is in its offline grace period. Refresh or renew it before the grace period ends." : "License information updated.") : "Activation is unavailable. Your administrator must configure the licensing service.");
         busy(false);
     }

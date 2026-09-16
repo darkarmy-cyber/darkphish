@@ -11,11 +11,15 @@ import (
 )
 
 const (
-	LeaseSchema      = "darkphish-license-lease/v1"
-	ProductDarkphish = "darkphish"
-	EditionCommunity = "community"
-	AlgorithmEd25519 = "Ed25519"
+	LeaseSchema         = "darkphish-license-lease/v1"
+	ProductDarkphish    = "darkphish"
+	EditionCommunity    = "community"
+	EditionProfessional = "professional"
+	EditionEnterprise   = "enterprise"
+	AlgorithmEd25519    = "Ed25519"
 )
+
+const Unlimited = -1
 
 var (
 	ErrInvalidEnvelope      = errors.New("invalid license envelope")
@@ -121,7 +125,7 @@ func validateLease(lease Lease, expectedInstallationID string) error {
 		return fmt.Errorf("%w: unsupported schema", ErrInvalidLease)
 	case lease.Product != ProductDarkphish:
 		return fmt.Errorf("%w: product mismatch", ErrInvalidLease)
-	case lease.Edition != EditionCommunity:
+	case lease.Edition != EditionCommunity && lease.Edition != EditionProfessional && lease.Edition != EditionEnterprise:
 		return fmt.Errorf("%w: edition mismatch", ErrInvalidLease)
 	case strings.TrimSpace(lease.LicenseID) == "":
 		return fmt.Errorf("%w: missing license id", ErrInvalidLease)
@@ -137,9 +141,9 @@ func validateLease(lease Lease, expectedInstallationID string) error {
 		return fmt.Errorf("%w: expires_at precedes not_before", ErrInvalidLease)
 	case lease.GraceUntil < lease.ExpiresAt:
 		return fmt.Errorf("%w: grace_until precedes expires_at", ErrInvalidLease)
-	case lease.Entitlements.ManagedUsers < 1:
+	case lease.Entitlements.ManagedUsers < 1 && !(lease.Entitlements.ManagedUsers == Unlimited && lease.Edition != EditionCommunity):
 		return fmt.Errorf("%w: invalid managed-user entitlement", ErrInvalidLease)
-	case lease.Entitlements.ActiveCampaigns < 1:
+	case lease.Entitlements.ActiveCampaigns < 1 && !(lease.Entitlements.ActiveCampaigns == Unlimited && lease.Edition != EditionCommunity):
 		return fmt.Errorf("%w: invalid active-campaign entitlement", ErrInvalidLease)
 	}
 	return nil

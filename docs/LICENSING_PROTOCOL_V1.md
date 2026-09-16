@@ -330,3 +330,9 @@ customer data are retained. Competing transactions are tested on every backend.
 Queued campaigns and delivery retries recheck current license state before
 sending. A denied queued batch remains retryable after reactivation; access to
 results and explicit campaign completion remain available.
+
+## Edition claims
+
+The verifier accepts only community, professional and enterprise, after validating the signature and installation binding. All editions use the existing signed managed-user and active-campaign limits; the edition name does not grant additional product features or bypass expiry. Paid issuance is an authenticated administrator operation in the WordPress service. Public Community registration cannot select or recover a paid edition. Commercial plan defaults are configured by the operator from the published offering.
+
+For Professional and Enterprise only, the signed integer -1 means unlimited for a supported quota. Zero and all other negative values remain invalid. Unlimited never bypasses installation binding, signature checks, expiry, or invalid/missing-license restrictions. Community requires positive finite limits. The administration displays this as Unlimited, not a numeric sentinel.

@@ -7,8 +7,8 @@ import (
 )
 
 var (
-	ErrManagedUserLimitReached    = errors.New("community managed-user limit reached")
-	ErrActiveCampaignLimitReached = errors.New("community active-campaign limit reached")
+	ErrManagedUserLimitReached    = errors.New("licensed managed-user limit reached")
+	ErrActiveCampaignLimitReached = errors.New("licensed active-campaign limit reached")
 )
 
 func NormalizeManagedUser(email string) string {
@@ -50,6 +50,9 @@ func EnforceManagedUserCounts(state State, entitlement, current, projected int) 
 		}
 		return nil
 	}
+	if entitlement == Unlimited {
+		return nil
+	}
 	if entitlement < 1 {
 		return fmt.Errorf("%w: invalid entitlement", ErrManagedUserLimitReached)
 	}
@@ -74,7 +77,10 @@ func EnforceActiveCampaigns(state State, entitlement int, active int, creatingNe
 	if !state.AllowsExpansion() {
 		return fmt.Errorf("%w: licensing state %s does not permit creating campaigns", ErrActiveCampaignLimitReached, state)
 	}
-	if entitlement < 1 || active >= entitlement {
+	if entitlement == Unlimited && active >= 0 {
+		return nil
+	}
+	if entitlement < 1 || active < 0 || active >= entitlement {
 		return fmt.Errorf("%w: %d active, %d licensed", ErrActiveCampaignLimitReached, active, entitlement)
 	}
 	return nil

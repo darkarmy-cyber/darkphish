@@ -29,8 +29,8 @@ function licenseMenuOrder(array $order): array {
 }
 add_action('admin_enqueue_scripts', function (string $hook): void {
     if ($hook === 'toplevel_page_darkphish-licenses') {
-        wp_enqueue_script('darkphish-licenses-admin', plugins_url('assets/admin.js', dirname(__DIR__) . '/darkphish-license.php'), [], '0.2.0', true);
-        wp_enqueue_style('darkphish-licenses-admin', plugins_url('assets/admin.css', dirname(__DIR__) . '/darkphish-license.php'), [], '0.2.0');
+        wp_enqueue_script('darkphish-licenses-admin', plugins_url('assets/admin.js', dirname(__DIR__) . '/darkphish-license.php'), [], '0.2.1', true);
+        wp_enqueue_style('darkphish-licenses-admin', plugins_url('assets/admin.css', dirname(__DIR__) . '/darkphish-license.php'), [], '0.2.1');
     }
 });
 

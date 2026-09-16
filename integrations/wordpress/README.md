@@ -207,3 +207,24 @@ Aktualizácia zachová názov priečinka darkphish-license, konštanty, nastaven
 Publikované predvoľby podľa dodaného index.html: Professional 250 používateľov a neobmedzené kampane; Enterprise oba limity neobmedzené. Platnosť sa pri ručnom vydaní zadáva podľa dohody (stránka rozlišuje mesačný a ročný spôsob platby). Hodnota Unlimited je v podpísanom protokole -1, povolená iba pri platených edíciách; vyžaduje aktualizovaný klient z PR #70. Registračná stránka nemá footer a používa vlastný responzívny štýl. Vycentrovaný nadpis obsahuje živý text DarkPhish s farebným prechodom; obrázkové logo sa nepoužíva. Farebný prechod je prevzatý z dodaného styles.css hlavnej stránky: 90deg, #1fd1dc → #60efda, rovnako ako „Built for defenders.“.
 
 Aktualizácia registračnej stránky en6: pri šírke do 900 px je rozloženie jednosĺpcové, širšie obrazovky používajú dva pružné stĺpce. Vzhľad bol skontrolovaný pri 240–1920 px bez vodorovného pretekania. Stránka používa kompaktný Turnstile, aby sa zmestil aj do úzkeho formulára. Pri HTTP 503 z public-config zobrazí informáciu, že registrácia ešte nie je otvorená. Používateľ potvrdil, že podmienky a ich verzia v Settings nie sú nastavené; API preto registráciu správne nepovolí. SMTP sa pri načítaní tejto verejnej konfigurácie netestuje.
+
+## Potvrdenie žiadosti a HTML e-mail — 0.2.1 / en7
+
+Statická stránka po prijatí žiadosti zobrazí samostatnú obrazovku „Check your inbox“
+s adresou, ďalším postupom a odkazom na zadanie inej adresy. Počas odosielania
+blokuje duplicitné žiadosti, pri chybe zvýrazní a zameria hlásenie. Úspešné prijatie
+žiadosti nie je tvrdením o doručení: odpoveď ostáva rovnaká aj pri limite pre
+konkrétny e-mail, aby API neprezrádzalo stav adresy.
+
+Plugin 0.2.1 posiela HTML e-mail s vloženými štýlmi, overovacím tlačidlom,
+30-minútovou platnosťou a celým odkazom na skopírovanie. Textová alternatíva
+sa pridáva cez dočasný, na konkrétnu správu obmedzený phpmailer_init hook.
+Nie sú použité vzdialené obrázky, fonty ani sledovacie pixely. SMTP nastavenia
+a odosielateľ ostávajú vo WP Mail SMTP; nemeníme globálny typ ostatných správ.
+Podklad: [wp_mail](https://developer.wordpress.org/reference/functions/wp_mail/)
+a [phpmailer_init](https://developer.wordpress.org/reference/hooks/phpmailer_init/).
+
+Nasadenie potrebuje nový plugin ZIP aj tri súbory statickej stránky v license/.
+Kľúč, databáza a nastavenia sa zachovajú. Používateľ už potvrdil prijatie pôvodného
+textového overovacieho e-mailu; nový HTML formát ešte potrebuje kontrolu v jeho
+poštovej aplikácii. Testy neposielajú skutočné e-maily.

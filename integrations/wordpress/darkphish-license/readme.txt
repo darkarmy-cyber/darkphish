@@ -1,7 +1,7 @@
 === Darkphish Licenses ===
 Requires at least: 6.8
 Requires PHP: 8.2
-Stable tag: 0.2.0
+Stable tag: 0.2.1
 License: MIT
 
 Community registration, edition dashboards and manual Professional/Enterprise licensing with Ed25519 leases.
@@ -35,4 +35,4 @@ an installation does not invalidate its previously issued offline lease.
 Deactivation retains license records and audit events. No uninstall erasure
 is automatic. Exclude API request/response bodies from logs, analytics and caches.
 
-Version 0.2.0 is an upgrade candidate; production SMTP delivery and commercial client activation still require deployment validation.
+Version 0.2.1 is an upgrade candidate; production SMTP delivery and commercial client activation still require deployment validation.

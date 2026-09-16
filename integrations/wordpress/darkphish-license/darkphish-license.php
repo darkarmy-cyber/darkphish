@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Darkphish Licenses
  * Description: Community, Professional and Enterprise license management for Darkphish.
- * Version: 0.2.0
+ * Version: 0.2.1
  * Requires at least: 6.8
  * Requires PHP: 8.2
  * License: MIT
@@ -15,6 +15,7 @@ require_once __DIR__ . '/includes/KeySetup.php';
 require_once __DIR__ . '/includes/Store.php';
 require_once __DIR__ . '/includes/Service.php';
 require_once __DIR__ . '/includes/Browser.php';
+require_once __DIR__ . '/includes/Mail.php';
 require_once __DIR__ . '/includes/Admin.php';
 
 function store(): Store { global $wpdb; return new Store($wpdb); }
@@ -122,7 +123,7 @@ function endpoint(string $operation, \WP_REST_Request $request): \WP_REST_Respon
             if (!$db->rate('email:request', $email, 3, 3600, $now)) { return reply($generic, 202); }
             $token = $service->request($email, $settings['terms_version'], $now);
             $url = $settings['registration_url'] . '#dp-verify=' . rawurlencode($token);
-            $sent = wp_mail($email, 'Verify your Darkphish Community license request', "Confirm your request within 30 minutes:\n\n" . $url . "\n\nIf you did not request a license, ignore this message.");
+            $sent = sendVerificationEmail($email, $url);
             if (!$sent) { $db->deleteRequest(hash('sha256', $token)); return reply(['message' => 'Email delivery is unavailable. Try again later.'], 503); }
             return reply($generic, 202);
         }
@@ -216,7 +217,7 @@ add_shortcode('darkphish_license', function (): string {
         return '<p>Community registration is not available yet.</p>';
     }
     // Token is carried in the fragment, never in a query string or referrer.
-    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.2.0', true);
+    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.2.1', true);
     wp_enqueue_script('darkphish-turnstile', 'https://challenges.cloudflare.com/turnstile/v0/api.js', [], null, true);
     return '<section id="darkphish-license" data-api="' . esc_url(rest_url('darkphish-license/v1/')) . '" data-terms="' . esc_attr($settings['terms_version']) . '"><h2>Darkphish Community</h2><p>Free registration: 100 managed users and 1 active campaign.</p><p role="status" aria-live="polite" class="dp-status"></p><form class="dp-request"><label>Email <input type="email" name="email" maxlength="254" autocomplete="email" required></label><p><label><input type="checkbox" required> I accept the <a href="' . esc_url($settings['terms_url']) . '" target="_blank" rel="noopener noreferrer">Community terms</a>.</label></p><div class="cf-turnstile" data-action="darkphish-license" data-sitekey="' . esc_attr(DARKPHISH_TURNSTILE_SITE_KEY) . '"></div><button type="submit">Request license</button></form><button type="button" class="dp-verify" hidden>Confirm email and display my license key</button><pre class="dp-key" hidden></pre></section>';
 });

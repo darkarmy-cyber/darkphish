@@ -205,3 +205,11 @@ Samostatné menu sa zaradí priamo pod Zeus, ak je prítomný. Záložky Dashboa
 Aktualizácia zachová názov priečinka darkphish-license, konštanty, nastavenia, podpisový súbor a existujúce licencie. Databáza sa rozšíri pri nasledujúcom načítaní pluginov; existujúce licencie sú Community. Verejné vydanie/obnova Community nemôžu prepísať komerčnú licenciu pre rovnaký e-mail. Zmeny limitov a zrušenie sa prejavia pri ďalšom podpísanom lease, nie v už vydanom offline zázname. Platená licencia potrebuje klienta s podporou danej edície; sama nepridáva ďalšie produktové funkcie.
 
 Publikované predvoľby podľa dodaného index.html: Professional 250 používateľov a neobmedzené kampane; Enterprise oba limity neobmedzené. Platnosť sa pri ručnom vydaní zadáva podľa dohody (stránka rozlišuje mesačný a ročný spôsob platby). Hodnota Unlimited je v podpísanom protokole -1, povolená iba pri platených edíciách; vyžaduje aktualizovaný klient z PR #70. Statický formulár používa footer z hlavného index.html a jeho existujúce súbory /styles.css a /assets/darkphish-mark.webp.
+## Aktualizácia 0.2.1 — HTML overovací e-mail
+
+Nahraď existujúci plugin balíkom 0.2.1 (rovnaký priečinok darkphish-license).
+Zachovaj wp-config.php aj súkromný podpisový súbor. HTML e-mail obsahuje tlačidlo,
+záložný odkaz a textovú alternatívu. Používa existujúcu SMTP konfiguráciu.
+Na darkphish.sk nahraj aj statickú stránku en7 do license/, aby sa po žiadosti
+zobrazila obrazovka „Check your inbox“. Overovací odkaz stále vyžaduje výslovné
+potvrdenie na stránke; samotné otvorenie e-mailu ani odkazu kľúč nevydá.

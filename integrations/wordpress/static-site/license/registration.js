@@ -8,6 +8,14 @@ document.addEventListener('DOMContentLoaded', async function () {
     const fields = form.querySelector('fieldset');
     const verify = root.querySelector('.dp-verify');
     const restart = root.querySelector('.dp-restart');
+    const confirmation = root.querySelector('.dp-confirmation');
+    const confirmationTitle = root.querySelector('.dp-confirmation-title');
+    let requesting = false, accepted = false;
+    function showStatus(message, state = '', focus = false) {
+        status.textContent = message;
+        status.dataset.state = state;
+        if (focus) status.focus();
+    }
     let token = new URLSearchParams(location.hash.slice(1)).get('dp-verify');
     // Remove the fragment before any external script loads. GET never redeems it.
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
@@ -25,6 +33,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                 throw error;
             }
             if (response.status === 429) throw new Error('Too many attempts. Please try again later.');
+            if (operation === 'request' && response.status === 503) throw new Error('We could not send your verification email. Please try again later.');
+            if (operation === 'request' && response.status === 400) throw new Error('Please reload the page, check your email and accept the current terms, then complete the security check again.');
             if (operation === 'verify' && response.status === 403) throw new Error('This link has expired or has already been used. Request a new verification email.');
             throw new Error('Registration could not be completed. Try again later or reload the page.');
         }
@@ -54,14 +64,27 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
     form.addEventListener('submit', async function (event) {
         event.preventDefault();
-        if (fields.disabled || !form.reportValidity() || !challengeToken) return;
+        if (requesting || accepted || fields.disabled || !form.reportValidity() || !challengeToken) return;
+        requesting = true;
         submit.disabled = true;
+        submit.textContent = 'Sending request…';
+        showStatus('Sending your request. Please wait…', 'pending');
         try {
             await send('request', {email: new FormData(form).get('email'), terms_version: termsVersion, challenge_token: challengeToken});
-            status.textContent = 'If your request can be processed, a verification email will arrive shortly. Please check your spam folder too.';
+            accepted = true;
+            form.hidden = true;
+            status.hidden = true;
+            root.querySelector('.dp-confirmation-email').textContent = new FormData(form).get('email');
+            confirmation.hidden = false;
+            confirmationTitle.focus();
             form.reset();
-        } catch (error) { status.textContent = error.message; }
-        finally { challengeToken = ''; if (window.turnstile) window.turnstile.reset(widget); }
+        } catch (error) {
+            showStatus(error instanceof TypeError ? 'We could not confirm your request. Check your connection and inbox before trying again.' : error.message, 'error', true);
+        } finally {
+            requesting = false; challengeToken = ''; submit.disabled = true;
+            submit.textContent = 'Send verification email →';
+            if (!accepted && window.turnstile) window.turnstile.reset(widget);
+        }
     });
     try {
         const settings = await send('public-config');
@@ -81,7 +104,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         script.onload = function () {
             widget = window.turnstile.render(root.querySelector('.dp-challenge'), {
                 sitekey: settings.site_key, action: 'darkphish-license', language: 'en', size: 'compact',
-                callback: function (value) { challengeToken = value; submit.disabled = false; },
+                callback: function (value) { challengeToken = value; submit.disabled = requesting || accepted; },
                 'expired-callback': function () { challengeToken = ''; submit.disabled = true; },
                 'error-callback': function () { challengeToken = ''; submit.disabled = true; status.textContent = 'The anti-abuse check could not be loaded. Please reload the page.'; }
             });

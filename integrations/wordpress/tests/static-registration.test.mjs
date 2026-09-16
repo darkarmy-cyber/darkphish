@@ -4,10 +4,10 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 const source = readFileSync(new URL('../static-site/license/registration.js', import.meta.url), 'utf8');
 function element(hidden = false) {
-    return {hidden, disabled: false, textContent: '', handlers: {}, addEventListener(name, fn) { this.handlers[name] = fn; }};
+    return {hidden, disabled: false, textContent: '', dataset: {}, focused: false, focus() { this.focused = true; }, handlers: {}, addEventListener(name, fn) { this.handlers[name] = fn; }};
 }
 async function page(hash = '', reply = async () => ({ok: true, json: async () => ({site_key: 'public', terms_url: 'https://www.darkphish.test/terms/', terms_version: 'v1', registration_url: 'https://www.darkphish.test/license/'})})) {
-    const nodes = Object.fromEntries(['.dp-status', '.dp-request', '.dp-verify', '.dp-restart', '.dp-key', '.dp-terms', '.dp-challenge'].map(name => [name, element(name !== '.dp-status')]));
+    const nodes = Object.fromEntries(['.dp-status', '.dp-request', '.dp-verify', '.dp-restart', '.dp-key', '.dp-terms', '.dp-challenge', '.dp-confirmation', '.dp-confirmation-title', '.dp-confirmation-email'].map(name => [name, element(name !== '.dp-status')]));
     const submit = element(); submit.disabled = true;
     const fields = element(); fields.disabled = true;
     nodes['.dp-request'].hidden = false;
@@ -17,7 +17,7 @@ async function page(hash = '', reply = async () => ({ok: true, json: async () =>
     const requests = [], scripts = [], replaced = [];
     let ready, challenge;
     const context = {
-        URL, URLSearchParams, Error,
+        URL, URLSearchParams, Error, TypeError,
         location: {hash, origin: 'https://www.darkphish.test', pathname: '/license/', search: ''},
         history: {replaceState: (...args) => replaced.push(args)},
         document: {getElementById: () => ({dataset: {api: 'https://fsociety.test/wp-json/darkphish-license/v1/'}, querySelector: name => nodes[name]}),
@@ -59,6 +59,12 @@ test('registration uses current server settings and submits only after a challen
     await p.nodes['.dp-request'].handlers.submit({preventDefault() {}});
     assert.deepEqual(JSON.parse(p.requests[1].options.body), {email: 'test@example.test', terms_version: 'v1', challenge_token: 'valid-token'});
     assert.equal(p.submit.disabled, true);
+    assert.equal(p.nodes['.dp-confirmation'].hidden, false);
+    assert.equal(p.nodes['.dp-request'].hidden, true);
+    assert.equal(p.nodes['.dp-confirmation-title'].focused, true);
+    assert.equal(p.nodes['.dp-confirmation-email'].textContent, 'test@example.test');
+    await p.nodes['.dp-request'].handlers.submit({preventDefault() {}});
+    assert.equal(p.requests.length, 2);
 });
 test('configuration failures keep the form visible but prevent submission', async () => {
     const p = await page('', async () => ({ok: false, status: 503}));
@@ -76,4 +82,40 @@ test('expired verification offers recovery without rendering untrusted content',
 test('malformed verification tokens never reach the API', async () => {
     const p = await page('#dp-verify=bad');
     assert.equal(p.requests.length, 0); assert.equal(p.nodes['.dp-restart'].hidden, false);
+});
+
+test('request failures are visible, focused and never show a success confirmation', async () => {
+    for (const response of [{ok: false, status: 503}, {ok: false, status: 429}, new TypeError('Network failure')]) {
+        // Keep initial public configuration valid, fail only the subsequent POST.
+        const failed = await page('', async (url) => {
+            if (url.endsWith('public-config')) return {ok: true, json: async () => ({site_key: 'public', terms_url: 'https://www.darkphish.test/terms/', terms_version: 'v1', registration_url: 'https://www.darkphish.test/license/'})};
+            if (response instanceof Error) throw response;
+            return response;
+        });
+        failed.scripts[0].onload(); failed.challenge().callback('valid-token');
+        await failed.nodes['.dp-request'].handlers.submit({preventDefault() {}});
+        assert.equal(failed.nodes['.dp-confirmation'].hidden, true);
+        assert.equal(failed.nodes['.dp-request'].hidden, false);
+        assert.equal(failed.nodes['.dp-status'].dataset.state, 'error');
+        assert.equal(failed.nodes['.dp-status'].focused, true);
+        assert.match(failed.nodes['.dp-status'].textContent, /could not|Too many/);
+        assert.equal(failed.submit.disabled, true);
+    }
+});
+
+test('a pending request cannot be submitted twice even if the challenge refreshes', async () => {
+    let complete;
+    const p = await page('', async url => {
+        if (url.endsWith('public-config')) return {ok: true, json: async () => ({site_key: 'public', terms_url: 'https://www.darkphish.test/terms/', terms_version: 'v1', registration_url: 'https://www.darkphish.test/license/'})};
+        return new Promise(resolve => { complete = () => resolve({ok: true, json: async () => ({})}); });
+    });
+    p.scripts[0].onload(); p.challenge().callback('valid-token');
+    const pending = p.nodes['.dp-request'].handlers.submit({preventDefault() {}});
+    assert.equal(p.nodes['.dp-status'].dataset.state, 'pending');
+    p.challenge().callback('refreshed-token');
+    assert.equal(p.submit.disabled, true);
+    await p.nodes['.dp-request'].handlers.submit({preventDefault() {}});
+    assert.equal(p.requests.length, 2);
+    complete(); await pending;
+    assert.equal(p.nodes['.dp-confirmation'].hidden, false);
 });

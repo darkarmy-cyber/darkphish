@@ -410,7 +410,7 @@ install_payload() {
 
     install -m 0750 -o "${APP_USER}" -g "${APP_GROUP}" "${BUILD_ROOT}/darkphish" "${INSTALL_DIR}/darkphish"
     local file_name
-    for file_name in VERSION LICENSE NOTICE.md README.md CHANGELOG.md; do
+    for file_name in VERSION LICENSE NOTICE.md README.md CHANGELOG.md license-public-keys.json; do
         install -m 0640 -o "${APP_USER}" -g "${APP_GROUP}" "${SOURCE_SNAPSHOT}/${file_name}" "${INSTALL_DIR}/${file_name}"
     done
 
@@ -542,6 +542,12 @@ create_production_config() {
   },
   "personal_access_tokens": {
     "max_lifetime_days": 90
+  },
+  "license": {
+    "service_url": "https://fsociety.sk/wp-json/darkphish-license/v1",
+    "keyring_file": "license-public-keys.json",
+    "state_path": "${BOOTSTRAP_DIR}/license-state.json",
+    "refresh_interval_seconds": 3600
   },
   "bootstrap_directory": "${BOOTSTRAP_DIR}",
   "contact_address": "",

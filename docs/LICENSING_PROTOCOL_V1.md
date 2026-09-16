@@ -282,18 +282,29 @@ Configure both the approved HTTPS API URL and the public keyring in `config.json
 ```json
 {
   "license": {
-    "service_url": "https://YOUR-LICENSE-SERVICE/wp-json/darkphish-license/v1",
-    "keyring_file": "/etc/darkphish/license-public-keys.json",
+    "service_url": "https://fsociety.sk/wp-json/darkphish-license/v1",
+    "keyring_file": "license-public-keys.json",
     "state_path": "/var/lib/darkphish/license-state.json",
     "refresh_interval_seconds": 3600
   }
 }
 ```
 
-The URL above is a placeholder, not a deployed service. The release must not
-ship an invented production key or a development signing key. The public
-keyring uses `darkphish-license-keyring/v1` and maps key IDs to standard Base64
-Ed25519 public keys. Never place the private signing key in Darkphish.
+The maintainer supplied the fsociety.sk public verification keyring on
+2026-09-16 after generating the key in the WordPress plugin. The checked-in
+`license-public-keys.json` contains key ID `DP-COM-20260916-26f22bd9`; it ships
+with native archives, the source installer and the Docker image. Default
+configurations point to that keyring and the HTTPS API above. This records
+the supplied trust anchor, not proof of a completed live activation test.
+Registration, mail delivery, Turnstile and activation still require live
+verification before launch. Existing deployments must merge the license
+settings into their own config rather than overwrite unrelated settings.
+
+The public keyring uses `darkphish-license-keyring/v1` and maps key IDs to
+standard Base64 Ed25519 public keys. Never place the private signing key in
+Darkphish. Rotation requires distributing an expanded trusted keyring before
+the server starts signing with a new key ID; retain old public keys until
+their signed leases and grace periods have expired.
 Relative configured paths resolve from the configuration file directory.
 The default state file lives in the configured bootstrap directory, or beside
 the configuration file when no bootstrap directory is configured. Keep it on

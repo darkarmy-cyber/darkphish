@@ -52,6 +52,11 @@ func enforceGroupLicense(tx *gorm.DB, group *Group) error {
 	}
 	current := licensing.ProjectManagedUsers(currentEmails, nil)
 	projected := licensing.ProjectManagedUsers(existingOutsideGroup, proposed)
+	// Degraded mode may remove existing identities, but cannot exchange them
+	// for new ones even if the total number stays constant or decreases.
+	if !state.AllowsExpansion() || current > lease.Entitlements.ManagedUsers {
+		return licensing.EnforceManagedUsers(state, lease.Entitlements.ManagedUsers, currentEmails, proposed)
+	}
 	return licensing.EnforceManagedUserCounts(state, lease.Entitlements.ManagedUsers, current, projected)
 }
 
@@ -83,4 +88,18 @@ func enforceCampaignLicense(tx *gorm.DB) error {
 		return fmt.Errorf("count active campaigns: %w", err)
 	}
 	return licensing.EnforceActiveCampaigns(state, lease.Entitlements.ActiveCampaigns, int(active), true)
+}
+
+// CheckCampaignLicense revalidates the signed lease immediately before a queued
+// campaign starts. Existing running campaigns may still be completed.
+func CheckCampaignLicense() error {
+	manager := currentLicenseManager()
+	if manager == nil {
+		return nil
+	}
+	lease, state, err := manager.Snapshot(time.Now().UTC())
+	if err != nil && state != licensing.StateInvalid {
+		return err
+	}
+	return licensing.EnforceActiveCampaigns(state, lease.Entitlements.ActiveCampaigns, 0, true)
 }

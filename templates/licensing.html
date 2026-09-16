@@ -1,0 +1,26 @@
+{{define "body"}}
+<div class="col-sm-9 col-sm-offset-3 col-md-10 col-md-offset-2 main">
+    <h1 class="page-header">Settings</h1>
+    {{template "settings_tabs" .}}
+    <h2>Community license</h2>
+    <p id="licenseMessage" role="status" aria-live="polite">Loading license information…</p>
+    <dl>
+        <dt>Status</dt><dd id="licenseState">—</dd>
+        <dt>License</dt><dd id="licenseID">—</dd>
+        <dt>Installation</dt><dd id="licenseInstallation">—</dd>
+        <dt>Valid until</dt><dd id="licenseExpiry">—</dd>
+        <dt>Managed users</dt><dd id="licenseUsers">—</dd>
+        <dt>Active campaigns</dt><dd id="licenseCampaigns">—</dd>
+    </dl>
+    <form id="licenseActivation" autocomplete="off">
+        <div class="form-group">
+            <label for="licenseKey">Activation key</label>
+            <input class="form-control" type="password" id="licenseKey" required maxlength="1024" autocomplete="off">
+        </div>
+        <button type="submit" class="btn btn-primary" id="licenseActivate" disabled>Activate license</button>
+        <button type="button" class="btn btn-default" id="licenseRefresh" disabled>Refresh license</button>
+    </form>
+    <p>Without an active license, you can still view your data and remove managed users. Adding new managed users and starting campaigns requires a valid license.</p>
+</div>
+{{end}}
+{{define "scripts"}}<script src="/js/dist/app/licensing.min.js"></script>{{end}}

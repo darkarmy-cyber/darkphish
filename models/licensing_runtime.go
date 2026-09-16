@@ -11,13 +11,15 @@ import (
 )
 
 var (
-	licenseClientMu sync.RWMutex
-	licenseClient   *licensing.Client
+	licenseExchangeMu sync.Mutex
+	licenseClientMu   sync.RWMutex
+	licenseClient     *licensing.Client
 )
 
 var ErrLicensingNotConfigured = errors.New("Community licensing is not configured")
 
 type LicenseStatus struct {
+	Configured          bool   `json:"configured"`
 	Edition             string `json:"edition"`
 	State               string `json:"state"`
 	LicenseID           string `json:"license_id,omitempty"`
@@ -49,6 +51,7 @@ func GetLicenseStatus(now time.Time) (LicenseStatus, error) {
 	}
 	lease, state, verifyErr := manager.Snapshot(now.UTC())
 	status := LicenseStatus{
+		Configured:          currentLicenseClient() != nil,
 		Edition:             licensing.EditionCommunity,
 		State:               string(state),
 		LicenseID:           lease.LicenseID,
@@ -75,6 +78,8 @@ func GetLicenseStatus(now time.Time) (LicenseStatus, error) {
 }
 
 func ActivateCommunityLicense(ctx context.Context, licenseKey string, now time.Time) (LicenseStatus, error) {
+	licenseExchangeMu.Lock()
+	defer licenseExchangeMu.Unlock()
 	manager := currentLicenseManager()
 	client := currentLicenseClient()
 	if manager == nil || client == nil {
@@ -91,6 +96,8 @@ func ActivateCommunityLicense(ctx context.Context, licenseKey string, now time.T
 }
 
 func RefreshCommunityLicense(ctx context.Context, now time.Time) (LicenseStatus, error) {
+	licenseExchangeMu.Lock()
+	defer licenseExchangeMu.Unlock()
 	manager := currentLicenseManager()
 	client := currentLicenseClient()
 	if manager == nil || client == nil {

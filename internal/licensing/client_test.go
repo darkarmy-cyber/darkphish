@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -103,5 +105,57 @@ func TestClientRejectsUnknownResponseFields(t *testing.T) {
 	}
 	if _, err := client.Activate(context.Background(), "DP-COM-SECRET", "installation"); !errors.Is(err, ErrLicenseService) {
 		t.Fatalf("err=%v want license service error", err)
+	}
+}
+
+func TestClientRejectsRedirectsWithoutForwardingCredentials(t *testing.T) {
+	for _, code := range []int{301, 302, 303, 307, 308} {
+		t.Run(fmt.Sprint(code), func(t *testing.T) {
+			var forwarded atomic.Int32
+			target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { forwarded.Add(1) }))
+			defer target.Close()
+			source := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, code) }))
+			defer source.Close()
+			supplied := source.Client()
+			client, err := NewClient(source.URL, "0.11.0", supplied)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if supplied.CheckRedirect != nil {
+				t.Fatal("mutated supplied client")
+			}
+			_, err = client.Activate(context.Background(), "private-key", "installation")
+			if !errors.Is(err, ErrLicenseService) || forwarded.Load() != 0 {
+				t.Fatalf("redirect accepted: %v, forwarded=%d", err, forwarded.Load())
+			}
+		})
+	}
+}
+
+func TestClientRequiresUsableActivationResponse(t *testing.T) {
+	for _, body := range []string{`{"lease":{}}`, `{"lease":{},"refresh_token":" "}`, `{"lease":null,"refresh_token":"token"}`, `{"lease":{},"refresh_token":"token"} {}`} {
+		t.Run(body, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }))
+			defer server.Close()
+			client, err := newClient(server.URL, "0.11.0", server.Client(), true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := client.Activate(context.Background(), "key", "installation"); !errors.Is(err, ErrLicenseService) {
+				t.Fatalf("accepted invalid activation response: %v", err)
+			}
+		})
+	}
+}
+
+func TestRefreshMayRetainExistingToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{"lease":{}}`)) }))
+	defer server.Close()
+	client, err := newClient(server.URL, "0.11.0", server.Client(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Refresh(context.Background(), "existing-token", "installation"); err != nil {
+		t.Fatal(err)
 	}
 }

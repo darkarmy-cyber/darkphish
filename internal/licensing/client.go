@@ -57,19 +57,33 @@ func newClient(rawBaseURL, productVersion string, httpClient *http.Client, allow
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 15 * time.Second}
 	}
+	// Never forward activation credentials to a redirect destination. Copy the
+	// supplied client so its caller's redirect policy is not changed.
+	privateClient := *httpClient
+	privateClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	if privateClient.Timeout <= 0 || privateClient.Timeout > 15*time.Second {
+		privateClient.Timeout = 15 * time.Second
+	}
 	if strings.TrimSpace(productVersion) == "" {
 		return nil, errors.New("product version is required")
 	}
-	return &Client{baseURL: parsed, httpClient: httpClient, productVersion: productVersion, allowHTTP: allowHTTP}, nil
+	return &Client{baseURL: parsed, httpClient: &privateClient, productVersion: productVersion, allowHTTP: allowHTTP}, nil
 }
 
 func (c *Client) Activate(ctx context.Context, licenseKey, installationID string) (ActivationResponse, error) {
 	if strings.TrimSpace(licenseKey) == "" || strings.TrimSpace(installationID) == "" {
 		return ActivationResponse{}, errors.New("license key and installation id are required")
 	}
-	return c.post(ctx, "/activate", activationRequest{
+	response, err := c.post(ctx, "/activate", activationRequest{
 		LicenseKey: licenseKey, InstallationID: installationID, ProductVersion: c.productVersion,
 	})
+	if err != nil {
+		return ActivationResponse{}, err
+	}
+	if strings.TrimSpace(response.RefreshToken) == "" {
+		return ActivationResponse{}, fmt.Errorf("%w: missing refresh token", ErrLicenseService)
+	}
+	return response, nil
 }
 
 func (c *Client) Refresh(ctx context.Context, refreshToken, installationID string) (ActivationResponse, error) {
@@ -98,7 +112,7 @@ func (c *Client) post(ctx context.Context, endpoint string, payload any) (Activa
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return ActivationResponse{}, fmt.Errorf("%w: %v", ErrLicenseService, err)
+		return ActivationResponse{}, fmt.Errorf("%w: transport failure", ErrLicenseService)
 	}
 	defer resp.Body.Close()
 	limited := io.LimitReader(resp.Body, maxLicenseResponseBytes+1)
@@ -120,7 +134,10 @@ func (c *Client) post(ctx context.Context, endpoint string, payload any) (Activa
 	if err := decoder.Decode(&result); err != nil {
 		return ActivationResponse{}, fmt.Errorf("%w: invalid response", ErrLicenseService)
 	}
-	if len(result.Lease) == 0 {
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return ActivationResponse{}, fmt.Errorf("%w: trailing response data", ErrLicenseService)
+	}
+	if len(result.Lease) == 0 || bytes.Equal(bytes.TrimSpace(result.Lease), []byte("null")) {
 		return ActivationResponse{}, fmt.Errorf("%w: missing lease", ErrLicenseService)
 	}
 	return result, nil

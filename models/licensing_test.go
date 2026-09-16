@@ -136,3 +136,53 @@ func TestNoManagerLeavesCompatibilityToolingUnrestricted(t *testing.T) {
 		t.Fatalf("campaign enforcement should be disabled without configured manager: %v", err)
 	}
 }
+
+func TestCreationRejectsCallerIDsBeforeDatabaseAccess(t *testing.T) {
+	for _, id := range []int64{-1, 1, 10} {
+		if err := PostGroup(&Group{Id: id}); err == nil {
+			t.Fatal("group creation accepted caller id")
+		}
+		if err := PostCampaign(&Campaign{Id: id}, 1); err == nil {
+			t.Fatal("campaign creation accepted caller id")
+		}
+	}
+}
+
+func TestDegradedGroupReplacementChecksIdentities(t *testing.T) {
+	connection := withLicensingDB(t)
+	manager, err := licensing.OpenManager(filepath.Join(t.TempDir(), "state.json"), nil, 0, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ConfigureLicenseManager(manager)
+	if err := connection.Exec(`INSERT INTO targets VALUES (1,'one@example.test'),(2,'two@example.test')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := connection.Exec(`INSERT INTO group_targets VALUES (10,1),(10,2)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	group := &Group{Id: 10, Targets: []Target{{BaseRecipient: BaseRecipient{Email: "new@example.test"}}}}
+	if err := enforceGroupLicense(connection, group); !errors.Is(err, licensing.ErrManagedUserLimitReached) {
+		t.Fatalf("new identity accepted while degraded: %v", err)
+	}
+	group.Targets[0].Email = " ONE@example.test "
+	if err := enforceGroupLicense(connection, group); err != nil {
+		t.Fatalf("existing normalized identity rejected: %v", err)
+	}
+}
+
+func TestCampaignLaunchRechecksMissingLease(t *testing.T) {
+	manager, err := licensing.OpenManager(filepath.Join(t.TempDir(), "state.json"), nil, 0, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ConfigureLicenseManager(manager)
+	t.Cleanup(func() { ConfigureLicenseManager(nil) })
+	if err := CheckCampaignLicense(); !errors.Is(err, licensing.ErrActiveCampaignLimitReached) {
+		t.Fatalf("launch permitted without valid lease: %v", err)
+	}
+	ConfigureLicenseManager(testLicenseManager(t, 100, 1))
+	if err := CheckCampaignLicense(); err != nil {
+		t.Fatalf("active license blocked launch: %v", err)
+	}
+}

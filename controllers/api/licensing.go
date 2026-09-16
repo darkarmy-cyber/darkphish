@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -28,11 +29,11 @@ func (as *Server) LicenseActivate(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	var request licenseActivationRequest
-	if err := decoder.Decode(&request); err != nil || strings.TrimSpace(request.LicenseKey) == "" {
+	if err := decoder.Decode(&request); err != nil || strings.TrimSpace(request.LicenseKey) == "" || decoder.Decode(new(any)) != io.EOF {
 		JSONResponse(w, models.Response{Success: false, Message: "Invalid activation request"}, http.StatusBadRequest)
 		return
 	}
-	// Keep the public key out of logs and error responses. The licensing client
+	// Keep the activation key out of logs and error responses. The licensing client
 	// also deliberately suppresses remote error bodies.
 	status, err := models.ActivateCommunityLicense(r.Context(), strings.TrimSpace(request.LicenseKey), time.Now().UTC())
 	if err != nil {

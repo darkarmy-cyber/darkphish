@@ -265,3 +265,54 @@ Protocol-breaking changes require a new schema value such as
 `darkphish-license-lease/v2` and a new REST namespace or negotiated protocol
 version. Adding server-side policy records does not by itself change this wire
 protocol.
+
+## Runtime configuration (v0.11)
+
+Normal server startup always installs a licensing manager before starting the
+HTTP servers and campaign worker. Missing service configuration starts in
+unactivated mode: administrators retain access to data and settings, while
+new managed users and campaign delivery are blocked. Offline audit and migration
+commands retain their compatibility behavior.
+
+Configure both the approved HTTPS API URL and the public keyring in `config.json`:
+
+```json
+{
+  "license": {
+    "service_url": "https://YOUR-LICENSE-SERVICE/wp-json/darkphish-license/v1",
+    "keyring_file": "/etc/darkphish/license-public-keys.json",
+    "state_path": "/var/lib/darkphish/license-state.json",
+    "refresh_interval_seconds": 3600
+  }
+}
+```
+
+The URL above is a placeholder, not a deployed service. The release must not
+ship an invented production key or a development signing key. The public
+keyring uses `darkphish-license-keyring/v1` and maps key IDs to standard Base64
+Ed25519 public keys. Never place the private signing key in Darkphish.
+Relative configured paths resolve from the configuration file directory.
+The default state file lives in the configured bootstrap directory, or beside
+the configuration file when no bootstrap directory is configured. Keep it on
+persistent private storage and include it in secured backups.
+
+Refresh runs at startup for an existing activation and every configured interval
+(60–3600 seconds; default one hour). Refresh and activation exchanges are
+serialized so rotated tokens cannot overwrite a newer exchange. Shutdown
+cancels an in-flight refresh. Service failure preserves the last signed lease;
+its expiry and grace timestamps continue to govern access. Redirects are
+rejected before forwarding any credential.
+
+The Settings → Licensing page shows state, installation, expiry and usage, and
+supports activation and manual refresh. It is restricted to administrators.
+Activation remains unavailable until both service configuration and the public
+keyring are installed.
+
+A v0.11 migration adds only the singleton `license_coordination` table. Group
+changes and campaign creation lock that row inside the same transaction that
+reads usage and commits the change. PostgreSQL/MySQL use READ COMMITTED;
+SQLite acquires its writer lock before usage reads. Existing schema and
+customer data are retained. Competing transactions are tested on every backend.
+Queued campaigns and delivery retries recheck current license state before
+sending. A denied queued batch remains retryable after reactivation; access to
+results and explicit campaign completion remain available.

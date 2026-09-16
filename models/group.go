@@ -192,15 +192,21 @@ func GetGroupByName(n string, uid int64) (Group, error) {
 
 // PostGroup creates a new group in the database.
 func PostGroup(g *Group) error {
+	if g.Id != 0 {
+		return errors.New("new groups must not specify an id")
+	}
 	if err := g.Validate(); err != nil {
 		return err
 	}
 	// Insert the group into the DB
-	tx := db.Begin()
+	tx := beginLicenseTransaction()
 	if tx.Error != nil {
 		return tx.Error
 	}
 	defer tx.Rollback()
+	if err := lockLicenseUsage(tx); err != nil {
+		return err
+	}
 	if err := enforceGroupLicense(tx, g); err != nil {
 		return err
 	}
@@ -232,8 +238,16 @@ func PutGroup(g *Group) error {
 	if err := g.Validate(); err != nil {
 		return err
 	}
-	// Fetch group's existing targets from database.
-	ts, err := GetTargets(g.Id)
+	tx := beginLicenseTransaction()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
+	if err := lockLicenseUsage(tx); err != nil {
+		return err
+	}
+	// Fetch group's existing targets under the same usage lock.
+	ts, err := getTargetsWithDB(tx, g.Id)
 	if err != nil {
 		log.WithFields(logrus.Fields{
 			"group_id": g.Id,
@@ -251,11 +265,6 @@ func PutGroup(g *Group) error {
 		cacheExisting[t.Email] = t.Id
 	}
 
-	tx := db.Begin()
-	if tx.Error != nil {
-		return tx.Error
-	}
-	defer tx.Rollback()
 	if err := enforceGroupLicense(tx, g); err != nil {
 		return err
 	}
@@ -377,7 +386,11 @@ func UpdateTarget(tx *gorm.DB, target Target) error {
 
 // GetTargets performs a many-to-many select to get all the Targets for a Group
 func GetTargets(gid int64) ([]Target, error) {
+	return getTargetsWithDB(db, gid)
+}
+
+func getTargetsWithDB(connection *gorm.DB, gid int64) ([]Target, error) {
 	ts := []Target{}
-	err := db.Table("targets").Select("targets.id, targets.email, targets.first_name, targets.last_name, targets.position").Joins("left join group_targets gt ON targets.id = gt.target_id").Where("gt.group_id=?", gid).Order("targets.id ASC").Scan(&ts).Error
+	err := connection.Table("targets").Select("targets.id, targets.email, targets.first_name, targets.last_name, targets.position").Joins("left join group_targets gt ON targets.id = gt.target_id").Where("gt.group_id=?", gid).Order("targets.id ASC").Scan(&ts).Error
 	return ts, err
 }

@@ -112,6 +112,13 @@ type PATConfig struct {
 	MaxLifetimeDays int `json:"max_lifetime_days"`
 }
 
+type LicenseConfig struct {
+	ServiceURL             string `json:"service_url"`
+	KeyringFile            string `json:"keyring_file"`
+	StatePath              string `json:"state_path"`
+	RefreshIntervalSeconds int    `json:"refresh_interval_seconds"`
+}
+
 // Config represents the configuration information.
 type Config struct {
 	AdminConf                AdminServer            `json:"admin_server"`
@@ -133,6 +140,7 @@ type Config struct {
 	PrivilegedAccess         PrivilegedAccessConfig `json:"privileged_access"`
 	PostgreSQL               PostgreSQLConfig       `json:"postgresql"`
 	ContactAddress           string                 `json:"contact_address"`
+	License                  LicenseConfig          `json:"license"`
 	Logging                  *log.Config            `json:"logging"`
 }
 
@@ -185,6 +193,24 @@ func LoadConfig(configPath string) (*Config, error) {
 	baseDir := filepath.Dir(configPath)
 	if config.BootstrapDirectory != "" && !filepath.IsAbs(config.BootstrapDirectory) {
 		config.BootstrapDirectory = filepath.Join(baseDir, config.BootstrapDirectory)
+	}
+	if config.License.StatePath == "" {
+		directory := config.BootstrapDirectory
+		if directory == "" {
+			directory = baseDir
+		}
+		config.License.StatePath = filepath.Join(directory, "license-state.json")
+	} else if !filepath.IsAbs(config.License.StatePath) {
+		config.License.StatePath = filepath.Join(baseDir, config.License.StatePath)
+	}
+	if config.License.KeyringFile != "" && !filepath.IsAbs(config.License.KeyringFile) {
+		config.License.KeyringFile = filepath.Join(baseDir, config.License.KeyringFile)
+	}
+	if config.License.RefreshIntervalSeconds == 0 {
+		config.License.RefreshIntervalSeconds = 3600
+	}
+	if config.License.RefreshIntervalSeconds < 60 || config.License.RefreshIntervalSeconds > 3600 {
+		return nil, errors.New("license.refresh_interval_seconds must be between 60 and 3600")
 	}
 	config.Session.AuthKey, err = resolveSecret(config.Session.AuthKey, config.Session.AuthKeyFile, baseDir, "DARKPHISH_SESSION_AUTH_KEY", "GOPHISH_SESSION_AUTH_KEY")
 	if err != nil {

@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         root.querySelector('.dp-intro-title').textContent = 'Recover your';
         root.querySelector('.lead').textContent = 'Get a replacement key for your existing Community license. Its original limits and expiry stay unchanged.';
         root.querySelector('.features').hidden = true;
+        root.querySelector('.confirmation-again').href = './?mode=recover';
+        restart.href = './?mode=recover';
         root.querySelector('.dp-mode-label').textContent = 'LICENSE RECOVERY';
         root.querySelector('.dp-form-title').textContent = 'Recover your Community license';
         root.querySelector('.dp-terms-row').hidden = true;

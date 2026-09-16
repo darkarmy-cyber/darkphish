@@ -253,7 +253,7 @@ Schéma 3 pridáva účel k requests a overuje jedinečný index email_hash. Sta
 nevybavené odkazy sa považujú za registráciu, preto nemôžu implicitne nahradiť kľúč.
 Vyhľadávanie kontroluje aj uloženú adresu pre historické nekanonické hashe.
 Viac Community záznamov pre rovnakú adresu vyvolá upozornenie v Dashboard/Community
- a výsledok support_required po overení. Nič sa automaticky nemaže ani nezlučuje.
+a výsledok support_required po overení. Nič sa automaticky nemaže ani nezlučuje.
 
 Nasadenie: nahraď plugin rovnakého názvu priečinka balíkom 0.2.2 a nahraj tri nové
 súbory license/. Inštalácia doplní schému pri ďalšom načítaní; súkromný kľúč a

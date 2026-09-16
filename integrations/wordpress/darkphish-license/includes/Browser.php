@@ -39,7 +39,7 @@ add_filter('rest_pre_dispatch', function ($result, $server, \WP_REST_Request $re
     if ($request->get_method() === 'OPTIONS' && $origin !== '') {
         $method = $request->get_header('access-control-request-method');
         $expected = $request->get_route() === '/darkphish-license/v1/public-config' ? 'GET' : 'POST';
-        $headers = array_filter(array_map('trim', explode(',', strtolower($request->get_header('access-control-request-headers')))));
+        $headers = array_filter(array_map('trim', explode(',', strtolower((string) $request->get_header('access-control-request-headers')))));
         if ($method !== $expected || array_diff($headers, ['content-type'])) {
             return reply(['message' => 'Preflight is not allowed.'], 403);
         }
@@ -66,7 +66,7 @@ add_filter('rest_pre_serve_request', function ($served, $result, \WP_REST_Reques
 
 function publicConfiguration(): \WP_REST_Response {
     $settings = get_option('darkphish_license_settings', []);
-    if (!is_ssl() || !defined('DARKPHISH_TURNSTILE_SITE_KEY') || DARKPHISH_TURNSTILE_SITE_KEY === '' ||
+    if (!is_ssl() || httpsOrigin(home_url()) === '' || !defined('DARKPHISH_TURNSTILE_SITE_KEY') || DARKPHISH_TURNSTILE_SITE_KEY === '' ||
         !defined('DARKPHISH_TURNSTILE_SECRET') || DARKPHISH_TURNSTILE_SECRET === '' ||
         !registrationUrlAllowed($settings['registration_url'] ?? '') ||
         httpsOrigin($settings['terms_url'] ?? '') === '' || empty($settings['terms_version'])) {

@@ -39,6 +39,8 @@ try {
     }});
     assert.equal(preflight.status, 204);
     assert.equal(preflight.headers.get('access-control-allow-headers'), 'Content-Type');
+    const simplePreflight = await call('/darkphish-license/v1/public-config', origin, {method: 'OPTIONS', headers: {'Access-Control-Request-Method': 'GET'}});
+    assert.equal(simplePreflight.status, 204);
     const forbidden = await call('/darkphish-license/v1/request', origin, {method: 'OPTIONS', headers: {
         'Access-Control-Request-Method': 'DELETE', 'Access-Control-Request-Headers': 'authorization'
     }});

@@ -62,7 +62,7 @@ function reply(array $body, int $status = 200): \WP_REST_Response {
 }
 
 function input(\WP_REST_Request $request, array $fields): array {
-    if (strlen($request->get_body()) > 8192 || !str_contains(strtolower($request->get_header('content-type')), 'application/json')) {
+    if (strlen($request->get_body()) > 8192 || !str_contains(strtolower((string) $request->get_header('content-type')), 'application/json')) {
         throw new \InvalidArgumentException('Invalid request');
     }
     $data = json_decode($request->get_body(), true, 8, JSON_THROW_ON_ERROR);

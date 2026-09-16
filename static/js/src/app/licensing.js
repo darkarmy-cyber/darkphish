@@ -4,6 +4,7 @@ $(document).ready(function () {
     function limitLabel(value) { return value === -1 ? "Unlimited" : value; }
     function render(status) {
         configured = status.configured === true;
+        $("#licenseEdition").text(status.edition || "Not activated");
         $("#licenseState").text(status.state || "missing");
         $("#licenseID").text(status.license_id || "Not activated");
         $("#licenseInstallation").text(status.installation_id || "—");

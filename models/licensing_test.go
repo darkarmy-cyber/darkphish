@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func testLicenseManager(t *testing.T, managedUsers, activeCampaigns int) *licensing.Manager {
+func testLicenseManager(t *testing.T, managedUsers, activeCampaigns int, editions ...string) *licensing.Manager {
 	t.Helper()
 	public, private, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -26,8 +26,12 @@ func testLicenseManager(t *testing.T, managedUsers, activeCampaigns int) *licens
 	if err != nil {
 		t.Fatal(err)
 	}
+	edition := licensing.EditionCommunity
+	if len(editions) > 0 {
+		edition = editions[0]
+	}
 	lease := licensing.Lease{
-		Schema: licensing.LeaseSchema, Product: licensing.ProductDarkphish, Edition: licensing.EditionCommunity,
+		Schema: licensing.LeaseSchema, Product: licensing.ProductDarkphish, Edition: edition,
 		LicenseID: "DP-COM-TEST", InstallationID: manager.InstallationID(),
 		IssuedAt: now.Add(-time.Minute).Unix(), NotBefore: now.Add(-time.Minute).Unix(),
 		ExpiresAt: now.Add(time.Hour).Unix(), GraceUntil: now.Add(2 * time.Hour).Unix(),
@@ -184,5 +188,20 @@ func TestCampaignLaunchRechecksMissingLease(t *testing.T) {
 	ConfigureLicenseManager(testLicenseManager(t, 100, 1))
 	if err := CheckCampaignLicense(); err != nil {
 		t.Fatalf("active license blocked launch: %v", err)
+	}
+}
+
+func TestEnterpriseStatusAndUnlimitedEnforcement(t *testing.T) {
+	connection := withLicensingDB(t)
+	ConfigureLicenseManager(testLicenseManager(t, licensing.Unlimited, licensing.Unlimited, licensing.EditionEnterprise))
+	status, err := GetLicenseStatus(time.Now())
+	if err != nil || status.Edition != licensing.EditionEnterprise || status.ManagedUsersLimit != licensing.Unlimited || status.ActiveCampaignLimit != licensing.Unlimited {
+		t.Fatalf("status=%+v err=%v", status, err)
+	}
+	if err := enforceGroupLicense(connection, &Group{Targets: []Target{{BaseRecipient: BaseRecipient{Email: "one@example.test"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := enforceCampaignLicense(connection); err != nil {
+		t.Fatal(err)
 	}
 }

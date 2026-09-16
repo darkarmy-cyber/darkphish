@@ -16,7 +16,7 @@ var (
 	licenseClient     *licensing.Client
 )
 
-var ErrLicensingNotConfigured = errors.New("Community licensing is not configured")
+var ErrLicensingNotConfigured = errors.New("Licensing is not configured")
 
 type LicenseStatus struct {
 	Configured          bool   `json:"configured"`
@@ -52,7 +52,7 @@ func GetLicenseStatus(now time.Time) (LicenseStatus, error) {
 	lease, state, verifyErr := manager.Snapshot(now.UTC())
 	status := LicenseStatus{
 		Configured:          currentLicenseClient() != nil,
-		Edition:             licensing.EditionCommunity,
+		Edition:             lease.Edition,
 		State:               string(state),
 		LicenseID:           lease.LicenseID,
 		InstallationID:      manager.InstallationID(),

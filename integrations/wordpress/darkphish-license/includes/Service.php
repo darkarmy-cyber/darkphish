@@ -3,7 +3,7 @@ declare(strict_types=1);
 namespace Darkphish\Licensing;
 
 final class Service {
-    public function __construct(private Store $store, private Signer $signer) {}
+    public function __construct(private Store $store, private ?Signer $signer = null) {}
 
     public function request(string $email, string $terms, int $now): string {
         $token = Signer::encode(random_bytes(32));
@@ -42,6 +42,7 @@ final class Service {
     }
 
     public function exchange(string $credential, string $installation, string $version, bool $refresh, int $now): array {
+        if (!$this->signer) { throw new \RuntimeException('Signing is not configured'); }
         if (!preg_match('/^[A-Za-z0-9-]{16,80}$/D', $installation) || !preg_match('/^[A-Za-z0-9.+_-]{1,40}$/D', $version) || strlen($credential) < 32 || strlen($credential) > 128) {
             throw new \DomainException('License unavailable');
         }

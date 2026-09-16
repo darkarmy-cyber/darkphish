@@ -27,9 +27,13 @@ define('DARKPHISH_LICENSE_KEY_FILE', $keyPath);
 require_once ABSPATH . 'wp-settings.php';
 require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 require_once ABSPATH . 'wp-admin/includes/plugin.php';
+// wp_install sends an administrator notification; never deliver mail in tests.
+add_filter('pre_wp_mail', static fn () => true, -100);
 if (!is_blog_installed()) { wp_install('License tests', 'testadmin', 'admin@example.test', true, '', 'test-only-password-not-for-production'); }
 $activated = activate_plugin('darkphish-license/darkphish-license.php');
 if (is_wp_error($activated)) { throw new RuntimeException('Activation failed: ' . $activated->get_error_message()); }
+// WP_INSTALLING intentionally omits active plugins on subsequent subprocess boots.
+require_once ABSPATH . 'wp-content/plugins/darkphish-license/darkphish-license.php';
 
 function check(bool $condition, string $message): void { if (!$condition) { throw new RuntimeException($message); } }
 function call_api(string $operation, array|string $data): WP_REST_Response {
@@ -108,7 +112,7 @@ foreach ($workers as [$process, $pipes]) {
     check(proc_close($process) === 0, 'Competing process failed: ' . $err);
     preg_match('/STATUS:(\d+)/', $out, $found); $statuses[] = (int) ($found[1] ?? 0);
 }
-sort($statuses); check($statuses === [200, 403], 'Concurrent activation exceeded one installation');
+sort($statuses); check($statuses === [200, 403], 'Unexpected competing activation statuses: ' . json_encode($statuses));
 
 // Audit insertion failure must roll back every license mutation.
 $before = $db->find('licenses', 'id', $license['license_id']);

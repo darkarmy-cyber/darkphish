@@ -163,10 +163,11 @@ function adminPage(): void {
 }
 
 add_action('admin_post_darkphish_license_admin', function (): void {
-    if (!current_user_can('manage_options')) { wp_die('Forbidden', '', ['response' => 403]); }
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || !current_user_can('manage_options')) { wp_die('Forbidden', '', ['response' => 403]); }
     $id = sanitize_text_field(wp_unslash($_POST['license_id'] ?? ''));
     check_admin_referer('darkphish-license:' . $id);
-    try { service()->administer($id, sanitize_key($_POST['operation'] ?? ''), get_current_user_id(), time()); }
+    // Emergency revocation must remain available if the signing file is missing.
+    try { (new Service(store()))->administer($id, sanitize_key($_POST['operation'] ?? ''), get_current_user_id(), time()); }
     catch (\Throwable $error) { wp_die('The licensing action could not be completed.'); }
     wp_safe_redirect(admin_url('options-general.php?page=darkphish-license')); exit;
 });

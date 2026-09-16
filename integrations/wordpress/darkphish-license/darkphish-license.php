@@ -31,7 +31,8 @@ function signer(): Signer {
 }
 function service(): Service { return new Service(store(), signer()); }
 
-function initializeSigningKey(): void {
+// Returns whether the completion audit was saved; the key is durable either way.
+function initializeSigningKey(): bool {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || !is_ssl() || !current_user_can('manage_options')) {
         wp_die('Forbidden', '', ['response' => 403]);
     }
@@ -43,12 +44,15 @@ function initializeSigningKey(): void {
     $db = store();
     $db->event('', 'signing.initialize.request', get_current_user_id());
     KeySetup::create(DARKPHISH_LICENSE_KEY_FILE, $id, $roots);
-    $db->event('', 'signing.initialize.success', get_current_user_id());
+    try { $db->event('', 'signing.initialize.success', get_current_user_id()); }
+    catch (\Throwable $error) { return false; }
+    return true;
 }
 
 add_action('admin_post_darkphish_license_initialize_key', function (): void {
-    try { initializeSigningKey(); }
+    try { $audited = initializeSigningKey(); }
     catch (\Throwable $error) { wp_die('Kľúč sa nepodarilo vytvoriť. Skontrolujte nakonfigurovanú súkromnú cestu, práva a či súbor už existuje. Existujúci kľúč sa neprepisuje.'); }
+    if (!$audited) { wp_die('Podpisový kľúč bol úspešne vytvorený a uložený. Záznam o dokončení sa nepodarilo uložiť do auditu. Kľúč nemažte ani nevytvárajte znova; skontrolujte dostupnosť databázy auditu.'); }
     wp_safe_redirect(admin_url('admin.php?page=darkphish-licenses&tab=settings')); exit;
 });
 
@@ -226,7 +230,7 @@ add_action('admin_post_darkphish_license_admin', function (): void {
 
 add_shortcode('darkphish_license', function (): string {
     $settings = get_option('darkphish_license_settings', []);
-    if (!is_ssl() || !defined('DARKPHISH_TURNSTILE_SITE_KEY') || !defined('DARKPHISH_TURNSTILE_SECRET') || empty($settings['terms_url']) || empty($settings['terms_version']) || empty($settings['registration_url'])) {
+    if (publicConfiguration()->get_status() !== 200) {
         return '<p>Community registration is not available yet.</p>';
     }
     // Token is carried in the fragment, never in a query string or referrer.

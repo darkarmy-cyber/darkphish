@@ -63,6 +63,22 @@ if (($argv[1] ?? '') === 'compete') {
 
 $db = new Darkphish\Licensing\Store($wpdb);
 $db->install(); // upgrade/install idempotency
+// The shared connection's error mode must survive all successful and failed operations.
+$originalSuppression = $wpdb->suppress_errors;
+foreach ([false, true] as $suppression) {
+    $wpdb->suppress_errors($suppression);
+    $scopedStore = new Darkphish\Licensing\Store($wpdb);
+    check($wpdb->suppress_errors === $suppression, 'Store constructor changed global error mode');
+    $scopedStore->install();
+    $scopedStore->find('licenses', 'id', 'absent');
+    check($wpdb->suppress_errors === $suppression, 'Successful query changed global error mode');
+    ob_start();
+    try { $scopedStore->execute('SELECT * FROM darkphish_missing_test_table'); throw new LogicException('Invalid query accepted'); }
+    catch (RuntimeException $expected) {}
+    finally { $printed = ob_get_clean(); }
+    check($printed === '' && $wpdb->suppress_errors === $suppression, 'Failed query leaked SQL or changed global error mode');
+}
+$wpdb->suppress_errors($originalSuppression);
 class AdminDenied extends RuntimeException {}
 add_filter('wp_die_handler', static fn () => static function () { throw new AdminDenied('denied'); });
 $_SERVER['REQUEST_METHOD'] = 'POST';
@@ -75,7 +91,10 @@ try { Darkphish\Licensing\initializeSigningKey(); throw new LogicException('Key 
 catch (AdminDenied $expected) {}
 check(!file_exists($keyPath), 'Unauthorized setup created a private key');
 $_REQUEST['_wpnonce'] = wp_create_nonce('darkphish-license-initialize-key');
-Darkphish\Licensing\initializeSigningKey();
+$db->execute("CREATE TRIGGER darkphish_test_reject_key_success BEFORE INSERT ON {$db->prefix}events FOR EACH ROW BEGIN IF NEW.action='signing.initialize.success' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='test completion audit failure'; END IF; END");
+try { check(Darkphish\Licensing\initializeSigningKey() === false, 'Missing completion audit was not reported truthfully'); }
+finally { $db->execute('DROP TRIGGER darkphish_test_reject_key_success'); }
+check(count(Darkphish\Licensing\signer()->keyring()['keys']) === 1, 'Completion audit failure lost a successfully created key');
 $keyDigest = hash_file('sha256', $keyPath);
 try { Darkphish\Licensing\initializeSigningKey(); throw new LogicException('Existing key replaced'); }
 catch (RuntimeException $expected) {}
@@ -101,16 +120,20 @@ foreach (['https://evil.test/licencia/', 'https://darkphish.test.evil.test/licen
 $publicConfig = call_api('public-config', [], 'https://darkphish.test', 'GET');
 update_option('darkphish_license_schema', '3', false);
 check(call_api('public-config', [], 'https://darkphish.test', 'GET')->get_status() === 503, 'Public form offered before schema upgrade');
+check(!str_contains(do_shortcode('[darkphish_license]'), '<form'), 'Shortcode offered before schema upgrade');
 update_option('darkphish_license_schema', '4', false);
 $savedKey = file_get_contents($keyPath);
 try {
     file_put_contents($keyPath, '{}');
     $unready = call_api('public-config', [], 'https://darkphish.test', 'GET');
     check($unready->get_status() === 503 && !str_contains(json_encode($unready->get_data()), $keyPath), 'Invalid signing file exposed public readiness or path');
+    check(!str_contains(do_shortcode('[darkphish_license]'), '<form'), 'Shortcode offered with invalid key');
     unlink($keyPath);
     check(call_api('public-config', [], 'https://darkphish.test', 'GET')->get_status() === 503, 'Missing signing file exposed public readiness');
+    check(!str_contains(do_shortcode('[darkphish_license]'), '<form'), 'Shortcode offered with missing key');
 } finally { file_put_contents($keyPath, $savedKey); chmod($keyPath, 0600); sodium_memzero($savedKey); }
 check($publicConfig->get_status() === 200 && $publicConfig->get_data()['site_key'] === 'test-public-site-key', 'Public config unavailable');
+check(str_contains(do_shortcode('[darkphish_license]'), '<form'), 'Ready shortcode unavailable');
 check(!str_contains(json_encode($publicConfig->get_data()), DARKPHISH_TURNSTILE_SECRET), 'Public config leaked secret');
 foreach (['https://evil.test', 'null', 'http://darkphish.test', 'https://darkphish.test.evil.test', 'https://darkphish.test:444'] as $origin) {
     check(call_api('public-config', [], $origin, 'GET')->get_status() === 403, 'Untrusted browser origin accepted');
@@ -175,7 +198,6 @@ sort($statuses); check($statuses === [200, 403], 'Unexpected competing activatio
 // Audit insertion failure must roll back every license mutation.
 $before = $db->find('licenses', 'id', $license['license_id']);
 $wpdb->query("CREATE TRIGGER darkphish_test_reject_event BEFORE INSERT ON {$db->prefix}events FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='test event failure'");
-$wpdb->suppress_errors(true);
 try { $service->administer($license['license_id'], 'revoke', 1, time()); throw new LogicException('Audit failure did not abort'); }
 catch (RuntimeException $expected) {}
 finally { $wpdb->query('DROP TRIGGER darkphish_test_reject_event'); }

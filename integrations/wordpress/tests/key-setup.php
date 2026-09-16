@@ -28,6 +28,30 @@ try {
         check(!file_exists($path), 'Failed key initialization left an unrecoverable partial file');
     }
     unset($GLOBALS['keySetupFault']);
+    // Exercise the documented CLI itself, not just the admin setup helper.
+    $cliPath = $base . '/private/cli-key.json';
+    $cli = dirname(__DIR__) . '/darkphish-license/tools/create-key.php';
+    $runCli = function (string $fault) use ($cli, $cliPath): array {
+        $code = '$GLOBALS["keySetupFault"]=' . var_export($fault, true) . '; require ' . var_export(__DIR__ . '/key-setup-faults.php', true) . '; $argv=["create-key.php",' . var_export($cliPath, true) . ',"cli-test"]; $argc=3; require ' . var_export($cli, true) . ';';
+        $command = [PHP_BINARY];
+        if (PHP_OS_FAMILY === 'Windows') { array_push($command, '-d', 'extension_dir=' . ini_get('extension_dir'), '-d', 'extension=php_sodium.dll'); }
+        array_push($command, '-r', $code);
+        $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        check(is_resource($process), 'CLI test process unavailable'); fclose($pipes[0]);
+        $out = stream_get_contents($pipes[1]); $err = stream_get_contents($pipes[2]); fclose($pipes[1]); fclose($pipes[2]);
+        return [proc_close($process), $out, $err];
+    };
+    foreach (['write', 'flush', 'sync'] as $fault) {
+        [$status, $out] = $runCli($fault);
+        clearstatcache(true, $cliPath);
+        check($status === 1 && $out === '' && !file_exists($cliPath), 'Failed CLI initialization retained a partial key');
+    }
+    [$status, $out] = $runCli('');
+    check($status === 0 && isset(json_decode($out, true)['keys']['cli-test']), 'CLI retry did not produce a usable public keyring');
+    $cliDigest = hash_file('sha256', $cliPath);
+    [$status] = $runCli('');
+    check($status === 1 && hash_file('sha256', $cliPath) === $cliDigest, 'CLI replaced an existing key');
+    unlink($cliPath);
     KeySetup::create($path, 'test', [$base . '/public']);
     $signer = Signer::fromFile($path, $base . '/public');
     check(isset($signer->keyring()['keys']['test']), 'Generated key cannot be read');
@@ -49,6 +73,7 @@ try {
     }
     echo "No-SSH key setup passed: public-path rejection, exclusive creation, key loading and private permissions.\n";
 } finally {
+    if (isset($cliPath) && is_file($cliPath)) { unlink($cliPath); }
     if (is_file($path)) { unlink($path); }
     rmdir($base . '/private'); rmdir($base . '/public'); rmdir($base);
 }

@@ -195,5 +195,5 @@ Referencie: [WordPress REST API](https://developer.wordpress.org/rest-api/extend
 Anglické návrhy podmienok a oznámenia o ochrane údajov sú v
 [legal-drafts/](legal-drafts/README.md). Obsahujú výslovne označenú pripravovanú
 spoločnosť a IČO `XXXX`; nie sú určené na publikovanie ani zapnutie registrácie.
-Postup pre potvrdenú schránku `info@darkarmy.sk` u SlovakNETu je v
+Postup pre plánovanú licenčnú schránku `license@darkphish.sk` u Websupportu je v
 [návode na SMTP](legal-drafts/MAIL_SETUP.sk.md).

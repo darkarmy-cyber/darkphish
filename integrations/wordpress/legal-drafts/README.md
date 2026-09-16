@@ -22,7 +22,12 @@ They are deliberately outside `static-site/` and the installable plugin.
 - Confirm the actual hosting and mail providers, processing locations,
   contractual arrangements and transfer safeguards. SlovakNET is the user's
   stated host, not a verified legal entity or confirmation of data location.
-  The owner confirms info@darkarmy.sk exists at SlovakNET. Follow [the mail setup guide](MAIL_SETUP.sk.md); SMTP and delivery are not yet tested.
+  The owner corrected the mail provider to Websupport and selected the new
+  license@darkphish.sk mailbox for licensing; its creation and SMTP delivery
+  remain unconfirmed. sales@darkphish.sk already handles the product website
+  sales buttons. info@darkarmy.sk remains the general developer contact.
+  WordPress hosting on fsociety.sk remains at SlovakNET. Follow
+  [the mail setup guide](MAIL_SETUP.sk.md); no live configuration was changed.
 - Select a defensible retention schedule and implement deletion/manual review
   for licenses, audit events, mail, server logs and backups. The present code
   automatically cleans only expired verification requests and rate buckets.

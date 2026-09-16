@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/key-setup-faults.php';
 require_once dirname(__DIR__) . '/darkphish-license/includes/Signer.php';
 require_once dirname(__DIR__) . '/darkphish-license/includes/KeySetup.php';
 use Darkphish\Licensing\KeySetup;
@@ -20,9 +21,20 @@ try {
     rejected(fn () => KeySetup::create($path, 'test', []));
     rejected(fn () => KeySetup::create($path, 'test', [$base . '/nonexistent']));
     check(!file_exists($path) && !file_exists($base . '/public/key.json'), 'Rejected creation left a file');
+    foreach (['write', 'flush', 'sync'] as $fault) {
+        $GLOBALS['keySetupFault'] = $fault;
+        rejected(fn () => KeySetup::create($path, 'test', [$base . '/public']));
+        clearstatcache(true, $path);
+        check(!file_exists($path), 'Failed key initialization left an unrecoverable partial file');
+    }
+    unset($GLOBALS['keySetupFault']);
     KeySetup::create($path, 'test', [$base . '/public']);
     $signer = Signer::fromFile($path, $base . '/public');
     check(isset($signer->keyring()['keys']['test']), 'Generated key cannot be read');
+    rejected(fn () => Signer::fromFile($path, [$base . '/public', $base . '/private']));
+    rejected(fn () => Signer::fromFile($path, [$base . '/private', $base . '/public']));
+    rejected(fn () => Signer::fromFile($path, [$base . '/public', $base . '/missing']));
+    rejected(fn () => Signer::fromFile($path, []));
     $before = hash_file('sha256', $path);
     rejected(fn () => KeySetup::create($path, 'replacement', [$base . '/public']));
     check(hash_file('sha256', $path) === $before, 'Existing key was overwritten');

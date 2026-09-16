@@ -66,6 +66,12 @@ add_filter('rest_pre_serve_request', function ($served, $result, \WP_REST_Reques
 
 function publicConfiguration(): \WP_REST_Response {
     $settings = get_option('darkphish_license_settings', []);
+    try {
+        if (get_option('darkphish_license_schema') !== '4') { throw new \RuntimeException('Storage not ready'); }
+        signer();
+    } catch (\Throwable $error) {
+        return reply(['message' => 'Community registration is not available yet.'], 503);
+    }
     if (!is_ssl() || httpsOrigin(home_url()) === '' || !defined('DARKPHISH_TURNSTILE_SITE_KEY') || DARKPHISH_TURNSTILE_SITE_KEY === '' ||
         !defined('DARKPHISH_TURNSTILE_SECRET') || DARKPHISH_TURNSTILE_SECRET === '' ||
         !registrationUrlAllowed($settings['registration_url'] ?? '') ||

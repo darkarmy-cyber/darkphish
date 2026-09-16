@@ -15,8 +15,8 @@ final class Store {
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         $charset = $this->db->get_charset_collate();
         $tables = [
-            'licenses' => "id varchar(40) NOT NULL, email varchar(254) NOT NULL, email_hash char(64) NOT NULL, edition varchar(20) NOT NULL DEFAULT 'community', key_hash char(64) NOT NULL, status varchar(16) NOT NULL, managed_users int NOT NULL, active_campaigns int NOT NULL, expires_at bigint NOT NULL, installation varchar(80) NOT NULL DEFAULT '', refresh_hash char(64) NOT NULL DEFAULT '', product_version varchar(40) NOT NULL DEFAULT '', last_seen bigint NOT NULL DEFAULT 0, created_at bigint NOT NULL, terms_version varchar(80) NOT NULL, PRIMARY KEY  (id), UNIQUE KEY email_hash (email_hash), UNIQUE KEY key_hash (key_hash), KEY refresh_hash (refresh_hash)",
-            'requests' => "token_hash char(64) NOT NULL, email varchar(254) NOT NULL, expires_at bigint NOT NULL, terms_version varchar(80) NOT NULL, purpose varchar(16) NOT NULL DEFAULT 'register', PRIMARY KEY  (token_hash)",
+            'licenses' => "id varchar(40) NOT NULL, email varchar(254) NOT NULL, email_hash char(64) NOT NULL, canonical_email_hash char(64) NOT NULL DEFAULT '', edition varchar(20) NOT NULL DEFAULT 'community', key_hash char(64) NOT NULL, status varchar(16) NOT NULL, managed_users int NOT NULL, active_campaigns int NOT NULL, expires_at bigint NOT NULL, installation varchar(80) NOT NULL DEFAULT '', refresh_hash char(64) NOT NULL DEFAULT '', product_version varchar(40) NOT NULL DEFAULT '', last_seen bigint NOT NULL DEFAULT 0, created_at bigint NOT NULL, terms_version varchar(80) NOT NULL, PRIMARY KEY  (id), UNIQUE KEY email_hash (email_hash), UNIQUE KEY key_hash (key_hash), KEY refresh_hash (refresh_hash), KEY community_email (edition,canonical_email_hash)",
+            'requests' => "token_hash char(64) NOT NULL, email varchar(254) NOT NULL, expires_at bigint NOT NULL, terms_version varchar(80) NOT NULL, purpose varchar(16) NOT NULL DEFAULT 'register', PRIMARY KEY  (token_hash), KEY recovery_email (email,purpose)",
             'limits' => "bucket char(64) NOT NULL, hits int NOT NULL DEFAULT 0, expires_at bigint NOT NULL, PRIMARY KEY  (bucket)",
             'events' => "id bigint unsigned NOT NULL AUTO_INCREMENT, license_id varchar(40) NOT NULL, action varchar(40) NOT NULL, actor bigint unsigned NOT NULL DEFAULT 0, created_at bigint NOT NULL, PRIMARY KEY  (id), KEY license_id (license_id)",
         ];
@@ -31,6 +31,18 @@ final class Store {
                 throw new \RuntimeException('Request purpose upgrade unavailable');
             }
             if ($name === 'licenses') {
+                if (!$this->db->get_row("SHOW COLUMNS FROM {$this->prefix}licenses LIKE 'canonical_email_hash'")) {
+                    throw new \RuntimeException('Canonical email upgrade unavailable');
+                }
+                // Preserve legacy identifiers, credentials and duplicate records.
+                // This additive index is nonunique so ambiguity remains visible.
+                $this->execute("UPDATE {$this->prefix}licenses SET canonical_email_hash=SHA2(LOWER(TRIM(email)),256) WHERE canonical_email_hash=''");
+                $lookup = $this->db->get_results("SHOW INDEX FROM {$this->prefix}licenses WHERE Key_name='community_email'", ARRAY_A) ?: [];
+                usort($lookup, fn (array $a, array $b): int => (int) $a['Seq_in_index'] <=> (int) $b['Seq_in_index']);
+                if (array_column($lookup, 'Column_name') !== ['edition', 'canonical_email_hash'] ||
+                    array_filter($lookup, fn (array $row): bool => (int) $row['Non_unique'] !== 1 || $row['Sub_part'] !== null)) {
+                    throw new \RuntimeException('Canonical email index unavailable');
+                }
                 $index = $this->db->get_results("SHOW INDEX FROM {$this->prefix}licenses WHERE Key_name='email_hash'", ARRAY_A);
                 if (count($index ?: []) !== 1 || (int) $index[0]['Non_unique'] !== 0 || $index[0]['Column_name'] !== 'email_hash') {
                     throw new \RuntimeException('Unique email index unavailable');
@@ -73,14 +85,15 @@ final class Store {
     }
 
     public function insert(string $table, array $record): void {
+        if ($table === 'licenses') { $record['canonical_email_hash'] = hash('sha256', strtolower(trim($record['email']))); }
         if ($this->db->insert($this->prefix . $table, $record) === false) {
             throw new \RuntimeException('Licensing storage unavailable');
         }
     }
 
-    /** Check the stored address too, so legacy noncanonical hashes cannot create new licenses. */
+    /** Indexed lookup also covers migrated legacy hashes without locking a table scan. */
     public function communityForEmail(string $email): array {
-        $rows = $this->db->get_results($this->db->prepare("SELECT * FROM {$this->prefix}licenses WHERE edition='community' AND (email_hash=%s OR LOWER(TRIM(email))=%s) ORDER BY id LIMIT 2 FOR UPDATE", hash('sha256', $email), $email), ARRAY_A);
+        $rows = $this->db->get_results($this->db->prepare("SELECT * FROM {$this->prefix}licenses WHERE edition='community' AND canonical_email_hash=%s ORDER BY id LIMIT 2 FOR UPDATE", hash('sha256', strtolower(trim($email)))), ARRAY_A);
         if ($this->db->last_error !== '') { throw new \RuntimeException('Licensing storage unavailable'); }
         return $rows ?: [];
     }
@@ -92,6 +105,7 @@ final class Store {
     }
 
     public function update(string $id, array $record): void {
+        if (isset($record['email'])) { $record['canonical_email_hash'] = hash('sha256', strtolower(trim($record['email']))); }
         if ($this->db->update($this->prefix . 'licenses', $record, ['id' => $id]) === false) {
             throw new \RuntimeException('Licensing storage unavailable');
         }
@@ -100,6 +114,12 @@ final class Store {
     public function deleteRequest(string $hash): void {
         if ($this->db->delete($this->prefix . 'requests', ['token_hash' => $hash]) !== 1) {
             throw new \DomainException('Verification unavailable');
+        }
+    }
+
+    public function deleteRecoveryRequests(string $email): void {
+        if ($this->db->delete($this->prefix . 'requests', ['email' => $email, 'purpose' => 'recover']) === false) {
+            throw new \RuntimeException('Recovery invalidation unavailable');
         }
     }
 

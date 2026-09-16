@@ -13,6 +13,8 @@ check($db->find('licenses', 'id', $original['license_id']) === $beforeRecovery, 
 try { $service->verify($registerAgain, $now); throw new LogicException('Duplicate registration token replayed'); } catch (DomainException $expected) {}
 
 $recoveryInput = ['email' => $email, 'challenge_token' => 'valid-test-token'];
+$siblingRecovery = $service->request($email, '', $now, 'recover');
+$unrelatedRecovery = $service->request('unrelated@example.test', '', $now, 'recover');
 $knownResponse = call_api('recover', $recoveryInput, 'https://darkphish.test');
 check($knownResponse->get_status() === 202, 'Recovery request failed');
 $recoveryMail = $mails[array_key_last($mails)];
@@ -31,7 +33,31 @@ $afterRecovery = $db->find('licenses', 'id', $original['license_id']);
 check($afterRecovery === array_replace($beforeRecovery, ['key_hash' => hash('sha256', $recovered['license_key'])]), 'Recovery altered limits, binding, refresh credential or terms');
 check(str_contains($mails[array_key_last($mails)]['message'], $recovered['license_key']), 'Recovered key missing from email');
 check(call_api('verify', ['token' => $recoveryMatch[1]])->get_status() === 403, 'Recovery verification replayed');
+check(call_api('verify', ['token' => $siblingRecovery])->get_status() === 403, 'Sibling recovery rotated the displayed key');
+check($db->find('licenses', 'id', $original['license_id'])['key_hash'] === hash('sha256', $recovered['license_key']), 'Sibling token invalidated the successful key');
+check($db->find('requests', 'token_hash', hash('sha256', $unrelatedRecovery)) !== null, 'Recovery invalidated another mailbox');
 check(count($db->communityForEmail($email)) === 1, 'Duplicate Community license created');
+
+$workers = [];
+foreach ([$service->request($email, '', $now, 'recover'), $service->request($email, '', $now, 'recover')] as $token) {
+    $pipes = [];
+    $process = proc_open([PHP_BINARY, __DIR__ . '/integration.php', 'register-compete', $token], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    check(is_resource($process), 'Could not start recovery worker'); fclose($pipes[0]);
+    $workers[] = [$process, $pipes, $token];
+}
+$recoveryWinners = [];
+foreach ($workers as [$process, $pipes, $token]) {
+    $out = stream_get_contents($pipes[1]); $err = stream_get_contents($pipes[2]); fclose($pipes[1]); fclose($pipes[2]);
+    check(proc_close($process) === 0, 'Recovery worker failed: ' . $err);
+    preg_match('/RESULT:(.*)/', $out, $found); $result = json_decode($found[1] ?? '', true);
+    if (($result['status'] ?? 0) === 503) {
+        $retry = call_api('verify', ['token' => $token]); $data = $retry->get_data();
+        $result = ['status' => $retry->get_status(), 'outcome' => $data['outcome'] ?? '', 'key_hash' => isset($data['license_key']) ? hash('sha256', $data['license_key']) : ''];
+    }
+    if ($result['status'] === 200 && $result['outcome'] === 'recovered') { $recoveryWinners[] = $result['key_hash']; }
+    else { check($result['status'] === 403, 'Sibling recovery was not invalidated'); }
+}
+check(count($recoveryWinners) === 1 && $db->find('licenses', 'id', $original['license_id'])['key_hash'] === $recoveryWinners[0], 'Concurrent recovery invalidated a successfully returned key');
 
 $failureToken = $service->request($email, '', $now, 'recover');
 $failMail = static fn () => false;
@@ -67,6 +93,8 @@ foreach (['register', 'recover'] as $purpose) {
     check($service->verify($token, $now) === ['outcome' => 'support_required'], 'Ambiguous records changed');
 }
 check(count($db->communityForEmail($email)) === 2, 'Duplicate records were destructively merged');
+$plan = $wpdb->get_row($wpdb->prepare("EXPLAIN SELECT * FROM {$db->prefix}licenses WHERE edition='community' AND canonical_email_hash=%s ORDER BY id LIMIT 2 FOR UPDATE", hash('sha256', $email)), ARRAY_A);
+check(($plan['key'] ?? '') === 'community_email' && ($plan['type'] ?? '') !== 'ALL', 'Verification is not an indexed mailbox lookup');
 
 $tokens = [$service->request('concurrent@example.test', 'test', $now), $service->request('CONCURRENT@example.test', 'test', $now)];
 $workers = [];

@@ -9,15 +9,19 @@ final class Signer {
         }
     }
 
-    public static function fromFile(string $path, string $webRoot): self {
+    public static function fromFile(string $path, string|array $webRoot): self {
         $file = realpath($path);
-        $root = realpath($webRoot);
-        if (!$file || !$root || !is_file($file) || !is_readable($file) || filesize($file) > 4096) {
+        $roots = is_array($webRoot) ? $webRoot : [$webRoot];
+        if (!$file || !$roots || !is_file($file) || !is_readable($file) || filesize($file) > 4096) {
             throw new \RuntimeException('Signing file unavailable');
         }
-        $prefix = rtrim(str_replace('\\', '/', $root), '/') . '/';
-        if (str_starts_with(strtolower(str_replace('\\', '/', $file)), strtolower($prefix))) {
-            throw new \RuntimeException('Signing file must be outside the web root');
+        foreach ($roots as $webRoot) {
+            $root = realpath($webRoot);
+            if (!$root || !is_dir($root)) { throw new \RuntimeException('Public directory cannot be verified'); }
+            $prefix = rtrim(str_replace('\\', '/', $root), '/') . '/';
+            if (str_starts_with(strtolower(str_replace('\\', '/', $file)), strtolower($prefix))) {
+                throw new \RuntimeException('Signing file must be outside all public roots');
+            }
         }
         if (PHP_OS_FAMILY !== 'Windows' && (fileperms($file) & 0077) !== 0) {
             throw new \RuntimeException('Signing file must have private permissions');

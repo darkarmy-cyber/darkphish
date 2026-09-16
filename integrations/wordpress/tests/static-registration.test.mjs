@@ -3,6 +3,19 @@ import test from 'node:test';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 const source = readFileSync(new URL('../static-site/license/registration.js', import.meta.url), 'utf8');
+test('shortcode strips the bearer fragment synchronously before DOM readiness', () => {
+    const shortcode = readFileSync(new URL('../darkphish-license/assets/registration.js', import.meta.url), 'utf8');
+    for (const hash of ['#dp-verify=mailbox-secret', '#dp-verify=']) {
+        const steps = [];
+        vm.runInNewContext(shortcode, {
+            URLSearchParams, location: {hash, pathname: '/registration/', search: '?mode=recover'},
+            history: {replaceState: (...args) => steps.push(['remove', ...args])},
+            document: {addEventListener: name => steps.push(['wait', name])},
+        });
+        assert.deepEqual(steps, [['remove', null, '', '/registration/?mode=recover'], ['wait', 'DOMContentLoaded']]);
+        assert.doesNotMatch(steps[0][3], /mailbox-secret|dp-verify/);
+    }
+});
 function element(hidden = false) {
     return {hidden, disabled: false, textContent: '', dataset: {}, focused: false, focus() { this.focused = true; }, handlers: {}, addEventListener(name, fn) { this.handlers[name] = fn; }};
 }

@@ -1,6 +1,10 @@
 /* No activation credentials or email addresses are stored in browser storage. */
-document.addEventListener('DOMContentLoaded', function () {
+(function () {
     'use strict';
+    // Remove bearer credentials before yielding to DOM readiness or later scripts.
+    let token = new URLSearchParams(location.hash.slice(1)).get('dp-verify');
+    if (token !== null) history.replaceState(null, '', location.pathname + location.search);
+    document.addEventListener('DOMContentLoaded', function () {
     const root = document.getElementById('darkphish-license');
     if (!root) return;
     const status = root.querySelector('.dp-status');
@@ -16,10 +20,7 @@ document.addEventListener('DOMContentLoaded', function () {
         recoveryLink.textContent = 'Register a new license';
         status.textContent = 'Verify your email to recover your existing Community license. Its expiry stays unchanged.';
     }
-    const fragment = new URLSearchParams(location.hash.slice(1));
-    let token = fragment.get('dp-verify');
     if (token) {
-        history.replaceState(null, '', location.pathname + location.search);
         form.hidden = true;
         verify.hidden = false;
         status.textContent = 'Confirm your email to display your license key. The link expires after 30 minutes.';
@@ -63,4 +64,5 @@ document.addEventListener('DOMContentLoaded', function () {
             if (result.outcome === 'recovered') status.textContent = 'Recovered. Original expiry: ' + new Date(result.expires_at * 1000).toISOString().slice(0, 10) + ' UTC. Limits and installation are unchanged. ' + (result.email_accepted ? 'A copy has been submitted for email delivery.' : 'The email copy could not be sent. Save this key securely.');
         } catch (error) { status.textContent = error.message; verify.disabled = false; }
     });
-});
+    });
+})();

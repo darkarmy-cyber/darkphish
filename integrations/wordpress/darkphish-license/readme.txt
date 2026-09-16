@@ -1,7 +1,7 @@
 === DarkPhish ===
 Requires at least: 6.8
 Requires PHP: 8.2
-Stable tag: 0.2.3
+Stable tag: 0.2.4
 License: MIT
 
 Community registration, edition dashboards and manual Professional/Enterprise licensing with Ed25519 leases.
@@ -35,7 +35,10 @@ an installation does not invalidate its previously issued offline lease.
 Deactivation retains license records and audit events. No uninstall erasure
 is automatic. Exclude API request/response bodies from logs, analytics and caches.
 
-Version 0.2.3 is an upgrade candidate; production SMTP delivery and commercial client activation still require deployment validation.
+Version 0.2.4 is an upgrade candidate; production SMTP delivery and commercial client activation still require deployment validation.
+
+= 0.2.4 =
+Review hardening: invalidate sibling recovery links, clean up incomplete key creation, validate both public roots, remove shortcode tokens before DOM readiness and require storage/signing readiness. Additive schema 4 indexes canonical email lookup without changing credentials or merging legacy duplicate records. Back up the database and signing key before upgrading; no new signing key is needed.
 
 = 0.2.3 =
 Renamed to DarkPhish. Editable, locally checked temporary email domain protection in Settings; starter list of 21 domains. Public registration and recovery return a clear mailbox message. Existing licenses and administrator issuance are unchanged.

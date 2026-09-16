@@ -31,7 +31,9 @@ final class KeySetup {
         try { $handle = @fopen($target, 'xb'); }
         finally { umask($previousMask); }
         if (!$handle) { throw new \RuntimeException('Signing file already exists or cannot be created'); }
-        $pair = $secret = '';
+        $pair = $secret = $json = '';
+        $complete = false;
+        $created = fstat($handle);
         try {
             if (PHP_OS_FAMILY !== 'Windows' && ((fstat($handle)['mode'] ?? 0777) & 0077) !== 0) {
                 throw new \RuntimeException('Private signing permissions could not be set');
@@ -42,9 +44,16 @@ final class KeySetup {
             if (fwrite($handle, $json) !== strlen($json) || !fflush($handle) || !fsync($handle)) {
                 throw new \RuntimeException('Signing file could not be saved');
             }
-            sodium_memzero($json);
+            $complete = true;
         } finally {
             fclose($handle);
+            if (!$complete) {
+                clearstatcache(true, $target);
+                $current = @lstat($target);
+                // Never remove an existing or concurrently substituted file.
+                if ($created && $current && $current['dev'] === $created['dev'] && $current['ino'] === $created['ino']) { @unlink($target); }
+            }
+            if ($json !== '') { sodium_memzero($json); }
             if ($secret !== '') { sodium_memzero($secret); }
             if ($pair !== '') { sodium_memzero($pair); }
         }

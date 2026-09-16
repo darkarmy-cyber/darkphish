@@ -3,13 +3,15 @@ declare(strict_types=1);
 // Included by integration.php against its explicitly disposable WP/MySQL database.
 // Reproduce an in-place upgrade with a real existing license and credentials.
 $legacy = $db->find('licenses', 'id', $license['license_id']);
+$wpdb->query("ALTER TABLE {$db->prefix}licenses DROP INDEX community_email, DROP COLUMN canonical_email_hash");
 $wpdb->query("ALTER TABLE {$db->prefix}licenses DROP COLUMN edition");
 $wpdb->query("ALTER TABLE {$db->prefix}requests DROP COLUMN purpose");
 delete_option('darkphish_license_schema');
 do_action('plugins_loaded');
-check(get_option('darkphish_license_schema') === '3', 'Upgrade version marker missing');
+check(get_option('darkphish_license_schema') === '4', 'Upgrade version marker missing');
 $upgraded = $db->find('licenses', 'id', $license['license_id']);
 check($upgraded['edition'] === 'community' && $upgraded['key_hash'] === $legacy['key_hash'] && $upgraded['installation'] === $legacy['installation'], 'Upgrade lost existing license');
+check($upgraded['canonical_email_hash'] === hash('sha256', strtolower(trim($legacy['email']))), 'Upgrade did not backfill canonical lookup');
 check(get_option('darkphish_license_settings') === $settings, 'Upgrade lost settings');
 $db->install();
 check($db->find('licenses', 'id', $license['license_id']) === $upgraded, 'Repeated upgrade changed license');

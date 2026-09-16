@@ -53,8 +53,9 @@ final class Service {
                 // Recovery changes only the key. No renewal, unbinding or revocation bypass.
                 $this->store->update($license['id'], ['key_hash' => hash('sha256', $key)]);
                 $this->store->event($license['id'], 'license.key.replace');
+                $this->store->deleteRecoveryRequests($email);
             }
-            $this->store->deleteRequest($hash);
+            if ($purpose === 'register') { $this->store->deleteRequest($hash); }
             return ['outcome' => $purpose === 'recover' ? 'recovered' : 'issued', 'license_key' => $key,
                 'license_id' => $license['id'], 'expires_at' => (int) $license['expires_at']];
         });

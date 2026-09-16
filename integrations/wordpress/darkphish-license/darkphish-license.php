@@ -2,7 +2,7 @@
 /**
  * Plugin Name: DarkPhish
  * Description: Community, Professional and Enterprise license management for Darkphish.
- * Version: 0.2.3
+ * Version: 0.2.4
  * Requires at least: 6.8
  * Requires PHP: 8.2
  * License: MIT
@@ -24,9 +24,10 @@ function signer(): Signer {
     if (!function_exists('sodium_crypto_sign_detached') || !defined('DARKPHISH_LICENSE_KEY_FILE')) {
         throw new \RuntimeException('Signing is not configured');
     }
-    // For WordPress in a subdirectory, DOCUMENT_ROOT also excludes sibling public files.
-    $root = $_SERVER['DOCUMENT_ROOT'] ?? '';
-    return Signer::fromFile(DARKPHISH_LICENSE_KEY_FILE, $root !== '' ? $root : ABSPATH);
+    // Both roots can be publicly served even when WordPress is an alias outside DOCUMENT_ROOT.
+    $roots = [ABSPATH];
+    if (!empty($_SERVER['DOCUMENT_ROOT'])) { $roots[] = $_SERVER['DOCUMENT_ROOT']; }
+    return Signer::fromFile(DARKPHISH_LICENSE_KEY_FILE, $roots);
 }
 function service(): Service { return new Service(store(), signer()); }
 
@@ -55,13 +56,13 @@ register_activation_hook(__FILE__, function (bool $networkWide): void {
     if ($networkWide || is_multisite()) { wp_die('Activate only on a single-site WordPress installation.'); }
     if (!function_exists('sodium_crypto_sign_detached')) { wp_die('PHP sodium is required.'); }
     store()->install();
-    update_option('darkphish_license_schema', '3', false);
+    update_option('darkphish_license_schema', '4', false);
     if (!wp_next_scheduled('darkphish_license_cleanup')) { wp_schedule_event(time() + 3600, 'hourly', 'darkphish_license_cleanup'); }
 });
 // ZIP replacement does not rerun the activation hook. Additive, retryable upgrade.
 add_action('plugins_loaded', function (): void {
-    if (get_option('darkphish_license_schema') !== '3') {
-        try { store()->install(); update_option('darkphish_license_schema', '3', false); }
+    if (get_option('darkphish_license_schema') !== '4') {
+        try { store()->install(); update_option('darkphish_license_schema', '4', false); }
         catch (\Throwable $error) { /* Keep the old version marker so the next request retries. */ }
     }
 });
@@ -98,7 +99,7 @@ function challenge(string $token, string $expectedHostname): bool {
 
 function endpoint(string $operation, \WP_REST_Request $request): \WP_REST_Response {
     try {
-        if (get_option('darkphish_license_schema') !== '3') { return reply(['message' => 'Licensing storage upgrade is required.'], 503); }
+        if (get_option('darkphish_license_schema') !== '4') { return reply(['message' => 'Licensing storage upgrade is required.'], 503); }
         if (!is_ssl() || wp_parse_url(home_url(), PHP_URL_SCHEME) !== 'https') { return reply(['message' => 'HTTPS is required.'], 503); }
         $db = store();
         $now = time();
@@ -229,7 +230,7 @@ add_shortcode('darkphish_license', function (): string {
         return '<p>Community registration is not available yet.</p>';
     }
     // Token is carried in the fragment, never in a query string or referrer.
-    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.2.3', true);
+    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.2.4', true);
     wp_enqueue_script('darkphish-turnstile', 'https://challenges.cloudflare.com/turnstile/v0/api.js', [], null, true);
     return '<section id="darkphish-license" data-api="' . esc_url(rest_url('darkphish-license/v1/')) . '" data-terms="' . esc_attr($settings['terms_version']) . '"><h2>Darkphish Community</h2><p>Free registration: 100 managed users and 1 active campaign.</p><p role="status" aria-live="polite" class="dp-status"></p><form class="dp-request"><label>Email <input type="email" name="email" maxlength="254" autocomplete="email" required></label><p class="dp-terms-row"><label><input type="checkbox" required> I accept the <a href="' . esc_url($settings['terms_url']) . '" target="_blank" rel="noopener noreferrer">Community terms</a>.</label></p><div class="cf-turnstile" data-action="darkphish-license" data-sitekey="' . esc_attr(DARKPHISH_TURNSTILE_SITE_KEY) . '"></div><button type="submit">Request license</button></form><button type="button" class="dp-verify" hidden>Confirm email and display my license key</button><pre class="dp-key" hidden></pre><p><a class="dp-recovery-link" href="' . esc_url($settings['registration_url'] . '?mode=recover') . '">Lost your license? Recover it</a></p></section>';
 });

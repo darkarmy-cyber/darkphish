@@ -53,7 +53,8 @@ if (PHP_SAPI === 'cli-server') {
 // Subprocesses compete for the same license using independent DB connections.
 if (($argv[1] ?? '') === 'register-compete') {
     $response = call_api('verify', ['token' => $argv[2]]);
-    echo 'RESULT:' . json_encode(['status' => $response->get_status(), 'outcome' => $response->get_data()['outcome'] ?? '']) . "\n"; exit;
+    echo 'RESULT:' . json_encode(['status' => $response->get_status(), 'outcome' => $response->get_data()['outcome'] ?? '',
+        'key_hash' => isset($response->get_data()['license_key']) ? hash('sha256', $response->get_data()['license_key']) : '']) . "\n"; exit;
 }
 if (($argv[1] ?? '') === 'compete') {
     $response = call_api('activate', ['license_key' => getenv('DARKPHISH_WP_TEST_LICENSE'), 'installation_id' => $argv[2], 'product_version' => '0.11.0']);
@@ -98,6 +99,17 @@ foreach (['https://evil.test/licencia/', 'https://darkphish.test.evil.test/licen
     check(sanitize_option('darkphish_license_settings', array_replace($settings, ['registration_url' => $bad]))['registration_url'] === '', 'Untrusted email destination accepted');
 }
 $publicConfig = call_api('public-config', [], 'https://darkphish.test', 'GET');
+update_option('darkphish_license_schema', '3', false);
+check(call_api('public-config', [], 'https://darkphish.test', 'GET')->get_status() === 503, 'Public form offered before schema upgrade');
+update_option('darkphish_license_schema', '4', false);
+$savedKey = file_get_contents($keyPath);
+try {
+    file_put_contents($keyPath, '{}');
+    $unready = call_api('public-config', [], 'https://darkphish.test', 'GET');
+    check($unready->get_status() === 503 && !str_contains(json_encode($unready->get_data()), $keyPath), 'Invalid signing file exposed public readiness or path');
+    unlink($keyPath);
+    check(call_api('public-config', [], 'https://darkphish.test', 'GET')->get_status() === 503, 'Missing signing file exposed public readiness');
+} finally { file_put_contents($keyPath, $savedKey); chmod($keyPath, 0600); sodium_memzero($savedKey); }
 check($publicConfig->get_status() === 200 && $publicConfig->get_data()['site_key'] === 'test-public-site-key', 'Public config unavailable');
 check(!str_contains(json_encode($publicConfig->get_data()), DARKPHISH_TURNSTILE_SECRET), 'Public config leaked secret');
 foreach (['https://evil.test', 'null', 'http://darkphish.test', 'https://darkphish.test.evil.test', 'https://darkphish.test:444'] as $origin) {

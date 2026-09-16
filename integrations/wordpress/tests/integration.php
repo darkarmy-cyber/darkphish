@@ -90,7 +90,7 @@ check(call_api('activate', array_replace($activation, ['admin' => 'yes']))->get_
 $stored = $db->find('licenses', 'id', $license['license_id']);
 check(!str_contains(json_encode($stored), $license['license_key']) && !str_contains(json_encode($stored), $refresh['refresh_token']), 'Raw credentials persisted');
 
-$service->administer($license['license_id'], 'revoke', 1, time());
+(new Darkphish\Licensing\Service($db))->administer($license['license_id'], 'revoke', 1, time());
 check(call_api('activate', $activation)->get_status() === 403 && call_api('refresh', $refresh)->get_status() === 403, 'Revocation did not stop issuance');
 $revokedToken = $service->request('owner@example.test', 'test-v1', time());
 check(call_api('verify', ['token' => $revokedToken])->get_status() === 403, 'Email reissue bypassed revocation');
@@ -123,6 +123,22 @@ catch (RuntimeException $expected) {}
 finally { $wpdb->query('DROP TRIGGER darkphish_test_reject_event'); }
 check($db->find('licenses', 'id', $license['license_id']) === $before, 'Audit failure left a partial update');
 check($db->rate('test', 'same-client', 1, 3600, time()) && !$db->rate('test', 'same-client', 1, 3600, time()), 'Rate limiting did not enforce limit');
+
+// Exercise the registered admin handler's permission and CSRF gates without
+// following its successful redirect/exit path.
+class AdminDenied extends RuntimeException {}
+add_filter('wp_die_handler', static fn () => static function () { throw new AdminDenied('denied'); });
+$_SERVER['REQUEST_METHOD'] = 'POST';
+$_POST = ['license_id' => $license['license_id'], 'operation' => 'revoke'];
+wp_set_current_user(0);
+try { do_action('admin_post_darkphish_license_admin'); throw new LogicException('Anonymous admin action accepted'); }
+catch (AdminDenied $expected) {}
+wp_set_current_user(1);
+$_REQUEST = [];
+try { do_action('admin_post_darkphish_license_admin'); throw new LogicException('Admin action without nonce accepted'); }
+catch (AdminDenied $expected) {}
+wp_set_current_user(0);
+check($db->find('licenses', 'id', $license['license_id']) === $before, 'Rejected admin request mutated license');
 
 $_SERVER['HTTPS'] = 'off';
 check(call_api('activate', $activation)->get_status() === 503, 'Plaintext issuance accepted');

@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const status = root.querySelector('.dp-status');
     const form = root.querySelector('.dp-request');
     const submit = form.querySelector('button');
+    const fields = form.querySelector('fieldset');
     const verify = root.querySelector('.dp-verify');
     const restart = root.querySelector('.dp-restart');
     let token = new URLSearchParams(location.hash.slice(1)).get('dp-verify');
@@ -38,6 +39,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         } catch (error) { status.textContent = error.message; verify.disabled = false; restart.hidden = false; }
     });
     if (token) {
+        form.hidden = true;
         if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
             token = ''; status.textContent = 'This verification link is invalid.'; restart.hidden = false; return;
         }
@@ -47,7 +49,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
     form.addEventListener('submit', async function (event) {
         event.preventDefault();
-        if (!form.reportValidity() || !challengeToken) return;
+        if (fields.disabled || !form.reportValidity() || !challengeToken) return;
         submit.disabled = true;
         try {
             await send('request', {email: new FormData(form).get('email'), terms_version: termsVersion, challenge_token: challengeToken});
@@ -66,7 +68,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             typeof settings.terms_version !== 'string' || !settings.terms_version) throw new Error('Registration has not been configured correctly yet.');
         termsVersion = settings.terms_version;
         root.querySelector('.dp-terms').href = terms.href;
-        form.hidden = false;
+        fields.disabled = false;
         status.textContent = 'We will send a verification link to your email address.';
         const script = document.createElement('script');
         script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
@@ -81,5 +83,5 @@ document.addEventListener('DOMContentLoaded', async function () {
         };
         script.onerror = function () { status.textContent = 'The anti-abuse check could not be loaded. Please reload the page.'; };
         document.head.appendChild(script);
-    } catch (error) { status.textContent = 'Registration is currently unavailable. Please try again later.'; form.hidden = true; }
+    } catch (error) { status.textContent = 'Registration is currently unavailable. Please try again later.'; fields.disabled = true; submit.disabled = true; }
 });

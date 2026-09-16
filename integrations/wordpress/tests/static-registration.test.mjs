@@ -9,7 +9,9 @@ function element(hidden = false) {
 async function page(hash = '', reply = async () => ({ok: true, json: async () => ({site_key: 'public', terms_url: 'https://www.darkphish.test/terms/', terms_version: 'v1', registration_url: 'https://www.darkphish.test/license/'})})) {
     const nodes = Object.fromEntries(['.dp-status', '.dp-request', '.dp-verify', '.dp-restart', '.dp-key', '.dp-terms', '.dp-challenge'].map(name => [name, element(name !== '.dp-status')]));
     const submit = element(); submit.disabled = true;
-    nodes['.dp-request'].querySelector = () => submit;
+    const fields = element(); fields.disabled = true;
+    nodes['.dp-request'].hidden = false;
+    nodes['.dp-request'].querySelector = name => name === 'fieldset' ? fields : submit;
     nodes['.dp-request'].reportValidity = () => true;
     nodes['.dp-request'].reset = () => {};
     const requests = [], scripts = [], replaced = [];
@@ -25,7 +27,7 @@ async function page(hash = '', reply = async () => ({ok: true, json: async () =>
         window: {turnstile: {render: (_, options) => { challenge = options; return 'widget'; }, reset: () => {}}}
     };
     vm.runInNewContext(source, context); await ready();
-    return {nodes, requests, scripts, replaced, submit, challenge: () => challenge};
+    return {nodes, requests, scripts, replaced, submit, fields, challenge: () => challenge};
 }
 test('verification removes the fragment before external work and requires an explicit click', async () => {
     const token = 'a'.repeat(43);
@@ -33,6 +35,7 @@ test('verification removes the fragment before external work and requires an exp
     assert.equal(p.replaced[0][2], '/license/');
     assert.equal(p.requests.length, 0); assert.equal(p.scripts.length, 0);
     assert.equal(p.nodes['.dp-verify'].hidden, false);
+    assert.equal(p.nodes['.dp-request'].hidden, true);
     await p.nodes['.dp-verify'].handlers.click();
     assert.equal(p.requests.length, 1);
     assert.equal(JSON.parse(p.requests[0].options.body).token, token);
@@ -55,9 +58,12 @@ test('registration uses current server settings and submits only after a challen
     assert.deepEqual(JSON.parse(p.requests[1].options.body), {email: 'test@example.test', terms_version: 'v1', challenge_token: 'valid-token'});
     assert.equal(p.submit.disabled, true);
 });
-test('configuration failures keep the registration form unavailable', async () => {
+test('configuration failures keep the form visible but prevent submission', async () => {
     const p = await page('', async () => ({ok: false, status: 503}));
-    assert.equal(p.nodes['.dp-request'].hidden, true); assert.equal(p.scripts.length, 0);
+    assert.equal(p.nodes['.dp-request'].hidden, false); assert.equal(p.scripts.length, 0);
+    assert.equal(p.fields.disabled, true); assert.equal(p.submit.disabled, true);
+    await p.nodes['.dp-request'].handlers.submit({preventDefault() {}});
+    assert.equal(p.requests.length, 1);
 });
 test('expired verification offers recovery without rendering untrusted content', async () => {
     const p = await page('#dp-verify=' + 'a'.repeat(43), async () => ({ok: false, status: 403}));

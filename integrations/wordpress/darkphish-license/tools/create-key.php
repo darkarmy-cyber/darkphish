@@ -2,6 +2,7 @@
 declare(strict_types=1);
 // Run only over a server terminal; never as a web request. Prints public data only.
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
+if (!function_exists('sodium_crypto_sign_keypair')) { fwrite(STDERR, "PHP sodium is required.\n"); exit(1); }
 require_once dirname(__DIR__) . '/includes/Signer.php';
 if ($argc !== 3 || !preg_match('/^[A-Za-z0-9._-]{1,80}$/D', $argv[2])) {
     fwrite(STDERR, "Usage: php create-key.php /private/path/key.json KEY-ID\n"); exit(1);

@@ -3,7 +3,7 @@ declare(strict_types=1);
 namespace Darkphish\Licensing;
 
 final class Signer {
-    public function __construct(private string $id, private string $secret) {
+    public function __construct(private string $id, #[\SensitiveParameter] private string $secret) {
         if (!preg_match('/^[A-Za-z0-9._-]{1,80}$/D', $id) || strlen($secret) !== SODIUM_CRYPTO_SIGN_SECRETKEYBYTES) {
             throw new \RuntimeException('Invalid signing configuration');
         }
@@ -22,7 +22,9 @@ final class Signer {
         if (PHP_OS_FAMILY !== 'Windows' && (fileperms($file) & 0077) !== 0) {
             throw new \RuntimeException('Signing file must have private permissions');
         }
-        $data = json_decode((string) file_get_contents($file), true, 8, JSON_THROW_ON_ERROR);
+        $raw = @file_get_contents($file);
+        if ($raw === false) { throw new \RuntimeException('Signing file unavailable'); }
+        $data = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
         $secret = base64_decode($data['secret_key'] ?? '', true);
         if (!is_string($secret)) {
             throw new \RuntimeException('Invalid signing configuration');

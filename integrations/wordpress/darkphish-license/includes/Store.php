@@ -5,6 +5,9 @@ namespace Darkphish\Licensing;
 final class Store {
     public readonly string $prefix;
     public function __construct(private \wpdb $db) {
+        // Licensing failures must not print SQL (including account email) into
+        // API responses or debug output, even when WordPress debug is enabled.
+        $db->suppress_errors(true);
         $this->prefix = $db->prefix . 'darkphish_';
     }
 

@@ -9,6 +9,8 @@
 ### Fixed
 
 - Harden the native Linux installer against inherited command-bearing environments, require systemd 245+ with a reachable manager, reject unusable `noexec` build locations before persistent mutation, and require stable readiness from both the administrative and simulation listeners before reporting success.
+- Report merged releases without a tag or staging draft as blocked recovery, identify missing maintainer attestations directly, and require verified current-version publication before preparing any subsequent version.
+
 
 ## 0.9.0 - 2026-09-15
 

@@ -29,7 +29,7 @@ The initial Community policy is:
 - completed campaign history: unlimited
 - suggested license validity: 365 days
 - suggested activation lease: 30 days
-- suggested refresh interval: 7 days
+- client refresh interval: 1 hour by default (configurable from 60 to 3600 seconds)
 - suggested offline grace: 30 days
 
 The policy values above are defaults for issuance. Runtime enforcement consumes
@@ -160,10 +160,13 @@ A client maps a verified lease to one of these states:
   validation failed
 - `missing`: no lease has been activated
 
-A server-side revocation becomes effective on the next successful refresh or
-when the existing signed lease reaches the end of its locally valid period.
-Short leases therefore bound revocation latency without requiring permanent
-phone-home connectivity.
+A server-side revocation prevents further lease issuance. An already issued
+lease remains usable until its signed grace deadline; the client preserves the
+last verified lease when the service rejects a refresh. Protocol v1 has no
+signed revocation object, and an HTTP error is not proof that a previously
+verified lease must be erased. With the default issuance policy, offline
+revocation latency is at most 60 days after the last lease was issued, bounded
+also by the license's expiry. Installation resets have the same offline limit.
 
 ## Safe degraded mode
 

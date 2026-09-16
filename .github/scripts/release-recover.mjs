@@ -10,6 +10,7 @@ import {
 import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
+import { assertNoUnstagedRelease } from "../../scripts/release-pending.mjs"
 
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
@@ -274,7 +275,10 @@ async function recoveryState(repo, version, main) {
   const draftSources = new Set(drafts.map((draft) => draft?.target_commitish))
   if (drafts.length && (draftSources.size !== 1 || !sha40([...draftSources][0]))) throw new Error("pending release drafts disagree on one immutable source")
   const tagSHA = tagState?.commit || null, draftSource = drafts.length ? [...draftSources][0] : null, source = draftSource || tagSHA
-  if (!source) return null
+  if (!source) {
+    await assertNoUnstagedRelease(repo, version)
+    return null
+  }
   if (!sha40(source)) throw new Error("pending release source is malformed")
   if (tagSHA && tagSHA !== source) throw new Error("release tag already exists at an unexpected commit; tags are immutable")
   await verifySourceAncestry(repo, source, main); await verifiedReleasePR(repo, source, version, tag)

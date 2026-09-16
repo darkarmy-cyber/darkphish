@@ -39,7 +39,7 @@ func testLicenseManager(t *testing.T, managedUsers, activeCampaigns int) *licens
 	}
 	envelope, err := json.Marshal(licensing.Envelope{
 		KeyID: "test", Algorithm: licensing.AlgorithmEd25519,
-		Payload: base64.RawURLEncoding.EncodeToString(payload),
+		Payload:   base64.RawURLEncoding.EncodeToString(payload),
 		Signature: base64.RawURLEncoding.EncodeToString(ed25519.Sign(private, payload)),
 	})
 	if err != nil {
@@ -92,6 +92,13 @@ func TestEnforceGroupLicenseCountsUniqueUsersOutsideUpdatedGroup(t *testing.T) {
 	// Updating group 10 with an address already managed by group 20 remains two
 	// unique managed users after replacing group 10's old membership.
 	group := &Group{Id: 10, Targets: []Target{{BaseRecipient: BaseRecipient{Email: "TWO@example.test"}}, {BaseRecipient: BaseRecipient{Email: "three@example.test"}}}}
+	if err := enforceGroupLicense(connection, group); err != nil {
+		t.Fatalf("replacement at managed-user limit rejected: %v", err)
+	}
+
+	// A third unique address exceeds the limit; case variants of an existing
+	// address must not consume another entitlement.
+	group.Targets = append(group.Targets, Target{BaseRecipient: BaseRecipient{Email: "four@example.test"}})
 	if err := enforceGroupLicense(connection, group); !errors.Is(err, licensing.ErrManagedUserLimitReached) {
 		t.Fatalf("err=%v want managed-user limit", err)
 	}

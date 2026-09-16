@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	LeaseSchema       = "darkphish-license-lease/v1"
-	ProductDarkphish  = "darkphish"
-	EditionCommunity  = "community"
-	AlgorithmEd25519  = "Ed25519"
+	LeaseSchema      = "darkphish-license-lease/v1"
+	ProductDarkphish = "darkphish"
+	EditionCommunity = "community"
+	AlgorithmEd25519 = "Ed25519"
 )
 
 var (

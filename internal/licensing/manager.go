@@ -12,12 +12,12 @@ import (
 // concurrency-safe entitlement surface to the rest of Darkphish. Network
 // activation/refresh is deliberately kept outside this type.
 type Manager struct {
-	mu           sync.RWMutex
-	statePath    string
-	local        LocalState
-	verifier     *Verifier
-	lease        Lease
-	state        State
+	mu            sync.RWMutex
+	statePath     string
+	local         LocalState
+	verifier      *Verifier
+	lease         Lease
+	state         State
 	lastVerifyErr error
 }
 

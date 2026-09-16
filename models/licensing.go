@@ -1,0 +1,105 @@
+package models
+
+import (
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/darkarmy-cyber/darkphish/internal/licensing"
+	"gorm.io/gorm"
+)
+
+var (
+	licenseManagerMu sync.RWMutex
+	licenseManager   *licensing.Manager
+)
+
+// ConfigureLicenseManager installs the process-wide entitlement source. A nil
+// manager disables enforcement for compatibility tooling and tests; official
+// Community startup configures a manager before serving requests.
+func ConfigureLicenseManager(manager *licensing.Manager) {
+	licenseManagerMu.Lock()
+	defer licenseManagerMu.Unlock()
+	licenseManager = manager
+}
+
+func currentLicenseManager() *licensing.Manager {
+	licenseManagerMu.RLock()
+	defer licenseManagerMu.RUnlock()
+	return licenseManager
+}
+
+func enforceGroupLicense(tx *gorm.DB, group *Group) error {
+	manager := currentLicenseManager()
+	if manager == nil {
+		return nil
+	}
+	lease, state, verifyErr := manager.Snapshot(time.Now().UTC())
+	if verifyErr != nil && state != licensing.StateInvalid {
+		return fmt.Errorf("verify Community license: %w", verifyErr)
+	}
+	currentEmails, err := managedUserEmailsExcludingGroup(tx, 0)
+	if err != nil {
+		return fmt.Errorf("count current managed users: %w", err)
+	}
+	existingOutsideGroup, err := managedUserEmailsExcludingGroup(tx, group.Id)
+	if err != nil {
+		return fmt.Errorf("count managed users outside group: %w", err)
+	}
+	proposed := make([]string, 0, len(group.Targets))
+	for _, target := range group.Targets {
+		proposed = append(proposed, target.Email)
+	}
+	current := licensing.ProjectManagedUsers(currentEmails, nil)
+	projected := licensing.ProjectManagedUsers(existingOutsideGroup, proposed)
+	// Degraded mode may remove existing identities, but cannot exchange them
+	// for new ones even if the total number stays constant or decreases.
+	if !state.AllowsExpansion() || current > lease.Entitlements.ManagedUsers {
+		return licensing.EnforceManagedUsers(state, lease.Entitlements.ManagedUsers, currentEmails, proposed)
+	}
+	return licensing.EnforceManagedUserCounts(state, lease.Entitlements.ManagedUsers, current, projected)
+}
+
+func managedUserEmailsExcludingGroup(tx *gorm.DB, excludedGroupID int64) ([]string, error) {
+	values := []string{}
+	query := tx.Table("targets").
+		Distinct("targets.email").
+		Joins("JOIN group_targets gt ON gt.target_id = targets.id")
+	if excludedGroupID > 0 {
+		query = query.Where("gt.group_id <> ?", excludedGroupID)
+	}
+	if err := query.Pluck("targets.email", &values).Error; err != nil {
+		return nil, err
+	}
+	return values, nil
+}
+
+func enforceCampaignLicense(tx *gorm.DB) error {
+	manager := currentLicenseManager()
+	if manager == nil {
+		return nil
+	}
+	lease, state, verifyErr := manager.Snapshot(time.Now().UTC())
+	if verifyErr != nil && state != licensing.StateInvalid {
+		return fmt.Errorf("verify Community license: %w", verifyErr)
+	}
+	var active int64
+	if err := tx.Table("campaigns").Where("status <> ?", CampaignComplete).Count(&active).Error; err != nil {
+		return fmt.Errorf("count active campaigns: %w", err)
+	}
+	return licensing.EnforceActiveCampaigns(state, lease.Entitlements.ActiveCampaigns, int(active), true)
+}
+
+// CheckCampaignLicense revalidates the signed lease immediately before a queued
+// campaign starts. Existing running campaigns may still be completed.
+func CheckCampaignLicense() error {
+	manager := currentLicenseManager()
+	if manager == nil {
+		return nil
+	}
+	lease, state, err := manager.Snapshot(time.Now().UTC())
+	if err != nil && state != licensing.StateInvalid {
+		return err
+	}
+	return licensing.EnforceActiveCampaigns(state, lease.Entitlements.ActiveCampaigns, 0, true)
+}

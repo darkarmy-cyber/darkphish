@@ -100,6 +100,9 @@ func WithMailer(m mailer.Mailer) func(*DefaultWorker) error {
 // processCampaigns loads maillogs scheduled to be sent before the provided
 // time and sends them to the mailer.
 func (w *DefaultWorker) processCampaigns(t time.Time) error {
+	if err := models.CheckCampaignLicense(); err != nil {
+		return err
+	}
 	ms, err := models.GetQueuedMailLogs(t.UTC())
 	if err != nil {
 		log.Error(err)
@@ -141,6 +144,12 @@ func (w *DefaultWorker) processCampaigns(t time.Time) error {
 				err := c.UpdateStatus(models.CampaignInProgress)
 				if err != nil {
 					log.Error(err)
+					// Return this batch to the queue for a future licensed retry.
+					for _, entry := range msc {
+						if m, ok := entry.(*models.MailLog); ok {
+							m.Unlock()
+						}
+					}
 					return
 				}
 			}
@@ -201,6 +210,10 @@ func (w *DefaultWorker) Start() {
 
 // LaunchCampaign starts a campaign
 func (w *DefaultWorker) LaunchCampaign(c models.Campaign) {
+	if err := models.CheckCampaignLicense(); err != nil {
+		log.Warn("Campaign launch blocked by Community license state")
+		return
+	}
 	if !w.begin() {
 		return
 	}

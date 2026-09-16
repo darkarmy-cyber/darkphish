@@ -42,8 +42,16 @@ func exerciseLatestMigration(t *testing.T, driver, dialect, dsn, migrations stri
 		t.Fatalf("migrate up: %v", err)
 	}
 	assertSecuritySchema(t, database)
+	assertLicenseCoordination(t, database)
 	if err := goose.Down(database, migrations); err != nil {
 		t.Fatalf("migrate latest down: %v", err)
+	}
+	if _, err := database.Exec("SELECT COUNT(*) FROM license_coordination"); err == nil {
+		t.Fatal("license_coordination still exists after rolling back the 0.11 migration")
+	}
+	assertSecuritySchema(t, database)
+	if err := goose.Down(database, migrations); err != nil {
+		t.Fatalf("migrate audit coordination down: %v", err)
 	}
 	if _, err := database.Exec("SELECT COUNT(*) FROM audit_chain_heads"); err == nil {
 		t.Fatal("audit_chain_heads still exists after rolling back the 0.6 migration")
@@ -52,6 +60,18 @@ func exerciseLatestMigration(t *testing.T, driver, dialect, dsn, migrations stri
 		t.Fatalf("migrate up after rollback: %v", err)
 	}
 	assertSecuritySchema(t, database)
+	assertLicenseCoordination(t, database)
+}
+
+func assertLicenseCoordination(t *testing.T, database *sql.DB) {
+	t.Helper()
+	var total, singleton int
+	if err := database.QueryRow("SELECT COUNT(*) FROM license_coordination").Scan(&total); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRow("SELECT COUNT(*) FROM license_coordination WHERE id=1").Scan(&singleton); err != nil || total != 1 || singleton != 1 {
+		t.Fatalf("license coordination singleton missing: total=%d singleton=%d err=%v", total, singleton, err)
+	}
 }
 
 func assertSecuritySchema(t *testing.T, database *sql.DB) {

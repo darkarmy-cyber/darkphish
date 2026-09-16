@@ -22,7 +22,7 @@ func TestSettingsAdminTabsAndBell(t *testing.T) {
 	client := &http.Client{}
 	login := attemptLogin(t, ctx, client, admin.Username, "darkphish", "")
 	login.Body.Close()
-	for _, tab := range []string{"users", "webhooks", "audit", "update"} {
+	for _, tab := range []string{"users", "webhooks", "audit", "update", "licensing"} {
 		resp, err := client.Get(ctx.adminServer.URL + "/settings?tab=" + tab)
 		if err != nil {
 			t.Fatal(err)
@@ -42,7 +42,7 @@ func TestSettingsAdminTabsAndBell(t *testing.T) {
 	if err = models.PutUser(&admin); err != nil {
 		t.Fatal(err)
 	}
-	for _, tab := range []string{"users", "webhooks", "audit", "update"} {
+	for _, tab := range []string{"users", "webhooks", "audit", "update", "licensing"} {
 		resp, err := client.Get(ctx.adminServer.URL + "/settings?tab=" + tab)
 		if err != nil {
 			t.Fatal(err)
@@ -64,7 +64,7 @@ func TestSettingsAdminTabsAndBell(t *testing.T) {
 }
 
 func TestSettingsReturnPaths(t *testing.T) {
-	for _, tab := range []string{"account", "ui", "reporting", "api", "users", "webhooks", "audit", "update"} {
+	for _, tab := range []string{"account", "ui", "reporting", "api", "users", "webhooks", "audit", "update", "licensing"} {
 		raw := "/settings?tab=" + tab
 		if got := administrativeReturnPath(raw); got != raw {
 			t.Fatalf("%s -> %s", raw, got)

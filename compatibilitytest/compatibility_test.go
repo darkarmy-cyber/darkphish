@@ -102,6 +102,11 @@ func TestVersionedDatabaseCompatibility(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer models.Close()
+	// The sole v0.11 schema addition must exist; all legacy schema/data remain unchanged.
+	var coordinationRows int
+	if err := connection.QueryRow("SELECT COUNT(*) FROM license_coordination WHERE id=1").Scan(&coordinationRows); err != nil || coordinationRows != 1 {
+		t.Fatalf("missing licensing coordination migration: %v", err)
+	}
 	if state.Schema != schemaSnapshot(t, connection, backend) {
 		t.Fatal("candidate startup changed the v0.4 schema")
 	}
@@ -299,20 +304,20 @@ func schemaSnapshot(t *testing.T, connection *sql.DB, backend string) string {
 	if os.Getenv("DARKPHISH_COMPAT_COORDINATION") == "1" {
 		switch backend {
 		case "sqlite3":
-			return querySnapshot(t, connection, "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name")
+			return querySnapshot(t, connection, "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND tbl_name <> 'license_coordination' ORDER BY type,name")
 		case "mysql":
-			return querySnapshot(t, connection, "SELECT table_name,column_name,column_type,is_nullable,column_default,extra FROM information_schema.columns WHERE table_schema=DATABASE() ORDER BY table_name,ordinal_position")
+			return querySnapshot(t, connection, "SELECT table_name,column_name,column_type,is_nullable,column_default,extra FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name <> 'license_coordination' ORDER BY table_name,ordinal_position")
 		case "postgres":
-			return querySnapshot(t, connection, "SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() ORDER BY table_name,ordinal_position")
+			return querySnapshot(t, connection, "SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() AND table_name <> 'license_coordination' ORDER BY table_name,ordinal_position")
 		}
 	}
 	switch backend {
 	case "sqlite3":
-		return querySnapshot(t, connection, "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities') AND name <> 'idx_audit_checkpoints_chain_sequence' ORDER BY type,name")
+		return querySnapshot(t, connection, "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities','license_coordination') AND name <> 'idx_audit_checkpoints_chain_sequence' ORDER BY type,name")
 	case "mysql":
-		return querySnapshot(t, connection, "SELECT table_name,column_name,column_type,is_nullable,column_default,extra FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities') ORDER BY table_name,ordinal_position")
+		return querySnapshot(t, connection, "SELECT table_name,column_name,column_type,is_nullable,column_default,extra FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities','license_coordination') ORDER BY table_name,ordinal_position")
 	case "postgres":
-		return querySnapshot(t, connection, "SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() AND table_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities') ORDER BY table_name,ordinal_position")
+		return querySnapshot(t, connection, "SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() AND table_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities','license_coordination') ORDER BY table_name,ordinal_position")
 	default:
 		t.Fatal("unsupported fixture backend")
 		return ""
@@ -334,8 +339,12 @@ func contentSnapshot(t *testing.T, connection *sql.DB, backend string) string {
 			quoted = "`" + table + "`"
 		}
 		query := "SELECT * FROM " + quoted
-		if table == "goose_db_version" && !includeCoordination {
-			query += " WHERE version_id <= 20260905010000"
+		if table == "goose_db_version" {
+			if includeCoordination {
+				query += " WHERE version_id <= 20260906010000"
+			} else {
+				query += " WHERE version_id <= 20260905010000"
+			}
 		}
 		parts = append(parts, table+":"+querySnapshot(t, connection, query))
 	}

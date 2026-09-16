@@ -39,6 +39,7 @@ COPY --from=backend --chown=65532:65532 /src/static/js/src/vendor/ckeditor ./sta
 COPY --from=frontend --chown=65532:65532 /src/static/js/dist ./static/js/dist
 COPY --from=frontend --chown=65532:65532 /src/static/css/dist ./static/css/dist
 COPY --chown=65532:65532 docker/config.json /etc/darkphish/config.json
+COPY --chown=65532:65532 license-public-keys.json /etc/darkphish/license-public-keys.json
 
 USER 65532:65532
 VOLUME ["/data"]

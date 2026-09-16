@@ -3,6 +3,8 @@ package worker
 import (
 	"context"
 	"fmt"
+	"github.com/darkarmy-cyber/darkphish/internal/licensing"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -195,5 +197,51 @@ func TestMailLogGrouping(t *testing.T) {
 				t.Fatalf("unexpected campaign ID received for maillog: got %d expected %d", got, expected)
 			}
 		}
+	}
+}
+
+func TestUnlicensedScheduledCampaignRemainsRetryable(t *testing.T) {
+	setupTest(t)
+	campaign, err := setupCampaign(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := campaign.UpdateStatus(models.CampaignQueued); err != nil {
+		t.Fatal(err)
+	}
+	logs, err := models.GetMailLogsByCampaign(campaign.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := models.LockMailLogs(logs, false); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := licensing.OpenManager(filepath.Join(t.TempDir(), "license.json"), nil, 0, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	models.ConfigureLicenseManager(manager)
+	t.Cleanup(func() { models.ConfigureLicenseManager(nil) })
+	mail := &logMailer{queue: make(chan []mailer.Mail, 10)}
+	w := &DefaultWorker{mailer: mail}
+	if err := w.processCampaigns(time.Now()); err == nil {
+		t.Fatal("unlicensed scheduled campaign was accepted")
+	}
+	w.LaunchCampaign(*campaign)
+	if len(mail.queue) != 0 {
+		t.Fatal("unlicensed campaign reached mailer")
+	}
+	logs, err = models.GetMailLogsByCampaign(campaign.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range logs {
+		if entry.Processing {
+			t.Fatal("denied mail stayed locked")
+		}
+	}
+	current, err := models.GetCampaignMailContext(campaign.Id, campaign.UserId)
+	if err != nil || current.Status != models.CampaignQueued {
+		t.Fatalf("denied campaign changed status: %v", err)
 	}
 }

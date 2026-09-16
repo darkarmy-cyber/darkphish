@@ -12,6 +12,9 @@ document.addEventListener('DOMContentLoaded', async function () {
     const confirmationTitle = root.querySelector('.dp-confirmation-title');
     const recovering = new URLSearchParams(location.search).get('mode') === 'recover';
     if (recovering) {
+        root.querySelector('.dp-intro-title').textContent = 'Recover your';
+        root.querySelector('.lead').textContent = 'Get a replacement key for your existing Community license. Its original limits and expiry stay unchanged.';
+        root.querySelector('.features').hidden = true;
         root.querySelector('.dp-mode-label').textContent = 'LICENSE RECOVERY';
         root.querySelector('.dp-form-title').textContent = 'Recover your Community license';
         root.querySelector('.dp-terms-row').hidden = true;

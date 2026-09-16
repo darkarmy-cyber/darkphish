@@ -7,7 +7,7 @@ function element(hidden = false) {
     return {hidden, disabled: false, textContent: '', dataset: {}, focused: false, focus() { this.focused = true; }, handlers: {}, addEventListener(name, fn) { this.handlers[name] = fn; }};
 }
 async function page(hash = '', reply = async () => ({ok: true, json: async () => ({site_key: 'public', terms_url: 'https://www.darkphish.test/terms/', terms_version: 'v1', registration_url: 'https://www.darkphish.test/license/'})}), search = '') {
-    const nodes = Object.fromEntries(['.dp-status', '.dp-request', '.dp-verify', '.dp-restart', '.dp-key', '.dp-terms', '.dp-challenge', '.dp-confirmation', '.dp-confirmation-title', '.dp-confirmation-email', '.dp-mode-label', '.dp-form-title', '.dp-terms-row', '.dp-terms-checkbox', '.hint', '.dp-mode-link', '.dp-confirmation-next'].map(name => [name, element(name !== '.dp-status')]));
+    const nodes = Object.fromEntries(['.dp-status', '.dp-request', '.dp-verify', '.dp-restart', '.dp-key', '.dp-terms', '.dp-challenge', '.dp-confirmation', '.dp-confirmation-title', '.dp-confirmation-email', '.dp-mode-label', '.dp-form-title', '.dp-terms-row', '.dp-terms-checkbox', '.hint', '.dp-mode-link', '.dp-confirmation-next', '.dp-intro-title', '.lead', '.features'].map(name => [name, element(name !== '.dp-status')]));
     const submit = element(); submit.disabled = true;
     const fields = element(); fields.disabled = true;
     nodes['.dp-request'].hidden = false;
@@ -125,6 +125,7 @@ test('a pending request cannot be submitted twice even if the challenge refreshe
 
 test('recovery uses a separate request and does not require new terms acceptance', async () => {
     const p = await page('', undefined, '?mode=recover');
+    assert.equal(p.nodes['.features'].hidden, true);
     assert.equal(p.nodes['.dp-terms-row'].hidden, true);
     assert.equal(p.nodes['.dp-terms-checkbox'].disabled, true);
     p.scripts[0].onload(); p.challenge().callback('valid-token');

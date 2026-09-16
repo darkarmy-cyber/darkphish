@@ -75,6 +75,6 @@ test("only the audited pre-attestation protected merge may use historical review
     f => { f.pr.head.ref = "release/v0.7.1"; f.pr.title = "release: Darkphish 0.7.1" },
   ]) {
     const f = fixture(); mutate(f)
-    await assert.rejects(f.verify(), /not the audited pre-attestation protected merge/)
+    await assert.rejects(f.verify(), /not the audited pre-attestation protected merge|missing the required exact-head generated-release attestation/)
   }
 })

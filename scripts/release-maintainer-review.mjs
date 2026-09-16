@@ -187,6 +187,8 @@ export async function verifyReleaseMaintainerReview(repo, pr, { get }) {
 
   const trusted = reviews.filter((review) => trustedReleaseReviewer(review.user))
   if (trusted.length === 0) {
+    requireReview(repo === "darkarmy-cyber/darkphish" && pr.number === 20,
+      `Release PR #${pr.number} is missing the required exact-head generated-release attestation from oliverkko (309485696) before merge; publication remains blocked`)
     return verifyLegacyProtectedAutoMerge(get, repo, pr)
   }
   const latest = trusted.reduce((current, review) => !current || review.id > current.id ? review : current, null)

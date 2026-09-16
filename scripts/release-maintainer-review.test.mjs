@@ -62,6 +62,17 @@ test("trusted maintainer approval certifies exact generated release head and bas
   assert.equal(evidence.reviewer, "oliverkko")
 })
 
+test("modern release without the pinned maintainer attestation reports the actual blocker", async () => {
+  for (const reviews of [[], [{ id: 12, state: "APPROVED", user: { login: "oliverhavrila", id: 28049460, type: "User" } }]]) {
+    const f = fixture()
+    f.reviews.splice(0, f.reviews.length, ...reviews)
+    f.pr.state = "closed"
+    f.pr.merged_at = "2026-09-15T16:59:53Z"
+    await assert.rejects(verifyReleaseMaintainerReview(repo, f.pr, { get: f.get }),
+      /missing the required exact-head generated-release attestation from oliverkko \(309485696\) before merge/)
+  }
+})
+
 test("real GitHub pull-file records without numeric ids are accepted and duplicate filename/sha identities fail", async () => {
   const f = fixture()
   assert.equal((await verifyReleaseMaintainerReview(repo, f.pr, { get: f.get })).head, head)

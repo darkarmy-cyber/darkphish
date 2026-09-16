@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process"
 import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { api, assertCurrentVersionPublished, assertGeneratedCommits, mergeReviewedPullRequest, git, greenCommit, nextPatchVersion, pages, protectedMain, repository, versionTag } from "./release-lib.mjs"
+import { api, assertGeneratedCommits, mergeReviewedPullRequest, git, greenCommit, pages, protectedMain, repository, versionTag } from "./release-lib.mjs"
+import { assertReleaseAdvancePublished } from "./release-pending.mjs"
 import { dispatchChecks } from "./check-refresh.mjs"
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 
@@ -32,7 +33,7 @@ async function prepare() {
   const branch = `release/${tag}`
   await protectedMain(repo, sha)
   const currentVersion = readFileSync("VERSION", "utf8").trim()
-  if (version === nextPatchVersion(currentVersion)) await assertCurrentVersionPublished(repo, { version: currentVersion })
+  await assertReleaseAdvancePublished(repo, currentVersion, version)
   if (await api(`repos/${repo}/git/ref/tags/${tag}`, { missing: true }) || await api(`repos/${repo}/releases/tags/${tag}`, { missing: true })) {
     console.log("Release tag or release already exists; preparation leaves it unchanged.")
     return

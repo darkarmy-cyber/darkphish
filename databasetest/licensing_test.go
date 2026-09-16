@@ -76,7 +76,12 @@ func exerciseLicenseCoordination(t *testing.T, userID int64, prototype models.Ca
 		return models.PostGroup(&group)
 	}, licensing.ErrManagedUserLimitReached)
 	compete("campaigns", func(i int) error {
-		campaign := models.Campaign{Name: fmt.Sprintf("licensed campaign %d", i), Template: prototype.Template, Page: prototype.Page, SMTP: prototype.SMTP, Groups: prototype.Groups, URL: prototype.URL}
+		// Each request owns its associations; PostCampaign fills these in place.
+		groups := make([]models.Group, len(prototype.Groups))
+		for j, group := range prototype.Groups {
+			groups[j] = models.Group{Name: group.Name}
+		}
+		campaign := models.Campaign{Name: fmt.Sprintf("licensed campaign %d", i), Template: prototype.Template, Page: prototype.Page, SMTP: prototype.SMTP, Groups: groups, URL: prototype.URL}
 		return models.PostCampaign(&campaign, userID)
 	}, licensing.ErrActiveCampaignLimitReached)
 }

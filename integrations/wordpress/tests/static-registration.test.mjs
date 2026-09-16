@@ -52,7 +52,9 @@ test('registration uses current server settings and submits only after a challen
     assert.equal(p.nodes['.dp-terms'].href, 'https://www.darkphish.test/terms/');
     await p.nodes['.dp-request'].handlers.submit({preventDefault() {}});
     assert.equal(p.requests.length, 1);
-    p.scripts[0].onload(); p.challenge().callback('valid-token');
+    p.scripts[0].onload();
+    assert.equal(p.challenge().size, 'compact');
+    p.challenge().callback('valid-token');
     assert.equal(p.submit.disabled, false);
     await p.nodes['.dp-request'].handlers.submit({preventDefault() {}});
     assert.deepEqual(JSON.parse(p.requests[1].options.body), {email: 'test@example.test', terms_version: 'v1', challenge_token: 'valid-token'});
@@ -62,6 +64,7 @@ test('configuration failures keep the form visible but prevent submission', asyn
     const p = await page('', async () => ({ok: false, status: 503}));
     assert.equal(p.nodes['.dp-request'].hidden, false); assert.equal(p.scripts.length, 0);
     assert.equal(p.fields.disabled, true); assert.equal(p.submit.disabled, true);
+    assert.match(p.nodes['.dp-status'].textContent, /not open yet/);
     await p.nodes['.dp-request'].handlers.submit({preventDefault() {}});
     assert.equal(p.requests.length, 1);
 });

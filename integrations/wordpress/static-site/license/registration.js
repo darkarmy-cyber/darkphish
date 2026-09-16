@@ -19,6 +19,11 @@ document.addEventListener('DOMContentLoaded', async function () {
             ...(data ? {headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)} : {})
         });
         if (!response.ok) {
+            if (operation === 'public-config' && response.status === 503) {
+                const error = new Error('Online registration is not open yet. For help, email license@darkphish.sk.');
+                error.registrationNotReady = true;
+                throw error;
+            }
             if (response.status === 429) throw new Error('Too many attempts. Please try again later.');
             if (operation === 'verify' && response.status === 403) throw new Error('This link has expired or has already been used. Request a new verification email.');
             throw new Error('Registration could not be completed. Try again later or reload the page.');
@@ -75,7 +80,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         script.async = true;
         script.onload = function () {
             widget = window.turnstile.render(root.querySelector('.dp-challenge'), {
-                sitekey: settings.site_key, action: 'darkphish-license', language: 'en',
+                sitekey: settings.site_key, action: 'darkphish-license', language: 'en', size: 'compact',
                 callback: function (value) { challengeToken = value; submit.disabled = false; },
                 'expired-callback': function () { challengeToken = ''; submit.disabled = true; },
                 'error-callback': function () { challengeToken = ''; submit.disabled = true; status.textContent = 'The anti-abuse check could not be loaded. Please reload the page.'; }
@@ -83,5 +88,5 @@ document.addEventListener('DOMContentLoaded', async function () {
         };
         script.onerror = function () { status.textContent = 'The anti-abuse check could not be loaded. Please reload the page.'; };
         document.head.appendChild(script);
-    } catch (error) { status.textContent = 'Registration is currently unavailable. Please try again later.'; fields.disabled = true; submit.disabled = true; }
+    } catch (error) { status.textContent = error.registrationNotReady ? error.message : 'We could not load registration. Please reload the page or contact license@darkphish.sk.'; fields.disabled = true; submit.disabled = true; }
 });

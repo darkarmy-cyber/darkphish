@@ -1,1 +1,73 @@
-.dp-registration{color-scheme:dark;--bg:#0d1117;--card:#151c25;--text:#edf3f8;--muted:#9daebe;--accent:#71efbf;--border:#2c3948;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.dp-registration *{box-sizing:border-box}.dp-registration{margin:0;background:var(--bg);color:var(--text);line-height:1.65}.dp-registration a{color:var(--accent);text-underline-offset:4px}.dp-registration header,.dp-registration main{width:min(1120px,calc(100% - 64px));margin:auto}.dp-registration header{display:flex;align-items:center;justify-content:space-between;padding:32px 0;border-bottom:1px solid var(--border)}.dp-registration .brand{text-decoration:none;font-size:19px;letter-spacing:2px;font-weight:800;color:var(--text)}.dp-registration .brand span{display:block;color:var(--accent);font-size:10px;letter-spacing:4px}.dp-registration .back{font-size:13px;text-decoration:none}.dp-registration main{display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:start;padding:80px 0 100px}.dp-registration .eyebrow{font-size:11px;font-weight:700;letter-spacing:3px;color:var(--accent);margin:0 0 22px}.dp-registration h1{font-size:clamp(42px,5vw,66px);line-height:1.06;letter-spacing:-2px;margin:0 0 25px}.dp-registration h2{font-size:25px;line-height:1.3;letter-spacing:-.5px;margin:0 0 16px}.dp-registration .lead{font-size:17px;color:var(--muted);max-width:410px}.dp-registration .features{list-style:none;padding:16px 0;margin:24px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);font-size:14px;color:var(--muted)}.dp-registration .features li{padding:7px 0}.dp-registration .features strong{display:inline-block;min-width:80px;color:var(--text)}.dp-registration .note,.dp-registration .hint{font-size:12px;color:var(--muted)}.dp-registration .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:34px;box-shadow:0 24px 80px #0003}.dp-registration .dp-status{font-size:14px;color:var(--muted);min-height:24px;margin-bottom:25px}.dp-registration .card .eyebrow{margin-bottom:12px}.dp-registration label{display:block;font-size:13px;font-weight:600}.dp-registration input[type=email]{display:block;width:100%;border:1px solid #47596d;background:var(--bg);color:var(--text);border-radius:7px;font:inherit;padding:12px;margin:8px 0 20px}.dp-registration input[type=email]::placeholder{color:#8194a8}.dp-registration .terms{display:flex;align-items:start;gap:9px;font-size:12px;font-weight:400;margin-bottom:22px}.dp-registration .terms input{margin:5px 0 0;accent-color:var(--accent);width:16px;height:16px;flex-shrink:0}.dp-registration button{width:100%;padding:14px 16px;margin-top:17px;background:var(--accent);color:#09291e;border:0;border-radius:7px;font:inherit;font-size:14px;font-weight:750;cursor:pointer}.dp-registration button:disabled{opacity:.5;cursor:default}.dp-registration :focus-visible{outline:3px solid #b2ffe0;outline-offset:4px}.dp-registration .dp-challenge{min-height:65px}.dp-registration .dp-key{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-all;padding:20px;border:1px solid var(--accent);border-radius:7px;background:var(--bg);color:var(--accent);font-size:14px}.dp-registration .dp-restart{font-size:13px}.dp-registration [hidden]{display:none!important}@media(max-width:760px){.dp-registration header,.dp-registration main{width:calc(100% - 36px)}.dp-registration header{padding:22px 0}.dp-registration main{grid-template-columns:1fr;gap:32px;padding:42px 0 55px}.dp-registration .card{padding:26px 20px}.dp-registration h1 br{display:none}.dp-registration .features{margin-bottom:15px}.dp-registration .back{font-size:11px}.dp-registration .dp-challenge{overflow-x:auto}}.dp-registration fieldset{border:0;padding:0;margin:0;min-width:0}.dp-registration fieldset:disabled input{opacity:.65}
+:root {
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0d1117;
+  color: #edf3f8;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; min-height: 100svh; }
+.dp-registration {
+  --bg: #0d1117; --card: #151c25; --text: #edf3f8; --muted: #a9b8c8;
+  --accent: #71efbf; --border: #2c3948;
+  min-height: 100vh; min-height: 100svh; line-height: 1.65;
+  background: radial-gradient(ellipse at 20% 38%, #17342c38, transparent 52%);
+}
+.dp-registration a { color: var(--accent); text-underline-offset: 4px; }
+.dp-registration header, .dp-registration main {
+  width: min(1160px, calc(100% - clamp(32px, 6vw, 96px))); margin-inline: auto;
+}
+.dp-registration header {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 12px 24px; padding-block: 24px; border-bottom: 1px solid var(--border);
+}
+.dp-registration .brand { color: var(--text); font-size: 18px; font-weight: 800; letter-spacing: 2px; text-decoration: none; }
+.dp-registration .brand span { display: block; font-size: 10px; letter-spacing: 4px; color: var(--accent); }
+.dp-registration .back { font-size: 13px; text-decoration: none; }
+.dp-registration main {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center; gap: clamp(32px, 6vw, 88px); padding-block: clamp(32px, 6vh, 80px);
+  min-height: calc(100svh - 103px);
+}
+.dp-registration main > * { min-width: 0; }
+.dp-registration .intro { text-align: center; }
+.dp-registration .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 3px; color: var(--accent); margin: 0 0 18px; }
+.dp-registration h1 { margin: 0; font-size: clamp(30px, 3.6vw, 48px); line-height: 1.2; letter-spacing: -1.3px; text-align: center; }
+.dp-registration h1 > span { display: block; }
+.dp-registration .hero-logo { display: block; width: min(100%, 380px); height: auto; margin: 12px auto 16px; object-fit: contain; }
+.dp-registration .lead { max-width: 42ch; margin: 0 auto; font-size: clamp(15px, 1.5vw, 17px); color: var(--muted); }
+.dp-registration .features { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px 24px; list-style: none; margin: 26px 0 18px; padding: 20px 0; border-block: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.dp-registration .features strong { display: block; font-size: 19px; color: var(--text); }
+.dp-registration .note, .dp-registration .hint { color: var(--muted); font-size: 12px; }
+.dp-registration .card { width: 100%; max-width: 500px; justify-self: center; padding: clamp(20px, 3vw, 36px); background: var(--card); border: 1px solid var(--border); border-radius: 18px; box-shadow: 0 24px 70px #0003; }
+.dp-registration .card .eyebrow { margin-bottom: 10px; }
+.dp-registration h2 { font-size: clamp(23px, 2.3vw, 28px); line-height: 1.3; margin: 0 0 16px; letter-spacing: -.5px; }
+.dp-registration .dp-status { color: var(--muted); font-size: 14px; min-height: 24px; margin-bottom: 24px; overflow-wrap: anywhere; }
+.dp-registration fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.dp-registration label { display: block; font-size: 13px; font-weight: 600; }
+.dp-registration input[type=email] { display: block; width: 100%; min-width: 0; padding: 12px; margin: 8px 0 20px; border: 1px solid #47596d; background: var(--bg); color: var(--text); border-radius: 8px; font: inherit; font-size: 16px; }
+.dp-registration input[type=email]::placeholder { color: #8194a8; }
+.dp-registration .terms { display: flex; align-items: start; gap: 10px; font-size: 12px; font-weight: 400; margin-bottom: 22px; }
+.dp-registration .terms span { min-width: 0; }
+.dp-registration .terms input { flex: 0 0 16px; width: 16px; height: 16px; margin: 4px 0 0; accent-color: var(--accent); }
+.dp-registration .dp-challenge { display: flex; justify-content: center; min-height: 0; }
+.dp-registration button { display: block; width: 100%; min-height: 48px; padding: 14px 16px; margin-top: 18px; border: 0; border-radius: 8px; background: var(--accent); color: #09291e; font: inherit; font-size: 14px; font-weight: 750; cursor: pointer; white-space: normal; }
+.dp-registration button:disabled { opacity: .5; cursor: default; }
+.dp-registration fieldset:disabled input { opacity: .65; }
+.dp-registration :focus-visible { outline: 3px solid #b2ffe0; outline-offset: 4px; }
+.dp-registration .dp-key { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; padding: 18px; border: 1px solid var(--accent); border-radius: 8px; background: var(--bg); color: var(--accent); font-size: 14px; }
+.dp-registration .dp-restart { font-size: 13px; }
+.dp-registration [hidden] { display: none !important; }
+@media (max-width: 900px) {
+  .dp-registration main { grid-template-columns: minmax(0, 1fr); gap: 28px; min-height: auto; padding-block: 36px 48px; }
+  .dp-registration .intro { width: 100%; max-width: 540px; justify-self: center; }
+  .dp-registration .hero-logo { width: min(100%, 300px); margin-block: 8px 12px; }
+  .dp-registration h1 { font-size: clamp(30px, 5vw, 40px); }
+}
+@media (max-width: 400px) {
+  .dp-registration header { gap: 12px; padding-block: 18px; }
+  .dp-registration .brand { font-size: 16px; }
+  .dp-registration .back { font-size: 11px; }
+  .dp-registration .hero-logo { width: min(100%, 250px); }
+  .dp-registration .features { gap: 12px 18px; }
+  .dp-registration .card { padding: 20px 16px; }
+}

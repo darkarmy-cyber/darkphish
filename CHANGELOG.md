@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.11.0 - 2026-09-16
+
+### Added
+
+- Add the Community licensing protocol, signed lease verification, activation persistence, entitlement checks, and administrative license API foundation.
+
+### Security
+
+- Enforce Community licensing at server startup, serialize entitlement checks across database writers, reject caller-supplied creation IDs, and recheck license validity before queued campaign delivery.
+- Reject licensing redirects and incomplete activation responses, preserve existing recipient identities in degraded mode, and add administrator activation controls with periodic signed-lease refresh.
+- Distribute the maintainer-provided fsociety.sk public verification key and API configuration with native archives, the source installer and Docker, retaining license state on persistent storage.
+- Accept authenticated Professional and Enterprise edition claims with the same installation, expiry and signed entitlement enforcement; reject unknown editions.
+- Create Windows licensing state with a protected owner-only DACL before writing credentials, including every atomic replacement, so shared-directory permissions cannot expose refresh tokens. Unix file-mode protections remain unchanged.
+
+### Migration
+
+- Add the license coordination table without rewriting existing customer data; configure the approved licensing API, public verification keyring and persistent license state path before activating Community installations.
+
 ## 0.10.0 - 2026-09-15
 
 ### Added

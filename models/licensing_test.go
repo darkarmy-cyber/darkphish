@@ -1,11 +1,14 @@
 package models
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -16,6 +19,11 @@ import (
 )
 
 func testLicenseManager(t *testing.T, managedUsers, activeCampaigns int, editions ...string) *licensing.Manager {
+	manager, _ := testLicenseManagerEnvelope(t, managedUsers, activeCampaigns, editions...)
+	return manager
+}
+
+func testLicenseManagerEnvelope(t *testing.T, managedUsers, activeCampaigns int, editions ...string) (*licensing.Manager, json.RawMessage) {
 	t.Helper()
 	public, private, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -52,7 +60,55 @@ func testLicenseManager(t *testing.T, managedUsers, activeCampaigns int, edition
 	if _, _, err := manager.InstallLease(envelope, "refresh", now); err != nil {
 		t.Fatal(err)
 	}
-	return manager
+	return manager, envelope
+}
+
+func TestRefreshRetainsCredentialForBlankResponse(t *testing.T) {
+	for _, returned := range []string{"", " \t\r\n", "\u00a0", "rotated-valid-token"} {
+		t.Run(returned, func(t *testing.T) {
+			withLicensingDB(t)
+			manager, envelope := testLicenseManagerEnvelope(t, 100, 1)
+			ConfigureLicenseManager(manager)
+			requests := 0
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				var body struct {
+					RefreshToken string `json:"refresh_token"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				want := "refresh"
+				if requests > 1 && returned == "rotated-valid-token" {
+					want = returned
+				}
+				if body.RefreshToken != want {
+					t.Errorf("request token=%q want=%q", body.RefreshToken, want)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(licensing.ActivationResponse{Lease: envelope, RefreshToken: returned})
+			}))
+			defer server.Close()
+			client, err := licensing.NewClient(server.URL, "0.11.0", server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			ConfigureLicenseClient(client)
+			t.Cleanup(func() { ConfigureLicenseClient(nil) })
+			for range 2 {
+				if _, err := RefreshCommunityLicense(context.Background(), time.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want := "refresh"
+			if returned == "rotated-valid-token" {
+				want = returned
+			}
+			if manager.RefreshToken() != want || requests != 2 {
+				t.Fatal("Refresh credential was not preserved/rotated correctly")
+			}
+		})
+	}
 }
 
 func withLicensingDB(t *testing.T) *gorm.DB {

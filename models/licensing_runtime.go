@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -111,7 +112,7 @@ func RefreshCommunityLicense(ctx context.Context, now time.Time) (LicenseStatus,
 	if err != nil {
 		return LicenseStatus{}, err
 	}
-	if response.RefreshToken == "" {
+	if strings.TrimSpace(response.RefreshToken) == "" {
 		response.RefreshToken = refreshToken
 	}
 	if _, _, err := manager.InstallLease(response.Lease, response.RefreshToken, now.UTC()); err != nil {

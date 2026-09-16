@@ -9,7 +9,7 @@ Krasku 4257/27, 917 05 Trnava, Slovakia, taken at the owner's request from
 of Dark Army's registered office. No fsociety company number, tax identifier
 or register entry was attributed to Dark Army. They are review drafts, not
 approved production policies. Do not point the live registration checkbox at
-these drafts or use `2026-09-16-draft.1` as the production terms version.
+these drafts or use any draft version as the production terms version.
 They are deliberately outside `static-site/` and the installable plugin.
 
 ## Outstanding information and decisions
@@ -77,3 +77,21 @@ production policy have been changed by creating these files.
 
 The documents are a technical and drafting aid, not a legal compliance
 certification. Final review must cover the actual business and deployment.
+
+## Community terms revision 2026-09-16-draft.2
+
+The owner reconfirmed Dark Army s. r. o. as the intended provider, despite
+incorporation remaining pending. Keep that identity as planned; do not substitute
+fsociety or describe the company as already incorporated. The revised English
+Community License Terms include a plain-language summary, contents navigation,
+organizational authority, no automatic billing, technical requirements, key
+replacement, renewal, offline limits, ending access and independent MIT rights.
+The privacy notice remains draft.1, with unresolved retention and processor facts.
+No draft URLs or terms version were saved to production.
+
+See [DOKONCENIE.sk.md](DOKONCENIE.sk.md) for the concrete publication steps.
+
+Sources checked again on 2026-09-16: [Slovak consumer protection act](https://www.slov-lex.sk/ezbierky/pravne-predpisy/SK/ZZ/2024/108/)
+and [GDPR Article 13, official text](https://eur-lex.europa.eu/eli/reg/2016/679/). The current Slov-Lex e-commerce
+portal and direct EUR-Lex page required JavaScript; official indexed excerpts
+were available. These checks are not a complete legal review.

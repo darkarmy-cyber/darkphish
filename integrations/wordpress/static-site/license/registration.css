@@ -33,7 +33,17 @@ body { margin: 0; min-height: 100vh; min-height: 100svh; }
 .dp-registration .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 3px; color: var(--accent); margin: 0 0 18px; }
 .dp-registration h1 { margin: 0; font-size: clamp(30px, 3.6vw, 48px); line-height: 1.2; letter-spacing: -1.3px; text-align: center; }
 .dp-registration h1 > span { display: block; }
-.dp-registration .hero-logo { display: block; width: min(100%, 380px); height: auto; margin: 12px auto 16px; object-fit: contain; }
+.dp-registration .brand-gradient { width: fit-content; max-width: 100%; margin: 4px auto 24px; color: var(--accent); }
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+  .dp-registration .brand-gradient {
+    background: linear-gradient(110deg, #71efbf 10%, #55c6ff 90%);
+    background-clip: text; -webkit-background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent;
+  }
+}
+@media (forced-colors: active) {
+  .dp-registration .brand-gradient { background: none; color: CanvasText; -webkit-text-fill-color: CanvasText; }
+}
 .dp-registration .lead { max-width: 42ch; margin: 0 auto; font-size: clamp(15px, 1.5vw, 17px); color: var(--muted); }
 .dp-registration .features { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px 24px; list-style: none; margin: 26px 0 18px; padding: 20px 0; border-block: 1px solid var(--border); font-size: 12px; color: var(--muted); }
 .dp-registration .features strong { display: block; font-size: 19px; color: var(--text); }
@@ -60,14 +70,12 @@ body { margin: 0; min-height: 100vh; min-height: 100svh; }
 @media (max-width: 900px) {
   .dp-registration main { grid-template-columns: minmax(0, 1fr); gap: 28px; min-height: auto; padding-block: 36px 48px; }
   .dp-registration .intro { width: 100%; max-width: 540px; justify-self: center; }
-  .dp-registration .hero-logo { width: min(100%, 300px); margin-block: 8px 12px; }
   .dp-registration h1 { font-size: clamp(30px, 5vw, 40px); }
 }
 @media (max-width: 400px) {
   .dp-registration header { gap: 12px; padding-block: 18px; }
   .dp-registration .brand { font-size: 16px; }
   .dp-registration .back { font-size: 11px; }
-  .dp-registration .hero-logo { width: min(100%, 250px); }
   .dp-registration .features { gap: 12px 18px; }
   .dp-registration .card { padding: 20px 16px; }
 }

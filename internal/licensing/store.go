@@ -71,7 +71,7 @@ func SaveState(path string, state LocalState) error {
 	if err != nil {
 		return fmt.Errorf("encode license state: %w", err)
 	}
-	tmp, err := os.CreateTemp(dir, ".darkphish-license-*")
+	tmp, err := createPrivateStateTemp(dir)
 	if err != nil {
 		return fmt.Errorf("create temporary license state: %w", err)
 	}

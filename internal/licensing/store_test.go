@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -26,6 +27,9 @@ func TestLoadOrCreateStatePersistsInstallationID(t *testing.T) {
 }
 
 func TestSaveStateUsesRestrictedPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows permissions are verified with the owner-only DACL regression test")
+	}
 	path := filepath.Join(t.TempDir(), "state.json")
 	state := LocalState{InstallationID: "90b594f8-d605-4b68-af68-e086749fc4bd"}
 	if err := SaveState(path, state); err != nil {

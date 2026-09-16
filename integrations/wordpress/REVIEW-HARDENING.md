@@ -1,6 +1,7 @@
 # WordPress licensing 0.2.4 review hardening
 
-This candidate addresses the six findings on PR75 head `3b0fbf4`.
+This candidate addresses the six findings on PR75 head `3b0fbf4` and the
+four follow-up findings on `491fa8a`.
 
 - Successful recovery invalidates every pending recovery request for the same
   normalized mailbox in the key-rotation transaction. Other mailboxes and
@@ -17,7 +18,15 @@ This candidate addresses the six findings on PR75 head `3b0fbf4`.
   include untrusted scripts; code that executes before this script cannot be
   retroactively protected.
 - Public configuration returns unavailable unless schema 4 and signing are
-  ready. Errors do not expose paths, keys or database details.
+  ready. The shortcode uses the same readiness gate. Errors do not expose
+  paths, keys or database details.
+- CLI key creation also removes its own incomplete file on write, flush or
+  sync failure, permits a safe retry, and never overwrites existing keys.
+- If key creation succeeds but its completion audit fails, the administrator
+  sees a truthful saved-key warning rather than a failed-creation message.
+  The initial audit request remains mandatory before creating the file.
+- Licensing SQL suppression is scoped to each operation and restored in a
+  `finally` block, preserving error reporting for the rest of WordPress.
 - Additive schema 4 backfills and indexes canonical email hashes separately
   from existing identity hashes. Mailbox verification uses an indexed locking
   lookup. Existing IDs, keys, bindings, terms and duplicate records are retained;

@@ -26,6 +26,7 @@ jobs:
         run: |
           find integrations/wordpress -name '*.php' -print0 | xargs -0 -n1 php -l
           node --check integrations/wordpress/darkphish-license/assets/registration.js
+          node --test integrations/wordpress/tests/static-registration.test.mjs
           php integrations/wordpress/tests/signer.php "$RUNNER_TEMP/lease.json"
           php integrations/wordpress/tests/key-setup.php
           node integrations/wordpress/tests/verify-signature.mjs "$RUNNER_TEMP/lease.json"
@@ -47,4 +48,6 @@ jobs:
           DARKPHISH_WP_TEST_KEY: ${{ runner.temp }}/license-private/admin-test-key.json
           DARKPHISH_WP_TEST_DB: darkphish_wp_test
           DARKPHISH_WP_TEST_PASSWORD: root
-        run: php integrations/wordpress/tests/integration.php
+        run: |
+          php integrations/wordpress/tests/integration.php
+          node integrations/wordpress/tests/browser-http.mjs

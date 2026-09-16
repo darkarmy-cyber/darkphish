@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Darkphish Community Licensing
  * Description: Verified Community registration and signed installation leases for Darkphish.
- * Version: 0.1.1
+ * Version: 0.1.2
  * Requires at least: 6.8
  * Requires PHP: 8.2
  * License: MIT
@@ -14,6 +14,7 @@ require_once __DIR__ . '/includes/Signer.php';
 require_once __DIR__ . '/includes/KeySetup.php';
 require_once __DIR__ . '/includes/Store.php';
 require_once __DIR__ . '/includes/Service.php';
+require_once __DIR__ . '/includes/Browser.php';
 
 function store(): Store { global $wpdb; return new Store($wpdb); }
 function signer(): Signer {
@@ -72,7 +73,7 @@ function input(\WP_REST_Request $request, array $fields): array {
     return $data;
 }
 
-function challenge(string $token): bool {
+function challenge(string $token, string $expectedHostname): bool {
     if (!defined('DARKPHISH_TURNSTILE_SECRET') || DARKPHISH_TURNSTILE_SECRET === '' || strlen($token) > 2048) { return false; }
     $response = wp_remote_post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
         'timeout' => 10, 'redirection' => 0,
@@ -81,7 +82,7 @@ function challenge(string $token): bool {
     if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) { return false; }
     $body = json_decode(wp_remote_retrieve_body($response), true);
     return is_array($body) && ($body['success'] ?? false) === true &&
-        ($body['hostname'] ?? '') === wp_parse_url(home_url(), PHP_URL_HOST) && ($body['action'] ?? '') === 'darkphish-license';
+        ($body['hostname'] ?? '') === $expectedHostname && ($body['action'] ?? '') === 'darkphish-license';
 }
 
 function endpoint(string $operation, \WP_REST_Request $request): \WP_REST_Response {
@@ -103,10 +104,11 @@ function endpoint(string $operation, \WP_REST_Request $request): \WP_REST_Respon
             $email = strtolower(trim($data['email']));
             $settings = get_option('darkphish_license_settings', []);
             if (!is_email($email) || strlen($email) > 254 || empty($settings['terms_url']) || empty($settings['terms_version']) ||
-                empty($settings['registration_url']) || !hash_equals($settings['terms_version'], $data['terms_version'])) {
+                !registrationUrlAllowed($settings['registration_url'] ?? '') || !hash_equals($settings['terms_version'], $data['terms_version'])) {
                 return reply(['message' => 'A valid email and current terms acceptance are required.'], 400);
             }
-            if (!challenge($data['challenge_token'])) { return reply(['message' => 'Please complete the anti-abuse check.'], 400); }
+            $challengeOrigin = $request->get_header('origin') ?: httpsOrigin($settings['registration_url']);
+            if (!challenge($data['challenge_token'], (string) wp_parse_url($challengeOrigin, PHP_URL_HOST))) { return reply(['message' => 'Please complete the anti-abuse check.'], 400); }
             $generic = ['message' => 'If the request can be processed, a verification link will arrive by email.'];
             if (!$db->rate('email:request', $email, 3, 3600, $now)) { return reply($generic, 202); }
             $token = $service->request($email, $settings['terms_version'], $now);
@@ -134,6 +136,10 @@ function endpoint(string $operation, \WP_REST_Request $request): \WP_REST_Respon
 }
 
 add_action('rest_api_init', function (): void {
+    register_rest_route('darkphish-license/v1', '/public-config', [
+        'methods' => 'GET', 'permission_callback' => '__return_true',
+        'callback' => __NAMESPACE__ . '\publicConfiguration',
+    ]);
     foreach (['request', 'verify', 'activate', 'refresh'] as $operation) {
         register_rest_route('darkphish-license/v1', '/' . $operation, [
             'methods' => 'POST', 'permission_callback' => '__return_true',
@@ -147,8 +153,8 @@ add_action('admin_init', function (): void {
         $clean = [];
         foreach (['terms_url', 'registration_url'] as $key) {
             $url = esc_url_raw(is_string($value[$key] ?? null) ? $value[$key] : '', ['https']);
-            // Verification links are only delivered to a same-site registration page.
-            if ($key === 'registration_url' && wp_parse_url($url, PHP_URL_HOST) !== wp_parse_url(home_url(), PHP_URL_HOST)) { $url = ''; }
+            // External registration is pinned by a server-owned wp-config.php constant.
+            if ($key === 'registration_url' && !registrationUrlAllowed($url)) { $url = ''; }
             if (wp_parse_url($url, PHP_URL_FRAGMENT) || wp_parse_url($url, PHP_URL_USER) || wp_parse_url($url, PHP_URL_PASS)) { $url = ''; }
             $clean[$key] = $url;
         }
@@ -183,7 +189,7 @@ function adminPage(): void {
     }
     echo '<form action="options.php" method="post">';
     settings_fields('darkphish_license');
-    foreach (['registration_url' => 'Page containing [darkphish_license]', 'terms_url' => 'Community terms URL', 'terms_version' => 'Terms version (for example 2026-09-16)'] as $field => $label) {
+    foreach (['registration_url' => 'Registration page URL (static HTML or shortcode)', 'terms_url' => 'Community terms URL', 'terms_version' => 'Terms version (for example 2026-09-16)'] as $field => $label) {
         echo '<p><label>' . esc_html($label) . '<br><input class="regular-text" name="darkphish_license_settings[' . esc_attr($field) . ']" value="' . esc_attr($settings[$field] ?? '') . '" required></label></p>';
     }
     submit_button(); echo '</form><h2>Latest 100 licenses</h2><p>Revocation prevents further leases. Previously signed leases remain usable until their signed grace deadline. Reset does not invalidate an offline lease.</p><table class="widefat"><thead><tr><th>License / email</th><th>Status / expires</th><th>Installation</th><th>Action</th></tr></thead><tbody>';
@@ -211,7 +217,7 @@ add_shortcode('darkphish_license', function (): string {
         return '<p>Community registration is not available yet.</p>';
     }
     // Token is carried in the fragment, never in a query string or referrer.
-    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.1.1', true);
+    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.1.2', true);
     wp_enqueue_script('darkphish-turnstile', 'https://challenges.cloudflare.com/turnstile/v0/api.js', [], null, true);
     return '<section id="darkphish-license" data-api="' . esc_url(rest_url('darkphish-license/v1/')) . '" data-terms="' . esc_attr($settings['terms_version']) . '"><h2>Darkphish Community</h2><p>Free registration: 100 managed users and 1 active campaign.</p><p role="status" aria-live="polite" class="dp-status"></p><form class="dp-request"><label>Email <input type="email" name="email" maxlength="254" autocomplete="email" required></label><p><label><input type="checkbox" required> I accept the <a href="' . esc_url($settings['terms_url']) . '" target="_blank" rel="noopener noreferrer">Community terms</a>.</label></p><div class="cf-turnstile" data-action="darkphish-license" data-sitekey="' . esc_attr(DARKPHISH_TURNSTILE_SITE_KEY) . '"></div><button type="submit">Request license</button></form><button type="button" class="dp-verify" hidden>Confirm email and display my license key</button><pre class="dp-key" hidden></pre></section>';
 });

@@ -1,7 +1,7 @@
 === Darkphish Community Licensing ===
 Requires at least: 6.8
 Requires PHP: 8.2
-Stable tag: 0.1.1
+Stable tag: 0.1.2
 License: MIT
 
 Email-verified Community registration and Ed25519 activation leases.
@@ -20,7 +20,7 @@ Only the public verification keyring may be copied to Darkphish clients.
 Configure DARKPHISH_TURNSTILE_SITE_KEY and DARKPHISH_TURNSTILE_SECRET in
 wp-config.php. Never send the secret key or private signing file through chat.
 
-Create a page with [darkphish_license]. Set its HTTPS URL, Community terms URL
+Use the static-site registration page or a page with [darkphish_license]. For an external HTML site, configure DARKPHISH_LICENSE_REGISTRATION_ORIGIN in wp-config.php. Set the registration HTTPS URL, Community terms URL
 and terms version in Settings > Darkphish licensing. Verify actual mail delivery.
 
 The complete Slovak deployment guide is INSTALL.md in this package and

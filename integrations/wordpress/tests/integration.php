@@ -18,7 +18,8 @@ define('WP_HOME', 'https://fsociety.test');
 define('WP_SITEURL', 'https://fsociety.test');
 define('ABSPATH', rtrim($root, '/\\') . '/');
 define('DARKPHISH_TURNSTILE_SECRET', 'test-only-stub');
-define('DARKPHISH_TURNSTILE_SITE_KEY', 'test-only-stub');
+define('DARKPHISH_TURNSTILE_SITE_KEY', 'test-public-site-key');
+define('DARKPHISH_LICENSE_REGISTRATION_ORIGIN', 'https://darkphish.test');
 $table_prefix = 'wp_';
 $_SERVER['HTTPS'] = 'on'; $_SERVER['HTTP_HOST'] = 'fsociety.test'; $_SERVER['REMOTE_ADDR'] = '127.0.0.1'; $_SERVER['DOCUMENT_ROOT'] = ABSPATH;
 $keyPath = getenv('DARKPHISH_WP_TEST_KEY');
@@ -36,13 +37,19 @@ if (is_wp_error($activated)) { throw new RuntimeException('Activation failed: ' 
 require_once ABSPATH . 'wp-content/plugins/darkphish-license/darkphish-license.php';
 
 function check(bool $condition, string $message): void { if (!$condition) { throw new RuntimeException($message); } }
-function call_api(string $operation, array|string $data): WP_REST_Response {
-    $request = new WP_REST_Request('POST', '/darkphish-license/v1/' . $operation);
+function call_api(string $operation, array|string $data, string $origin = '', string $method = 'POST'): WP_REST_Response {
+    $request = new WP_REST_Request($method, '/darkphish-license/v1/' . $operation);
     $request->set_header('Content-Type', 'application/json');
+    if ($origin !== '') { $request->set_header('Origin', $origin); }
     $request->set_body(is_string($data) ? $data : json_encode($data, JSON_THROW_ON_ERROR));
     return rest_do_request($request);
 }
 
+// Used only by the disposable local HTTP harness to verify real emitted CORS headers.
+if (PHP_SAPI === 'cli-server') {
+    rest_get_server()->serve_request(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH));
+    return;
+}
 // Subprocesses compete for the same license using independent DB connections.
 if (($argv[1] ?? '') === 'compete') {
     $response = call_api('activate', ['license_key' => getenv('DARKPHISH_WP_TEST_LICENSE'), 'installation_id' => $argv[2], 'product_version' => '0.11.0']);
@@ -70,21 +77,36 @@ catch (RuntimeException $expected) {}
 check(hash_file('sha256', $keyPath) === $keyDigest, 'Setup changed an existing private key');
 wp_set_current_user(0); $_REQUEST = [];
 $service = new Darkphish\Licensing\Service($db, Darkphish\Licensing\signer());
-$settings = ['registration_url' => 'https://fsociety.test/license/', 'terms_url' => 'https://fsociety.test/terms/', 'terms_version' => 'test-v1'];
+$settings = ['registration_url' => 'https://darkphish.test/licencia/', 'terms_url' => 'https://fsociety.test/terms/', 'terms_version' => 'test-v1'];
 update_option('darkphish_license_settings', $settings);
 $mails = [];
 add_filter('pre_wp_mail', function ($return, array $mail) use (&$mails) { $mails[] = $mail; return true; }, 10, 2);
-add_filter('pre_http_request', function ($pre, array $args, string $url) {
+$challengeHostname = 'wrong.test';
+add_filter('pre_http_request', function ($pre, array $args, string $url) use (&$challengeHostname) {
     if ($url !== 'https://challenges.cloudflare.com/turnstile/v0/siteverify') { throw new RuntimeException('Unexpected external network call'); }
-    return ['response' => ['code' => 200], 'body' => json_encode(['success' => ($args['body']['response'] ?? '') === 'valid-test-token', 'hostname' => 'fsociety.test', 'action' => 'darkphish-license'])];
+    return ['response' => ['code' => 200], 'body' => json_encode(['success' => ($args['body']['response'] ?? '') === 'valid-test-token', 'hostname' => $challengeHostname, 'action' => 'darkphish-license'])];
 }, 10, 3);
 
+do_action('admin_init');
+check(sanitize_option('darkphish_license_settings', $settings)['registration_url'] === $settings['registration_url'], 'Approved static registration URL rejected');
+foreach (['https://evil.test/licencia/', 'https://darkphish.test.evil.test/licencia/', 'http://darkphish.test/licencia/', 'https://darkphish.test/licencia/#token', 'https://user@darkphish.test/licencia/'] as $bad) {
+    check(sanitize_option('darkphish_license_settings', array_replace($settings, ['registration_url' => $bad]))['registration_url'] === '', 'Untrusted email destination accepted');
+}
+$publicConfig = call_api('public-config', [], 'https://darkphish.test', 'GET');
+check($publicConfig->get_status() === 200 && $publicConfig->get_data()['site_key'] === 'test-public-site-key', 'Public config unavailable');
+check(!str_contains(json_encode($publicConfig->get_data()), DARKPHISH_TURNSTILE_SECRET), 'Public config leaked secret');
+foreach (['https://evil.test', 'null', 'http://darkphish.test', 'https://darkphish.test.evil.test', 'https://darkphish.test:444'] as $origin) {
+    check(call_api('public-config', [], $origin, 'GET')->get_status() === 403, 'Untrusted browser origin accepted');
+}
+check(call_api('request', ['email' => 'blocked@example.test'], 'https://evil.test')->get_status() === 403, 'Untrusted request dispatched');
 $request = ['email' => 'owner@example.test', 'terms_version' => 'test-v1', 'challenge_token' => 'invalid'];
 check(call_api('request', $request)->get_status() === 400 && count($mails) === 0, 'Failed anti-abuse check sent mail');
 $request['challenge_token'] = 'valid-test-token';
-check(call_api('request', $request)->get_status() === 202 && count($mails) === 1, 'Registration email missing');
+check(call_api('request', $request, 'https://darkphish.test')->get_status() === 400 && count($mails) === 0, 'Wrong Turnstile hostname accepted');
+$challengeHostname = 'darkphish.test';
+check(call_api('request', $request, 'https://darkphish.test')->get_status() === 202 && count($mails) === 1, 'Registration email missing');
 preg_match('/#dp-verify=([A-Za-z0-9_-]{43})/', $mails[0]['message'], $match);
-check(isset($match[1]), 'Verification link missing');
+check(isset($match[1]) && str_contains($mails[0]['message'], 'https://darkphish.test/licencia/#dp-verify='), 'Static-site verification link missing');
 $verified = call_api('verify', ['token' => $match[1]]);
 check($verified->get_status() === 200, 'Email verification failed');
 $license = $verified->get_data();

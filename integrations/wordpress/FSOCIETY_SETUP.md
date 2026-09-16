@@ -35,7 +35,7 @@ absolútnu serverovú cestu. Plugin aj tak skontroluje skutočné umiestnenie.
 
 ## 3. Aktualizácia pluginu a vytvorenie kľúča
 
-Nahraj ZIP verzie **0.1.1** cez **Pluginy → Pridať nový → Nahrať plugin**
+Nahraj ZIP verzie **0.1.2** cez **Pluginy → Pridať nový → Nahrať plugin**
 a zvoľ nahradenie nainštalovanej verzie. Licencie a databázové tabuľky zostanú.
 
 Cez HTTPS otvor **Nastavenia → Darkphish licensing**. Klikni na
@@ -55,7 +55,7 @@ vlastníka. Nenastavuj priečinok na 777 ako náhradu tejto opravy.
 V Cloudflare účte otvor **Turnstile → Add widget**:
 
 - názov: napríklad `fsociety Darkphish`;
-- hostname: `fsociety.sk` (pridaj `www.fsociety.sk`, iba ak ho používaš);
+- hostname: `darkphish.sk` pre HTML registráciu; existujúci `fsociety.sk` môže zostať;
 - režim: **Managed**.
 
 Doménu nemusíš presúvať do Cloudflare a DNS nemeníš. Do `wp-config.php`, na
@@ -69,12 +69,31 @@ define('DARKPHISH_TURNSTILE_SECRET', 'SEM_VLOZ_SECRET_KEY');
 Zástupné hodnoty nahraď; Site key je verejný, Secret key zostáva na hostingu.
 [Oficiálny postup](https://developers.cloudflare.com/turnstile/get-started/).
 
-## 5. Registrácia a overenie
+## 5. HTML registrácia na darkphish.sk
 
-Vytvor stránku so shortcode `[darkphish_license]`. V nastaveniach pluginu
-vyplň jej HTTPS URL, URL schválených licenčných podmienok a verziu podmienok.
-API po dokončení konfigurácie používa základnú adresu
-`https://fsociety.sk/wp-json/darkphish-license/v1`.
+WordPress aj podpisový kľúč zostávajú na fsociety.sk. Nahraj aktualizovaný
+plugin 0.1.2 a do jeho wp-config.php pred wp-settings.php pridaj:
+
+```php
+define('DARKPHISH_LICENSE_REGISTRATION_ORIGIN', 'https://darkphish.sk');
+```
+
+Existujúce podpisové a Turnstile konštanty zachovaj. Nový podpisový kľúč
+nevytváraj. Obsah balíka statickej stránky (`licencia/`) nahraj do verejného
+koreňa **darkphish.sk**, takže vznikne `https://darkphish.sk/licencia/`.
+Neprepisuj existujúci index hlavnej stránky. Na stránku nedávaj ďalšie skripty.
+
+V nastaveniach pluginu ulož:
+- Registration page URL: `https://darkphish.sk/licencia/`
+- Community terms URL: skutočnú HTTPS stránku schválených licenčných podmienok
+- Terms version: označenie verzie týchto podmienok
+
+Do existujúceho Turnstile widgetu pridaj hostname `darkphish.sk`.
+HTML formulár si verejné nastavenia načíta sám; žiadny secret doň nekopíruj.
+Ak web presmerúva na www, najprv zjednoť kanonickú doménu a origin v konfigurácii.
+Súbor otvor cez jeho HTTPS adresu, nie lokálne cez file://.
 
 Ďalší krok je skúška doručenia overovacieho e-mailu a reálnej aktivácie Go
-klienta. Samotné nahratie pluginu alebo vytvorenie kľúča tento test nenahrádza.
+klienta. Overovací odkaz smeruje späť na darkphish.sk; kľúč sa zobrazí až
+po výslovnom kliknutí, samotné otvorenie odkazu ho nevydá. Plugin používa API
+`https://fsociety.sk/wp-json/darkphish-license/v1`.

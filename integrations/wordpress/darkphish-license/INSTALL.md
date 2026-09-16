@@ -14,7 +14,7 @@ nevytvorí produkčný podpisový kľúč ani nezačne posielať správy použí
 4. Fungujúce odosielanie e-mailov vo WordPresse. Plugin používa `wp_mail()`;
    prijatie správy poštovým serverom treba následne overiť v reálnej schránke.
 5. Cloudflare Turnstile widget: **Turnstile → Add widget**, režim Managed,
-   povolená doména `fsociety.sk` a samostatne testovacia doména. DNS webu nemusí
+   povolená doména `darkphish.sk` pre statický formulár (alebo `fsociety.sk` pre shortcode) a samostatne testovacia doména. DNS webu nemusí
    byť vedené cez Cloudflare. Site key je verejný, Secret key patrí iba na server.
 6. Schválenú stránku podmienok Community licencie a označenie jej verzie.
    Plugin právne podmienky nevymýšľa; verejnú registráciu bez ich konfigurácie nepovolí.
@@ -73,26 +73,43 @@ Tieto zástupné hodnoty nefungujú a nepatria do produkcie. Pri reverznom proxy
 nastav dôveryhodné HTTPS a skutočnú klientsku IP na úrovni servera. Plugin
 nepreberá ľubovoľné `X-Forwarded-*` hlavičky. `home` aj `siteurl` majú používať HTTPS.
 
-## Dokončenie vo WordPresse
+## HTML registrácia na darkphish.sk
 
-1. Nahraj a aktivuj ZIP. Plugin vytvorí vlastné tabuľky InnoDB s prefixom WordPressu.
-2. Vytvor stránku napríklad `https://fsociety.sk/darkphish-licencia/` s blokom
-   Shortcode obsahujúcim `[darkphish_license]`. Použi stránku bez reklamných
-   a analytických skriptov, ktoré by mohli čítať obsah formulára.
-3. V **Nastavenia → Darkphish licensing** ulož URL tejto stránky, URL podmienok
-   a verziu podmienok. Skontroluj zobrazený verejný keyring a adresu API.
-4. Na hostingu/CDN vypni cache a zaznamenávanie tiel požiadaviek/odpovedí pre
-   `/wp-json/darkphish-license/v1/*`. Tokeny ani aktivačné kľúče nesmú skončiť
-   v analytike, debug mail pluginoch alebo logoch.
-5. Pri CSP povoľ Turnstile podľa oficiálneho návodu. Verejný formulár je
-   zámerne na fsociety.sk; web darkphish.sk naň môže odkazovať. Iné originy nie
-   sú potrebné pre Go klienta a automaticky sa nepovoľujú.
+Od verzie 0.1.2 môže verejná registrácia bežať na samostatnom HTML webe.
+WordPress na fsociety.sk zostáva licenčným API; súkromné kľúče a databáza
+zostávajú iba na tomto serveri. Do HTML webu nepridávaj PHP ani WordPress.
 
-Plánovaná produkčná základná URL API je:
+1. Vo wp-config.php nastav presný povolený origin bez koncového lomítka:
 
-`https://fsociety.sk/wp-json/darkphish-license/v1`
+   ```php
+   define('DARKPHISH_LICENSE_REGISTRATION_ORIGIN', 'https://darkphish.sk');
+   ```
 
-Táto adresa bude funkčná až po inštalácii, konfigurácii a overení hostingu.
+2. Nahraj obsah `static-site/licencia/` do priečinka `licencia` vo verejnom
+   koreni HTML webu. Výsledná stránka je `https://darkphish.sk/licencia/`.
+   Existujúcu hlavnú stránku neprepisuj. Na registráciu nepridávaj analytiku,
+   reklamy ani iné skripty, ktoré môžu čítať token alebo zobrazený kľúč.
+3. V administrácii WordPressu **Nastavenia → Darkphish licensing** nastav
+   **Registration page URL** na `https://darkphish.sk/licencia/`, URL
+   schválených podmienok a ich skutočnú verziu. Toto nastavenie určuje aj
+   cieľ overovacieho e-mailu; ľubovoľné cudzie domény sú odmietnuté.
+4. V existujúcom Turnstile widgete povoľ `darkphish.sk`. Secret key ponechaj
+   iba vo wp-config.php. Formulár načíta Site key a aktuálne podmienky cez
+   verejný `/public-config`; súkromný kľúč ani secret v tejto odpovedi nie sú.
+5. Na hostingu/CDN vypni cache a zaznamenávanie tiel požiadaviek/odpovedí pre
+   `/wp-json/darkphish-license/v1/*`. Žiadne tokeny, aktivačné kľúče ani celé
+   overovacie e-maily nesmú skončiť v analytike alebo debug logoch.
+6. Registrácia používa HTTPS, presný povolený origin, CORS preflight a žiadne
+   WordPress cookies. Turnstile odpoveď musí mať očakávaný hostname a action.
+   Iné WordPress API trasy si zachovávajú svoju pôvodnú CORS politiku.
+
+Voliteľná registrácia na rovnakom WordPresse cez `[darkphish_license]`
+zostáva podporovaná; vtedy použi jeho stránku a hostname Turnstile.
+Origin bez hlavičky je povolený pre natívneho klienta; CORS nenahrádza
+Turnstile, overenie e-mailu ani platné aktivačné/obnovovacie poverenia.
+
+Produkčná základná URL API je `https://fsociety.sk/wp-json/darkphish-license/v1`.
+Samotná konfigurácia nie je potvrdením živého testu pošty a aktivácie.
 
 ## Prepojenie klienta Darkphish
 
@@ -119,6 +136,7 @@ kľúč, zachová existujúcu aktiváciu a neobíde zrušenie ani expiráciu lic
 
 ## Protokol a životný cyklus
 
+- `GET /public-config`: iba verejný Site key, URL/verzia podmienok a registračná URL.
 - `POST /request`: `email`, `terms_version`, `challenge_token`; po overení
   Turnstile pošle 30-minútový odkaz. Rovnaká odpoveď pre nové aj existujúce účty.
 - `POST /verify`: `token`; jednorazovo vráti `license_key`, `license_id`, `expires_at`.

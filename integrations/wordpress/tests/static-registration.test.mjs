@@ -6,8 +6,8 @@ const source = readFileSync(new URL('../static-site/license/registration.js', im
 function element(hidden = false) {
     return {hidden, disabled: false, textContent: '', dataset: {}, focused: false, focus() { this.focused = true; }, handlers: {}, addEventListener(name, fn) { this.handlers[name] = fn; }};
 }
-async function page(hash = '', reply = async () => ({ok: true, json: async () => ({site_key: 'public', terms_url: 'https://www.darkphish.test/terms/', terms_version: 'v1', registration_url: 'https://www.darkphish.test/license/'})})) {
-    const nodes = Object.fromEntries(['.dp-status', '.dp-request', '.dp-verify', '.dp-restart', '.dp-key', '.dp-terms', '.dp-challenge', '.dp-confirmation', '.dp-confirmation-title', '.dp-confirmation-email'].map(name => [name, element(name !== '.dp-status')]));
+async function page(hash = '', reply = async () => ({ok: true, json: async () => ({site_key: 'public', terms_url: 'https://www.darkphish.test/terms/', terms_version: 'v1', registration_url: 'https://www.darkphish.test/license/'})}), search = '') {
+    const nodes = Object.fromEntries(['.dp-status', '.dp-request', '.dp-verify', '.dp-restart', '.dp-key', '.dp-terms', '.dp-challenge', '.dp-confirmation', '.dp-confirmation-title', '.dp-confirmation-email', '.dp-mode-label', '.dp-form-title', '.dp-terms-row', '.dp-terms-checkbox', '.hint', '.dp-mode-link', '.dp-confirmation-next'].map(name => [name, element(name !== '.dp-status')]));
     const submit = element(); submit.disabled = true;
     const fields = element(); fields.disabled = true;
     nodes['.dp-request'].hidden = false;
@@ -19,7 +19,7 @@ async function page(hash = '', reply = async () => ({ok: true, json: async () =>
     let ready, challenge;
     const context = {
         URL, URLSearchParams, Error, TypeError,
-        location: {hash, origin: 'https://www.darkphish.test', pathname: '/license/', search: ''},
+        location: {hash, origin: 'https://www.darkphish.test', pathname: '/license/', search},
         history: {replaceState: (...args) => replaced.push(args)},
         document: {getElementById: () => ({dataset: {api: 'https://fsociety.test/wp-json/darkphish-license/v1/'}, querySelector: name => nodes[name]}),
             addEventListener: (_, fn) => { ready = fn; }, createElement: () => ({}), head: {appendChild: script => scripts.push(script)}},
@@ -121,4 +121,31 @@ test('a pending request cannot be submitted twice even if the challenge refreshe
     complete(); await pending;
     assert.equal(p.nodes['.dp-confirmation'].hidden, false);
     assert.equal(p.nodes['.dp-confirmation-email'].textContent, 'test@example.test');
+});
+
+test('recovery uses a separate request and does not require new terms acceptance', async () => {
+    const p = await page('', undefined, '?mode=recover');
+    assert.equal(p.nodes['.dp-terms-row'].hidden, true);
+    assert.equal(p.nodes['.dp-terms-checkbox'].disabled, true);
+    p.scripts[0].onload(); p.challenge().callback('valid-token');
+    await p.nodes['.dp-request'].handlers.submit({preventDefault() {}});
+    assert.ok(p.requests[1].url.endsWith('/recover'));
+    assert.deepEqual(JSON.parse(p.requests[1].options.body), {email: 'test@example.test', challenge_token: 'valid-token'});
+});
+
+test('verified existing registration offers recovery without displaying a key', async () => {
+    const p = await page('#dp-verify=' + 'a'.repeat(43), async () => ({ok: true, json: async () => ({outcome: 'already_registered'})}));
+    await p.nodes['.dp-verify'].handlers.click();
+    assert.equal(p.nodes['.dp-key'].hidden, true);
+    assert.equal(p.nodes['.dp-verify'].hidden, true);
+    assert.equal(p.nodes['.dp-restart'].href, './?mode=recover');
+    assert.match(p.nodes['.dp-status'].textContent, /already has/);
+});
+
+test('recovered key shows original expiry even when its email copy fails', async () => {
+    const p = await page('#dp-verify=' + 'a'.repeat(43), async () => ({ok: true, json: async () => ({outcome: 'recovered', license_key: 'DP-COM-' + 'b'.repeat(43), expires_at: 1800000000, email_accepted: false})}), '?mode=recover');
+    await p.nodes['.dp-verify'].handlers.click();
+    assert.equal(p.nodes['.dp-key'].hidden, false);
+    assert.match(p.nodes['.dp-status'].textContent, /Original expiry: 2027-01-15/);
+    assert.match(p.nodes['.dp-status'].textContent, /email copy could not be sent/);
 });

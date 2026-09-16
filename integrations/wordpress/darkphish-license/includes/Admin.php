@@ -29,8 +29,8 @@ function licenseMenuOrder(array $order): array {
 }
 add_action('admin_enqueue_scripts', function (string $hook): void {
     if ($hook === 'toplevel_page_darkphish-licenses') {
-        wp_enqueue_script('darkphish-licenses-admin', plugins_url('assets/admin.js', dirname(__DIR__) . '/darkphish-license.php'), [], '0.2.1', true);
-        wp_enqueue_style('darkphish-licenses-admin', plugins_url('assets/admin.css', dirname(__DIR__) . '/darkphish-license.php'), [], '0.2.1');
+        wp_enqueue_script('darkphish-licenses-admin', plugins_url('assets/admin.js', dirname(__DIR__) . '/darkphish-license.php'), [], '0.2.2', true);
+        wp_enqueue_style('darkphish-licenses-admin', plugins_url('assets/admin.css', dirname(__DIR__) . '/darkphish-license.php'), [], '0.2.2');
     }
 });
 
@@ -132,6 +132,9 @@ function adminPage(): void {
         echo '<section class="dp-admin-panel"><h2>License created</h2><p>Copy this key now and deliver it securely to the customer. It is shown only in this response and is not emailed automatically.</p><pre class="dp-admin-key">' . esc_html($result['license_key']) . '</pre><p>License ID: ' . esc_html($result['license_id']) . '</p></section>';
     } elseif (isset($result['message'])) { echo '<div class="notice notice-success"><p>' . esc_html($result['message']) . '</p></div>'; }
     try {
+        if (in_array($tab, ['dashboard', 'community'], true) && store()->duplicateCommunityEmails() > 0) {
+            echo '<div class="notice notice-error"><p>Some email addresses have multiple Community records. Registration and recovery for these addresses are blocked until the records are reviewed. No licenses have been deleted or merged automatically.</p></div>';
+        }
         if ($tab === 'settings') { echo '<section class="dp-admin-panel">'; adminSettings(); planSettings(); echo '</section>'; }
         elseif ($tab === 'dashboard') { adminDashboard(); }
         else { adminEdition($tab); }

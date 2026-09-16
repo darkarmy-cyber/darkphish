@@ -33,6 +33,10 @@ try {
     check($hookCount() === $beforeHooks, 'Mailer hook leaked after success');
     check(wp_mail('other@example.test', 'Unrelated WordPress message', 'Unrelated body'), 'Other mail failed');
     check($capture->captured[1]['text'] === '' && $capture->captured[1]['html'] === 'Unrelated body', 'Verification content leaked to other mail');
+    $recovery = ['license_key' => 'DP-COM-' . str_repeat('r', 43), 'expires_at' => 1800000000];
+    check(Darkphish\Licensing\sendRecoveryKeyEmail('mail-test@example.test', $recovery), 'Recovery key email failed');
+    check(str_contains($capture->captured[2]['text'], $recovery['license_key']) && str_contains($capture->captured[2]['html'], '2027-01-15'), 'Recovery email key/expiry missing');
+    check(str_contains($capture->captured[2]['mime'], 'multipart/alternative'), 'Recovery text alternative missing');
     $capture->fail = true;
     check(!Darkphish\Licensing\sendVerificationEmail('mail-test@example.test', $url), 'Mail failure ignored');
     check($hookCount() === $beforeHooks, 'Mailer hook leaked after failure');

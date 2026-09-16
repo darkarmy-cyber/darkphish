@@ -213,3 +213,34 @@ záložný odkaz a textovú alternatívu. Používa existujúcu SMTP konfigurác
 Na darkphish.sk nahraj aj statickú stránku en7 do license/, aby sa po žiadosti
 zobrazila obrazovka „Check your inbox“. Overovací odkaz stále vyžaduje výslovné
 potvrdenie na stránke; samotné otvorenie e-mailu ani odkazu kľúč nevydá.
+
+## Oddelená registrácia a obnova — 0.2.2 / en8
+
+Nová registrácia už nikdy nemení kľúč existujúcej Community licencie. Po overení
+mailboxu vráti already_registered a ponúkne samostatnú obnovu. Jedna Community
+licencia patrí jednej adrese bez rozlíšenia veľkosti písmen a okolitých medzier.
+Platené edície ostávajú samostatné; aliasy rôznych adries sa svojvoľne nezlučujú.
+
+Obnova začína na /license/?mode=recover. POST recover iba vytvorí žiadosť a odošle
+potvrdenie; existenciu licencie skontroluje až POST verify po preukázaní vlastníctva
+mailboxu. Odpoveď pri odoslaní je rovnaká pre existujúcu aj neexistujúcu adresu.
+Oba režimy zdieľajú e-mailový limit. Účel žiadosti je uložený na serveri; parameter
+mode v URL ovplyvňuje iba zobrazenie a nemôže zmeniť účel už vydaného tokenu.
+
+Obnova platnej licencie mení iba hash aktivačného kľúča. Zachová ID, vytvorenie,
+platnosť, limity, väzbu, obnovovací token aj prijaté podmienky. Náhradný kľúč sa
+zobrazí a odošle do overenej schránky. Ak odoslanie kópie zlyhá, platný kľúč zostane
+zobrazený na stránke; dátum platnosti sa nemení. Kľúč sa neukladá v čitateľnej podobe
+do licenčnej databázy. SMTP logovanie tiel správ musí zostať vypnuté.
+Chýbajúca licencia sa nevytvára, expirovaná sa nepredlžuje a odvolaná neobnovuje.
+
+Schéma 3 pridáva účel k requests a overuje jedinečný index email_hash. Staršie
+nevybavené odkazy sa považujú za registráciu, preto nemôžu implicitne nahradiť kľúč.
+Vyhľadávanie kontroluje aj uloženú adresu pre historické nekanonické hashe.
+Viac Community záznamov pre rovnakú adresu vyvolá upozornenie v Dashboard/Community
+ a výsledok support_required po overení. Nič sa automaticky nemaže ani nezlučuje.
+
+Nasadenie: nahraď plugin rovnakého názvu priečinka balíkom 0.2.2 a nahraj tri nové
+súbory license/. Inštalácia doplní schému pri ďalšom načítaní; súkromný kľúč a
+nastavenia sa zachovajú. Skutočné údajné duplicitné riadky z produkcie neboli
+sprístupnené; príčina ich zobrazenia sa bez tejto kontroly nepovažuje za potvrdenú.

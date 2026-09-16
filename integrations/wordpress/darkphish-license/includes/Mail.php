@@ -3,7 +3,7 @@ declare(strict_types=1);
 namespace Darkphish\Licensing;
 
 /** Self-contained email: no remote images, scripts, fonts or tracking pixels. */
-function verificationEmail(string $url): array {
+function verificationEmail(string $url, bool $recover = false): array {
     $link = htmlspecialchars($url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     $subject = 'Verify your email — DarkPhish Community';
     $text = "DARKPHISH COMMUNITY\n\nVerify your email address\n\nYou're one step away from your Community activation key.\nOpen the link below within 30 minutes, then confirm on the page to display your key:\n\n"
@@ -40,11 +40,20 @@ function verificationEmail(string $url): array {
 <!--[if mso]></td></tr></table><![endif]-->
 </td></tr></table></body></html>
 HTML;
+    if ($recover) {
+        $subject = 'Confirm your license recovery — DarkPhish';
+        $html = str_replace(["Your Community activation starts here.", "You're one step away from your DarkPhish Community activation key. Confirm that this email address belongs to you to continue.", 'Your next step:<br>verify your email', '2. Confirm to display your activation key.', 'Your activation key is displayed only after confirmation on the website.'],
+            ['Recover your existing Community license.', 'You requested a replacement activation key. Verify your email first. We will then check for an existing Community license. Recovery does not extend its expiry date.', 'Lost your key?<br>Recover your license', '2. Confirm recovery. Your original expiry date stays unchanged.', 'If an active license exists, its replacement key will be displayed and emailed after confirmation.'], $html);
+        $text = "DARKPHISH COMMUNITY — LICENSE RECOVERY\n\nConfirm your request within 30 minutes:\n\n" . $url . "\n\nAfter you confirm, we check for an existing active Community license. Its replacement key is displayed and emailed; the original expiry date and installation remain unchanged.\n\nIf you did not request recovery, ignore this message. Do not forward this link.\nSupport: license@darkphish.sk\n";
+    }
     return ['subject' => $subject, 'html' => $html, 'text' => $text];
 }
 
-function sendVerificationEmail(string $email, string $url): bool {
-    $message = verificationEmail($url);
+function sendVerificationEmail(string $email, string $url, bool $recover = false): bool {
+    return sendLicenseMessage($email, verificationEmail($url, $recover));
+}
+
+function sendLicenseMessage(string $email, array $message): bool {
     // Scope the alternative to this exact message, including nested wp_mail calls.
     $configure = static function ($mailer) use ($email, $message): void {
         $recipients = $mailer->getToAddresses();
@@ -59,4 +68,32 @@ function sendVerificationEmail(string $email, string $url): bool {
     } finally {
         remove_action('phpmailer_init', $configure, PHP_INT_MAX);
     }
+}
+
+function recoveryKeyEmail(array $license): array {
+    $key = htmlspecialchars($license['license_key'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $expiry = gmdate('Y-m-d H:i', (int) $license['expires_at']) . ' UTC';
+    $subject = 'Your replacement Community key — DarkPhish';
+    $text = "Your DarkPhish Community license has been recovered.\n\nReplacement activation key:\n" . $license['license_key'] . "\n\nOriginal expiry: " . $expiry . "\n\nThe previous activation key has been replaced. Your license limits, installation binding and expiry have not changed. Enter this key in DarkPhish > Settings > Licensing. Keep this email private.\n\nIf you did not confirm this recovery, contact license@darkphish.sk.\n";
+    $html = <<<HTML
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Your replacement DarkPhish key</title></head>
+<body style="margin:0;background:#080d10;font-family:Arial,Helvetica,sans-serif;color:#17252b;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+<tr><td style="padding:12px 16px 28px;font-size:26px;font-weight:bold;color:#f3f7f8;">Dark<span style="color:#1fd1dc;">Phish</span></td></tr>
+<tr><td style="padding:28px 24px;border-top:5px solid #1fd1dc;background:#ffffff;">
+<p style="font-size:11px;letter-spacing:2px;font-weight:bold;color:#087d85;">COMMUNITY LICENSE RECOVERED</p>
+<h1 style="font-size:28px;line-height:1.2;">Your replacement key</h1>
+<p style="font-size:16px;line-height:1.7;">Your existing license is ready to use again. Its original expiry date has not changed.</p>
+<p style="padding:18px;background:#eef8f7;font-family:monospace;font-size:15px;line-height:1.8;word-break:break-all;overflow-wrap:anywhere;">{$key}</p>
+<p style="font-size:14px;line-height:1.7;"><strong>Valid until: {$expiry}</strong><br>Your license limits and installation binding remain unchanged. The previous activation key has been replaced.</p>
+<p style="font-size:14px;line-height:1.7;">Enter this key in DarkPhish under <strong>Settings &rarr; Licensing</strong>. Keep this email private.</p>
+</td></tr><tr><td style="padding:24px 16px;font-size:12px;line-height:1.7;color:#a5b6bf;">Didn't confirm this recovery? Contact <a href="mailto:license@darkphish.sk" style="color:#60efda;">license@darkphish.sk</a>.</td></tr>
+</table></td></tr></table></body></html>
+HTML;
+    return ['subject' => $subject, 'html' => $html, 'text' => $text];
+}
+
+function sendRecoveryKeyEmail(string $email, array $license): bool {
+    return sendLicenseMessage($email, recoveryKeyEmail($license));
 }

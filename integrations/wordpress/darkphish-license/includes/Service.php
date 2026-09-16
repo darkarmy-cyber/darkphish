@@ -5,9 +5,13 @@ namespace Darkphish\Licensing;
 final class Service {
     public function __construct(private Store $store, private ?Signer $signer = null) {}
 
-    public function request(string $email, string $terms, int $now): string {
+    public function request(string $email, string $terms, int $now, string $purpose = 'register'): string {
+        $email = strtolower(trim($email));
+        if (!is_email($email) || strlen($email) > 254 || !in_array($purpose, ['register', 'recover'], true)) {
+            throw new \InvalidArgumentException('Invalid request');
+        }
         $token = Signer::encode(random_bytes(32));
-        $this->store->insert('requests', ['token_hash' => hash('sha256', $token), 'email' => $email, 'terms_version' => $terms, 'expires_at' => $now + 1800]);
+        $this->store->insert('requests', ['token_hash' => hash('sha256', $token), 'email' => $email, 'terms_version' => $terms, 'purpose' => $purpose, 'expires_at' => $now + 1800]);
         return $token;
     }
 
@@ -15,29 +19,39 @@ final class Service {
         return $this->store->transaction(function () use ($token, $now): array {
             $hash = hash('sha256', $token);
             $request = $this->store->find('requests', 'token_hash', $hash, true);
-            if (!$request || (int) $request['expires_at'] <= $now) {
-                throw new \DomainException('Verification unavailable');
+            if (!$request || (int) $request['expires_at'] <= $now) { throw new \DomainException('Verification unavailable'); }
+            $purpose = $request['purpose'] ?? 'register';
+            if (!in_array($purpose, ['register', 'recover'], true)) { throw new \DomainException('Verification unavailable'); }
+            $email = strtolower(trim($request['email']));
+            $matches = $this->store->communityForEmail($email);
+            $license = $matches[0] ?? null;
+            // These results are disclosed only after proof of mailbox ownership.
+            $outcome = count($matches) > 1 ? 'support_required' : null;
+            if (!$outcome && $purpose === 'register' && $license) { $outcome = 'already_registered'; }
+            if (!$outcome && $purpose === 'recover') {
+                if (!$license) { $outcome = 'not_found'; }
+                elseif ($license['status'] !== 'active') { $outcome = 'revoked'; }
+                elseif ((int) $license['expires_at'] <= $now) { $outcome = 'expired'; }
             }
-            $emailHash = hash('sha256', strtolower($request['email']));
-            $license = $this->store->find('licenses', 'email_hash', $emailHash, true);
-            if ($license && ($license['status'] !== 'active' || ($license['edition'] ?? 'community') !== 'community')) {
-                throw new \DomainException('Verification unavailable');
+            if ($outcome) {
+                $this->store->deleteRequest($hash);
+                return ['outcome' => $outcome];
             }
             $key = 'DP-COM-' . Signer::encode(random_bytes(32));
-            if (!$license) {
-                $license = ['id' => 'DP-' . bin2hex(random_bytes(16)), 'email' => $request['email'], 'email_hash' => $emailHash,
+            if ($purpose === 'register') {
+                $license = ['id' => 'DP-' . bin2hex(random_bytes(16)), 'email' => $email, 'email_hash' => hash('sha256', $email),
                     'edition' => 'community', 'key_hash' => hash('sha256', $key), 'status' => 'active', 'managed_users' => 100, 'active_campaigns' => 1,
                     'expires_at' => $now + 365 * 86400, 'created_at' => $now, 'terms_version' => $request['terms_version']];
                 $this->store->insert('licenses', $license);
                 $this->store->event($license['id'], 'license.issue');
             } else {
-                // Proving mailbox ownership recovers the key but never resets a binding,
-                // revocation or expiry. Renewal remains an explicit admin operation.
-                $this->store->update($license['id'], ['key_hash' => hash('sha256', $key), 'terms_version' => $request['terms_version']]);
+                // Recovery changes only the key. No renewal, unbinding or revocation bypass.
+                $this->store->update($license['id'], ['key_hash' => hash('sha256', $key)]);
                 $this->store->event($license['id'], 'license.key.replace');
             }
             $this->store->deleteRequest($hash);
-            return ['license_key' => $key, 'license_id' => $license['id'], 'expires_at' => (int) $license['expires_at']];
+            return ['outcome' => $purpose === 'recover' ? 'recovered' : 'issued', 'license_key' => $key,
+                'license_id' => $license['id'], 'expires_at' => (int) $license['expires_at']];
         });
     }
 

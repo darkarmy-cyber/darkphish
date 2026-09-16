@@ -51,6 +51,10 @@ if (PHP_SAPI === 'cli-server') {
     return;
 }
 // Subprocesses compete for the same license using independent DB connections.
+if (($argv[1] ?? '') === 'register-compete') {
+    $response = call_api('verify', ['token' => $argv[2]]);
+    echo 'RESULT:' . json_encode(['status' => $response->get_status(), 'outcome' => $response->get_data()['outcome'] ?? '']) . "\n"; exit;
+}
 if (($argv[1] ?? '') === 'compete') {
     $response = call_api('activate', ['license_key' => getenv('DARKPHISH_WP_TEST_LICENSE'), 'installation_id' => $argv[2], 'product_version' => '0.11.0']);
     echo 'STATUS:' . $response->get_status() . "\n"; exit;
@@ -134,8 +138,8 @@ check(!str_contains(json_encode($stored), $license['license_key']) && !str_conta
 
 (new Darkphish\Licensing\Service($db))->administer($license['license_id'], 'revoke', 1, time());
 check(call_api('activate', $activation)->get_status() === 403 && call_api('refresh', $refresh)->get_status() === 403, 'Revocation did not stop issuance');
-$revokedToken = $service->request('owner@example.test', 'test-v1', time());
-check(call_api('verify', ['token' => $revokedToken])->get_status() === 403, 'Email reissue bypassed revocation');
+$revokedToken = $service->request('owner@example.test', '', time(), 'recover');
+check(call_api('verify', ['token' => $revokedToken])->get_data()['outcome'] === 'revoked', 'Email reissue bypassed revocation');
 $service->administer($license['license_id'], 'restore', 1, time());
 $service->administer($license['license_id'], 'reset', 1, time());
 check(call_api('refresh', $refresh)->get_status() === 403, 'Reset retained old refresh token');
@@ -182,6 +186,7 @@ check($db->find('licenses', 'id', $license['license_id']) === $before, 'Rejected
 
 require __DIR__ . '/admin-editions.php';
 require __DIR__ . '/mail.php';
+require __DIR__ . '/recovery.php';
 
 $_SERVER['HTTPS'] = 'off';
 check(call_api('activate', $activation)->get_status() === 503, 'Plaintext issuance accepted');

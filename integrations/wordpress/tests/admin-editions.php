@@ -4,9 +4,10 @@ declare(strict_types=1);
 // Reproduce an in-place upgrade with a real existing license and credentials.
 $legacy = $db->find('licenses', 'id', $license['license_id']);
 $wpdb->query("ALTER TABLE {$db->prefix}licenses DROP COLUMN edition");
+$wpdb->query("ALTER TABLE {$db->prefix}requests DROP COLUMN purpose");
 delete_option('darkphish_license_schema');
 do_action('plugins_loaded');
-check(get_option('darkphish_license_schema') === '2', 'Upgrade version marker missing');
+check(get_option('darkphish_license_schema') === '3', 'Upgrade version marker missing');
 $upgraded = $db->find('licenses', 'id', $license['license_id']);
 check($upgraded['edition'] === 'community' && $upgraded['key_hash'] === $legacy['key_hash'] && $upgraded['installation'] === $legacy['installation'], 'Upgrade lost existing license');
 check(get_option('darkphish_license_settings') === $settings, 'Upgrade lost settings');
@@ -24,7 +25,7 @@ foreach (['professional' => $paid, 'enterprise' => $enterprise] as $edition => $
     check(!str_contains(json_encode($storedPaid), $issued['license_key']), 'Paid key stored in plaintext');
 }
 $paidBefore = $db->find('licenses', 'id', $paid['license_id']);
-$token = $service->request('owner@example.test', 'test-v1', time());
+$token = $service->request('owner@example.test', '', time(), 'recover');
 $communityRecovery = $service->verify($token, time());
 check($communityRecovery['license_id'] === $license['license_id'], 'Community recovery selected paid license');
 check($db->find('licenses', 'id', $paid['license_id']) === $paidBefore, 'Community recovery changed paid license');

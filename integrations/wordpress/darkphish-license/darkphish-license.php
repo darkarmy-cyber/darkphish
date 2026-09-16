@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Darkphish Licenses
  * Description: Community, Professional and Enterprise license management for Darkphish.
- * Version: 0.2.1
+ * Version: 0.2.2
  * Requires at least: 6.8
  * Requires PHP: 8.2
  * License: MIT
@@ -54,13 +54,13 @@ register_activation_hook(__FILE__, function (bool $networkWide): void {
     if ($networkWide || is_multisite()) { wp_die('Activate only on a single-site WordPress installation.'); }
     if (!function_exists('sodium_crypto_sign_detached')) { wp_die('PHP sodium is required.'); }
     store()->install();
-    update_option('darkphish_license_schema', '2', false);
+    update_option('darkphish_license_schema', '3', false);
     if (!wp_next_scheduled('darkphish_license_cleanup')) { wp_schedule_event(time() + 3600, 'hourly', 'darkphish_license_cleanup'); }
 });
 // ZIP replacement does not rerun the activation hook. Additive, retryable upgrade.
 add_action('plugins_loaded', function (): void {
-    if (get_option('darkphish_license_schema') !== '2') {
-        try { store()->install(); update_option('darkphish_license_schema', '2', false); }
+    if (get_option('darkphish_license_schema') !== '3') {
+        try { store()->install(); update_option('darkphish_license_schema', '3', false); }
         catch (\Throwable $error) { /* Keep the old version marker so the next request retries. */ }
     }
 });
@@ -97,40 +97,48 @@ function challenge(string $token, string $expectedHostname): bool {
 
 function endpoint(string $operation, \WP_REST_Request $request): \WP_REST_Response {
     try {
+        if (get_option('darkphish_license_schema') !== '3') { return reply(['message' => 'Licensing storage upgrade is required.'], 503); }
         if (!is_ssl() || wp_parse_url(home_url(), PHP_URL_SCHEME) !== 'https') { return reply(['message' => 'HTTPS is required.'], 503); }
         $db = store();
         $now = time();
         // Forwarded headers are intentionally not trusted. Configure the web server's
         // real client address handling for a known reverse proxy.
         $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
-        if (!$db->rate('ip:' . $operation, $ip, $operation === 'request' ? 10 : 120, 3600, $now)) {
+        if (!$db->rate('ip:' . $operation, $ip, in_array($operation, ['request', 'recover'], true) ? 10 : 120, 3600, $now)) {
             $response = reply(['message' => 'Please try again later.'], 429);
             $response->header('Retry-After', '3600');
             return $response;
         }
         $service = new Service($db, signer());
-        if ($operation === 'request') {
-            $data = input($request, ['email', 'terms_version', 'challenge_token']);
+        if (in_array($operation, ['request', 'recover'], true)) {
+            $recover = $operation === 'recover';
+            $data = input($request, $recover ? ['email', 'challenge_token'] : ['email', 'terms_version', 'challenge_token']);
             $email = strtolower(trim($data['email']));
             $settings = get_option('darkphish_license_settings', []);
             if (!is_email($email) || strlen($email) > 254 || empty($settings['terms_url']) || empty($settings['terms_version']) ||
-                !registrationUrlAllowed($settings['registration_url'] ?? '') || !hash_equals($settings['terms_version'], $data['terms_version'])) {
+                !registrationUrlAllowed($settings['registration_url'] ?? '') || (!$recover && !hash_equals($settings['terms_version'], $data['terms_version']))) {
                 return reply(['message' => 'A valid email and current terms acceptance are required.'], 400);
             }
             $challengeOrigin = $request->get_header('origin') ?: httpsOrigin($settings['registration_url']);
             if (!challenge($data['challenge_token'], (string) wp_parse_url($challengeOrigin, PHP_URL_HOST))) { return reply(['message' => 'Please complete the anti-abuse check.'], 400); }
             $generic = ['message' => 'If the request can be processed, a verification link will arrive by email.'];
             if (!$db->rate('email:request', $email, 3, 3600, $now)) { return reply($generic, 202); }
-            $token = $service->request($email, $settings['terms_version'], $now);
-            $url = $settings['registration_url'] . '#dp-verify=' . rawurlencode($token);
-            $sent = sendVerificationEmail($email, $url);
+            $token = $service->request($email, $recover ? '' : $settings['terms_version'], $now, $recover ? 'recover' : 'register');
+            $url = $settings['registration_url'] . ($recover ? '?mode=recover' : '') . '#dp-verify=' . rawurlencode($token);
+            $sent = sendVerificationEmail($email, $url, $recover);
             if (!$sent) { $db->deleteRequest(hash('sha256', $token)); return reply(['message' => 'Email delivery is unavailable. Try again later.'], 503); }
             return reply($generic, 202);
         }
         if ($operation === 'verify') {
             $data = input($request, ['token']);
             if (!preg_match('/^[A-Za-z0-9_-]{43}$/D', $data['token'])) { return reply(['message' => 'Verification unavailable.'], 403); }
-            return reply($service->verify($data['token'], $now));
+            $verifiedRequest = $db->find('requests', 'token_hash', hash('sha256', $data['token']));
+            $result = $service->verify($data['token'], $now);
+            if (($result['outcome'] ?? '') === 'recovered') {
+                try { $result['email_accepted'] = sendRecoveryKeyEmail($verifiedRequest['email'], $result); }
+                catch (\Throwable $error) { $result['email_accepted'] = false; }
+            }
+            return reply($result);
         }
         $credential = $operation === 'refresh' ? 'refresh_token' : 'license_key';
         $data = input($request, [$credential, 'installation_id', 'product_version']);
@@ -150,7 +158,7 @@ add_action('rest_api_init', function (): void {
         'methods' => 'GET', 'permission_callback' => '__return_true',
         'callback' => __NAMESPACE__ . '\publicConfiguration',
     ]);
-    foreach (['request', 'verify', 'activate', 'refresh'] as $operation) {
+    foreach (['request', 'recover', 'verify', 'activate', 'refresh'] as $operation) {
         register_rest_route('darkphish-license/v1', '/' . $operation, [
             'methods' => 'POST', 'permission_callback' => '__return_true',
             'callback' => fn (\WP_REST_Request $request) => endpoint($operation, $request),
@@ -217,7 +225,7 @@ add_shortcode('darkphish_license', function (): string {
         return '<p>Community registration is not available yet.</p>';
     }
     // Token is carried in the fragment, never in a query string or referrer.
-    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.2.1', true);
+    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.2.2', true);
     wp_enqueue_script('darkphish-turnstile', 'https://challenges.cloudflare.com/turnstile/v0/api.js', [], null, true);
-    return '<section id="darkphish-license" data-api="' . esc_url(rest_url('darkphish-license/v1/')) . '" data-terms="' . esc_attr($settings['terms_version']) . '"><h2>Darkphish Community</h2><p>Free registration: 100 managed users and 1 active campaign.</p><p role="status" aria-live="polite" class="dp-status"></p><form class="dp-request"><label>Email <input type="email" name="email" maxlength="254" autocomplete="email" required></label><p><label><input type="checkbox" required> I accept the <a href="' . esc_url($settings['terms_url']) . '" target="_blank" rel="noopener noreferrer">Community terms</a>.</label></p><div class="cf-turnstile" data-action="darkphish-license" data-sitekey="' . esc_attr(DARKPHISH_TURNSTILE_SITE_KEY) . '"></div><button type="submit">Request license</button></form><button type="button" class="dp-verify" hidden>Confirm email and display my license key</button><pre class="dp-key" hidden></pre></section>';
+    return '<section id="darkphish-license" data-api="' . esc_url(rest_url('darkphish-license/v1/')) . '" data-terms="' . esc_attr($settings['terms_version']) . '"><h2>Darkphish Community</h2><p>Free registration: 100 managed users and 1 active campaign.</p><p role="status" aria-live="polite" class="dp-status"></p><form class="dp-request"><label>Email <input type="email" name="email" maxlength="254" autocomplete="email" required></label><p class="dp-terms-row"><label><input type="checkbox" required> I accept the <a href="' . esc_url($settings['terms_url']) . '" target="_blank" rel="noopener noreferrer">Community terms</a>.</label></p><div class="cf-turnstile" data-action="darkphish-license" data-sitekey="' . esc_attr(DARKPHISH_TURNSTILE_SITE_KEY) . '"></div><button type="submit">Request license</button></form><button type="button" class="dp-verify" hidden>Confirm email and display my license key</button><pre class="dp-key" hidden></pre><p><a class="dp-recovery-link" href="' . esc_url($settings['registration_url'] . '?mode=recover') . '">Lost your license? Recover it</a></p></section>';
 });

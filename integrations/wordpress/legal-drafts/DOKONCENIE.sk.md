@@ -2,7 +2,7 @@
 
 Anglický text nájdeš v `terms/index.html`. Otvor ho v prehliadači;
 spoločný štýl je v `legal.css`. Dokument má verziu
-`2026-09-16-draft.2` a zatiaľ nemá dátum účinnosti.
+`2026-09-16-draft.3` a zatiaľ nemá dátum účinnosti.
 
 Pripravené pravidlá:
 
@@ -10,7 +10,7 @@ Pripravené pravidlá:
   používateľov a jednu aktívnu kampaň, na 365 dní od vydania.
 - Žiadne automatické platby ani objednávka platenej edície.
 - Overovací odkaz e-mailom na 30 minút; po potvrdení sa kľúč zobrazí na stránke.
-- Nový kľúč pre rovnaký e-mail nahradí starý, ale neobnoví platnosť,
+- Samostatná overená obnova zobrazí a odošle náhradný kľúč pre tú istú licenciu, ale neobnoví platnosť,
   nezruší väzbu na inštaláciu ani odvolanie licencie.
 - Obnova platnosti a presun inštalácie cez správcu.
 - Pravidlá oprávneného bezpečnostného testovania a ochrany prístupových údajov.
@@ -40,7 +40,7 @@ prípadných slovenských jazykových a spotrebiteľských povinností.
    a `/license/legal.css`, pridáme odkaz na súkromie k formuláru.
 3. Až po nahratí a kontrole verejných stránok nastavíme vo WordPresse:
    - Community terms URL: `https://www.darkphish.sk/license/terms/`
-   - Terms version: skutočný identifikátor schválenej verzie, nie `draft.2`.
+   - Terms version: skutočný identifikátor schválenej verzie, nie `draft.3`.
 4. Overíme odoslanie e-mailu, potvrdenie a aktiváciu v aplikácii.
 
 Tento balík je na kontrolu. Nie je určený na zapnutie verejnej registrácie.

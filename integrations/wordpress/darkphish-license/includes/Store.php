@@ -16,7 +16,7 @@ final class Store {
         $charset = $this->db->get_charset_collate();
         $tables = [
             'licenses' => "id varchar(40) NOT NULL, email varchar(254) NOT NULL, email_hash char(64) NOT NULL, edition varchar(20) NOT NULL DEFAULT 'community', key_hash char(64) NOT NULL, status varchar(16) NOT NULL, managed_users int NOT NULL, active_campaigns int NOT NULL, expires_at bigint NOT NULL, installation varchar(80) NOT NULL DEFAULT '', refresh_hash char(64) NOT NULL DEFAULT '', product_version varchar(40) NOT NULL DEFAULT '', last_seen bigint NOT NULL DEFAULT 0, created_at bigint NOT NULL, terms_version varchar(80) NOT NULL, PRIMARY KEY  (id), UNIQUE KEY email_hash (email_hash), UNIQUE KEY key_hash (key_hash), KEY refresh_hash (refresh_hash)",
-            'requests' => "token_hash char(64) NOT NULL, email varchar(254) NOT NULL, expires_at bigint NOT NULL, terms_version varchar(80) NOT NULL, PRIMARY KEY  (token_hash)",
+            'requests' => "token_hash char(64) NOT NULL, email varchar(254) NOT NULL, expires_at bigint NOT NULL, terms_version varchar(80) NOT NULL, purpose varchar(16) NOT NULL DEFAULT 'register', PRIMARY KEY  (token_hash)",
             'limits' => "bucket char(64) NOT NULL, hits int NOT NULL DEFAULT 0, expires_at bigint NOT NULL, PRIMARY KEY  (bucket)",
             'events' => "id bigint unsigned NOT NULL AUTO_INCREMENT, license_id varchar(40) NOT NULL, action varchar(40) NOT NULL, actor bigint unsigned NOT NULL DEFAULT 0, created_at bigint NOT NULL, PRIMARY KEY  (id), KEY license_id (license_id)",
         ];
@@ -26,6 +26,15 @@ final class Store {
             dbDelta($sql);
             if ($name === 'licenses' && !$this->db->get_row("SHOW COLUMNS FROM {$this->prefix}licenses LIKE 'edition'")) {
                 throw new \RuntimeException('License edition upgrade unavailable');
+            }
+            if ($name === 'requests' && !$this->db->get_row("SHOW COLUMNS FROM {$this->prefix}requests LIKE 'purpose'")) {
+                throw new \RuntimeException('Request purpose upgrade unavailable');
+            }
+            if ($name === 'licenses') {
+                $index = $this->db->get_results("SHOW INDEX FROM {$this->prefix}licenses WHERE Key_name='email_hash'", ARRAY_A);
+                if (count($index ?: []) !== 1 || (int) $index[0]['Non_unique'] !== 0 || $index[0]['Column_name'] !== 'email_hash') {
+                    throw new \RuntimeException('Unique email index unavailable');
+                }
             }
             $actual = $this->db->get_row($this->db->prepare('SHOW TABLE STATUS WHERE Name = %s', $this->prefix . $name), ARRAY_A);
             if (!$actual || strcasecmp($actual['Engine'], 'InnoDB') !== 0) {
@@ -67,6 +76,19 @@ final class Store {
         if ($this->db->insert($this->prefix . $table, $record) === false) {
             throw new \RuntimeException('Licensing storage unavailable');
         }
+    }
+
+    /** Check the stored address too, so legacy noncanonical hashes cannot create new licenses. */
+    public function communityForEmail(string $email): array {
+        $rows = $this->db->get_results($this->db->prepare("SELECT * FROM {$this->prefix}licenses WHERE edition='community' AND (email_hash=%s OR LOWER(TRIM(email))=%s) ORDER BY id LIMIT 2 FOR UPDATE", hash('sha256', $email), $email), ARRAY_A);
+        if ($this->db->last_error !== '') { throw new \RuntimeException('Licensing storage unavailable'); }
+        return $rows ?: [];
+    }
+
+    public function duplicateCommunityEmails(): int {
+        $count = $this->db->get_var("SELECT COUNT(*) FROM (SELECT LOWER(TRIM(email)) FROM {$this->prefix}licenses WHERE edition='community' GROUP BY LOWER(TRIM(email)) HAVING COUNT(*)>1) AS duplicates");
+        if ($this->db->last_error !== '') { throw new \RuntimeException('Licensing storage unavailable'); }
+        return (int) $count;
     }
 
     public function update(string $id, array $record): void {

@@ -176,6 +176,11 @@ func (c *Campaign) Validate() error {
 
 // UpdateStatus changes the campaign status appropriately
 func (c *Campaign) UpdateStatus(s string) error {
+	if s == CampaignInProgress {
+		if err := CheckCampaignLicense(); err != nil {
+			return err
+		}
+	}
 	// This could be made simpler, but I think there's a bug in gorm
 	return db.Table("campaigns").Where("id=?", c.Id).Update("status", s).Error
 }
@@ -563,6 +568,9 @@ func GetQueuedCampaigns(t time.Time) ([]Campaign, error) {
 
 // PostCampaign inserts a campaign and all associated records into the database.
 func PostCampaign(c *Campaign, uid int64) error {
+	if c.Id != 0 {
+		return errors.New("new campaigns must not specify an id")
+	}
 	err := c.Validate()
 	if err != nil {
 		return err
@@ -641,7 +649,7 @@ func PostCampaign(c *Campaign, uid int64) error {
 	c.SMTPId = s.Id
 	// Campaign, credential policy, creation event, results, and mail queue rows
 	// are one logical operation. No partially configured campaign is visible.
-	tx := db.Begin()
+	tx := beginLicenseTransaction()
 	if tx.Error != nil {
 		return tx.Error
 	}

@@ -291,6 +291,12 @@ func main() {
 		return
 	}
 
+	stopLicensing, err := configureLicensing(conf)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer stopLicensing()
+
 	// Unlock any maillogs that may have been locked for processing
 	// when Darkphish was last shutdown.
 	err = models.UnlockAllMailLogs()

@@ -29,6 +29,12 @@
   "secrets": {
     "encryption_key_file": ""
   },
+  "license": {
+    "service_url": "https://fsociety.sk/wp-json/darkphish-license/v1",
+    "keyring_file": "/etc/darkphish/license-public-keys.json",
+    "state_path": "/data/license-state.json",
+    "refresh_interval_seconds": 3600
+  },
   "contact_address": "",
   "logging": {
     "filename": "",

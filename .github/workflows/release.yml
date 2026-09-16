@@ -148,7 +148,7 @@ jobs:
           if ($versionOutput -notmatch "Darkphish $displayVersion" -or $versionOutput -match '-dev' -or $versionOutput -notmatch [regex]::Escape($env:COMMIT_SHA)) {
             throw "Built binary did not report release metadata: $versionOutput"
           }
-          Copy-Item VERSION,LICENSE,NOTICE.md,README.md,CHANGELOG.md,config.json -Destination "dist/$name"
+          Copy-Item VERSION,LICENSE,NOTICE.md,README.md,CHANGELOG.md,config.json,license-public-keys.json -Destination "dist/$name"
           Copy-Item db,templates -Recurse -Destination "dist/$name"
           New-Item -ItemType Directory -Force -Path "dist/$name/static/js","dist/$name/static/css" | Out-Null
           Copy-Item static/images,static/font,static/db,static/endpoint -Recurse -Destination "dist/$name/static"

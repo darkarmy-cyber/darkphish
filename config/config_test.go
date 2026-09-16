@@ -114,6 +114,10 @@ func TestLoadConfig(t *testing.T) {
 	expectedConfig.PAT.MaxLifetimeDays = DefaultPATMaxLifetimeDays
 	expectedConfig.PrivilegedAccess.WindowMinutes = DefaultPrivilegedWindowMinutes
 	expectedConfig.Logging = &log.Config{}
+	expectedConfig.License = LicenseConfig{
+		StatePath:              filepath.Join(filepath.Dir(f.Name()), "license-state.json"),
+		RefreshIntervalSeconds: 3600,
+	}
 	if !reflect.DeepEqual(expectedConfig, conf) {
 		t.Fatalf("invalid config received. expected %#v got %#v", expectedConfig, conf)
 	}
@@ -183,5 +187,30 @@ func TestTrustedOriginValidation(t *testing.T) {
 	conf.AdminConf.TrustedOrigins = []string{"http://localhost:3333", "https://admin.example.test"}
 	if err := conf.ValidateSecurity(); err != nil {
 		t.Fatalf("expected exact development origins to be accepted: %v", err)
+	}
+}
+
+func TestLicensePathsAndRefreshBounds(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "config.json")
+	raw := `{"db_name":"sqlite3","db_path":"test.db","bootstrap_directory":"bootstrap","license":{"state_path":"private/state.json","keyring_file":"keys.json","service_url":"https://license.example.test","refresh_interval_seconds":60}}`
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.License.StatePath != filepath.Join(directory, "private", "state.json") || cfg.License.KeyringFile != filepath.Join(directory, "keys.json") {
+		t.Fatal("licensing paths were not resolved against configuration directory")
+	}
+	for _, interval := range []string{"-1", "1", "3601"} {
+		bad := strings.Replace(raw, `"refresh_interval_seconds":60`, `"refresh_interval_seconds":`+interval, 1)
+		if err := os.WriteFile(path, []byte(bad), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadConfig(path); err == nil {
+			t.Fatal("unsafe refresh interval accepted")
+		}
 	}
 }

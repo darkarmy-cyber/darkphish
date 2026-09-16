@@ -186,6 +186,10 @@ jobs:
             throw "Recovered binary did not report release metadata: $versionOutput"
           }
           Copy-Item VERSION,LICENSE,NOTICE.md,README.md,CHANGELOG.md,config.json -Destination "dist/$name"
+          # Historical sources predate licensing; never inject a current trust key into them.
+          if (Test-Path -LiteralPath license-public-keys.json) {
+            Copy-Item license-public-keys.json -Destination "dist/$name"
+          }
           Copy-Item db,templates -Recurse -Destination "dist/$name"
           New-Item -ItemType Directory -Force -Path "dist/$name/static/js","dist/$name/static/css" | Out-Null
           Copy-Item static/images,static/font,static/db,static/endpoint -Recurse -Destination "dist/$name/static"

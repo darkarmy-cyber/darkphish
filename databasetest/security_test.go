@@ -238,6 +238,7 @@ func exerciseSecurityModel(t *testing.T, database, dsn string) {
 	}
 	exercisePersistenceContract(t, database, dsn, admin.Id)
 	exerciseSecurityRollback(t, conf, connection, admin, reviewer, campaign, binding, credential)
+	exerciseLicenseCoordination(t, admin.Id, campaign)
 }
 
 func rejectOutbox(t *testing.T, db *sql.DB, backend string) func() {

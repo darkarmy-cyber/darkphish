@@ -1,6 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { ReleaseMaintainerReviewError, releaseReviewBody, verifyReleaseMaintainerReview } from "./release-maintainer-review.mjs"
+import { mergeReviewedPullRequest, requiredChecks } from "./release-lib.mjs"
+import { ReviewGateError } from "./review-gate.mjs"
 
 const repo = "darkarmy-cyber/darkphish"
 const head = "a".repeat(40), base = "b".repeat(40)
@@ -53,6 +55,94 @@ function fixture() {
   }
   return { pr, review, files, reviews, threads, get }
 }
+
+function mergeFixture() {
+  const f = fixture(), original = f.get
+  Object.assign(f.pr, { labels: [{ name: "codex-automerge" }], mergeable: true, mergeable_state: "clean", auto_merge: null })
+  Object.assign(f, { writes: [], reviewReads: 0, connectorReads: 0,
+    checks: requiredChecks.map((name, id) => ({ id, name, status: "completed", conclusion: "success", app: { slug: "github-actions" } })), alerts: [] })
+  f.request = async (path, options = {}) => {
+    if (options.method === "PUT") {
+      assert.equal(path, `repos/${repo}/pulls/31/merge`)
+      f.writes.push(options.body)
+      return { merged: true, sha: "c".repeat(40) }
+    }
+    if (path === `repos/${repo}`) return { full_name: repo, default_branch: "main", private: false, fork: false, allow_auto_merge: true }
+    if (path === `repos/${repo}/branches/main`) return { protected: true, commit: { sha: base } }
+    if (path.includes("/check-runs?")) return { check_runs: f.checks }
+    if (path.includes("/code-scanning/alerts?")) return f.alerts
+    if (path.includes("/reviews?")) {
+      f.reviewReads++
+      if (f.reviewReads === 2 && f.revoke) f.review.state = "DISMISSED"
+    }
+    return original(path, options)
+  }
+  f.merge = (options = {}) => mergeReviewedPullRequest(repo, structuredClone(f.pr), {
+    releaseMerge: true, request: f.request, log: () => {},
+    verifyReviews: async () => { f.connectorReads++; if (f.badConnector) throw new ReviewGateError("Missing clean security review") },
+    ...options,
+  })
+  return f
+}
+
+test("release merge authenticates maintainer attestation twice before exact-head PUT", async () => {
+  const f = mergeFixture()
+  assert.equal(await f.merge(), true)
+  assert.equal(f.connectorReads, 1)
+  assert.equal(f.reviewReads, 2)
+  assert.deepEqual(f.writes, [{ sha: head, merge_method: "squash" }])
+})
+
+test("release merge cannot strand publication behind absent stale forged or revoked attestation", async () => {
+  for (const mutate of [
+    f => { f.reviews.length = 0 },
+    f => { f.review.commit_id = "d".repeat(40) },
+    f => { f.review.body = "Approved without the exact generated-release marker" },
+    f => { f.review.user.id = 1 },
+    f => { f.review.state = "CHANGES_REQUESTED" },
+    f => { f.pr.user.id = 1 },
+    f => { f.files.push({ filename: "models/user.go", sha: "e".repeat(40) }) },
+    f => { f.threads.push({ id: "unresolved", isResolved: false }) },
+    f => { f.revoke = true },
+  ]) {
+    const f = mergeFixture(); mutate(f)
+    assert.equal(await f.merge(), false)
+    assert.deepEqual(f.writes, [])
+  }
+})
+
+test("release merge still requires connector reviews checks baseline and ready state", async () => {
+  for (const mutate of [f => { f.badConnector = true }, f => { f.checks.pop() },
+    f => { f.alerts.push({}) }, f => { f.pr.draft = true }, f => { f.pr.labels = [] },
+    f => { f.pr.mergeable_state = "blocked" }]) {
+    const f = mergeFixture(); mutate(f)
+    assert.equal(await f.merge(), false)
+    assert.deepEqual(f.writes, [])
+  }
+})
+
+test("release review transport failure never causes a merge", async () => {
+  const f = mergeFixture(), original = f.request
+  await assert.rejects(f.merge({ request: async (path, options) => {
+    if (path.includes("/reviews?")) throw new Error("review service unavailable")
+    return original(path, options)
+  } }), /review service unavailable/)
+  assert.deepEqual(f.writes, [])
+})
+
+test("invalid release modes cannot bypass the publication boundary", async () => {
+  for (const options of [{ releaseMerge: "true" }, { releaseRepair: "true" }, { releaseMerge: true, releaseRepair: true }]) {
+    const f = mergeFixture()
+    await assert.rejects(f.merge(options), /Invalid release merge mode/)
+    assert.deepEqual(f.writes, [])
+  }
+})
+
+test("ordinary merge does not demand generated-release-only attestation", async () => {
+  const f = mergeFixture(); f.reviews.length = 0
+  assert.equal(await f.merge({ releaseMerge: false }), true)
+  assert.equal(f.reviewReads, 0)
+})
 
 test("trusted maintainer approval certifies exact generated release head and base", async () => {
   const f = fixture()

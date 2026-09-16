@@ -91,6 +91,17 @@ publication workflow starts as well as the publication run itself; the release
 PR merge uses the dedicated release path so it does not deadlock on its own
 future publication.
 
+The generated-release merge path also authenticates the existing pinned
+maintainer attestation before merging, then revalidates it immediately before
+the exact-head merge request. Both independent connector reviews remain
+mandatory. Missing or invalid attestation leaves the PR open; the publisher
+still independently verifies that the approval predates the merge. Re-running
+a failed publication cannot repair missing pre-merge evidence, and retrospective
+approval is not accepted. A repair of an already-stranded unpublished release
+requires a separately authorized, narrowly scoped repair and a fresh generated
+same-version release PR with all evidence recorded before its merge. This check
+does not authorize any repair exception or change ordinary merge freezes.
+
 The embedded UTC build timestamp comes from the protected release commit's
 committer timestamp and stays stable across retries. Binaries include version
 and SHA and use `-trimpath`. Tags are immutable; GitHub removes merged release

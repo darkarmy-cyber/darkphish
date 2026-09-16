@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { ReviewGateError, verifyPullRequestReviews } from "./review-gate.mjs"
 import { verifyReleaseRepair } from "./release-repair-policy.mjs"
+import { ReleaseMaintainerReviewError, verifyReleaseMaintainerReview } from "./release-maintainer-review.mjs"
 
 export const requiredChecks = JSON.parse(readFileSync(new URL("../.github/required-checks.json", import.meta.url), "utf8"))
 export const generatedPath = (path) => path === "VERSION" || path === "CHANGELOG.md" || /^changes\/[a-z0-9][a-z0-9-]*\.md$/.test(path)
@@ -198,6 +199,7 @@ export async function protectedMain(repo, sha) {
 }
 export async function greenCommit(repo, sha) { return checksPassed(await pages(`repos/${repo}/commits/${sha}/check-runs?filter=latest`, "check_runs")) }
 export async function mergeReviewedPullRequest(repo, expected, { request = api, verifyReviews = verifyPullRequestReviews, cancelQueued = args => execFileSync("gh", args, { stdio: "inherit" }), log = console.log, releaseMerge = false, releaseRepair = false } = {}) {
+  if (typeof releaseMerge !== "boolean" || typeof releaseRepair !== "boolean" || (releaseMerge && releaseRepair)) throw new Error("Invalid release merge mode")
   protectedMergeRequest(repo, { ...expected, state: "open", draft: false })
   const path = `repos/${repo}/pulls/${expected.number}`, pr = await request(path)
   if (pr?.number !== expected.number) throw new Error("GitHub returned an inconsistent PR identity")
@@ -225,6 +227,13 @@ export async function mergeReviewedPullRequest(repo, expected, { request = api, 
   if (!await green()) return wait("required checks pending or unsuccessful")
   if ((await pages(`repos/${repo}/code-scanning/alerts?tool_name=CodeQL&state=open`, undefined, request)).length) return wait("open CodeQL alerts")
   try { await verifyReviews(repo, pr, { get: request, query: body => request("graphql", { method: "POST", body }) }) } catch (error) { if (!(error instanceof ReviewGateError)) throw error; return wait(error.message) }
+  // Publication requires this evidence to predate the merge. Checking it only
+  // in the publisher leaves an otherwise green release irrecoverably stale.
+  const maintainerReady = async candidate => {
+    try { await verifyReleaseMaintainerReview(repo, candidate, { get: request }); return true }
+    catch (error) { if (!(error instanceof ReleaseMaintainerReviewError)) throw error; return wait(error.message) }
+  }
+  if (releaseMerge && !await maintainerReady(pr)) return false
   const finalPR = await request(path), finalBase = await request(`repos/${repo}/branches/main`)
   if (finalPR.number === pr.number && finalPR.auto_merge && finalPR.head?.repo?.full_name === repo && finalPR.base?.ref === "main") {
     await cancelQueued(["pr", "merge", String(pr.number), "--repo", repo, "--disable-auto"])
@@ -237,6 +246,7 @@ export async function mergeReviewedPullRequest(repo, expected, { request = api, 
   } else if (enforceReleaseBoundary) {
     try { await assertCurrentVersionPublished(repo, { request, verifyManifest: false }) } catch { return wait("release state changed before merge; protected main remains frozen") }
   }
+  if (releaseMerge && !await maintainerReady(finalPR)) return false
   const merge = protectedMergeRequest(repo, finalPR), result = await request(merge.path, { method: merge.method, body: merge.body })
   if (result?.merged !== true || !/^[a-f0-9]{40}$/.test(result.sha || "")) throw new Error("GitHub did not confirm the protected merge; inspect current PR state before retrying")
   log(`PR #${pr.number}: protected reviewed squash merge ${result.sha}, expected head ${pr.head.sha}.`)

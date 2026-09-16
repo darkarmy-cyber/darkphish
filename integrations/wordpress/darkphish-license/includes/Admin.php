@@ -8,9 +8,9 @@ function adminTab(mixed $value): string {
 function adminUrl(string $tab): string { return admin_url('admin.php?page=darkphish-licenses&tab=' . adminTab($tab)); }
 
 add_action('admin_menu', function (): void {
-    add_menu_page('Darkphish Licenses', 'Darkphish Licenses', 'manage_options', 'darkphish-licenses', __NAMESPACE__ . '\\adminPage', 'dashicons-admin-network', 3.5);
+    add_menu_page('DarkPhish', 'DarkPhish', 'manage_options', 'darkphish-licenses', __NAMESPACE__ . '\\adminPage', 'dashicons-admin-network', 3.5);
     // Keep existing bookmarks working after the plugin moves out of Settings.
-    add_options_page('Darkphish Licenses', 'Darkphish Licenses', 'manage_options', 'darkphish-license', __NAMESPACE__ . '\\adminSettings');
+    add_options_page('DarkPhish', 'DarkPhish', 'manage_options', 'darkphish-license', __NAMESPACE__ . '\\adminSettings');
     remove_submenu_page('options-general.php', 'darkphish-license');
 });
 add_filter('custom_menu_order', '__return_true');
@@ -29,8 +29,8 @@ function licenseMenuOrder(array $order): array {
 }
 add_action('admin_enqueue_scripts', function (string $hook): void {
     if ($hook === 'toplevel_page_darkphish-licenses') {
-        wp_enqueue_script('darkphish-licenses-admin', plugins_url('assets/admin.js', dirname(__DIR__) . '/darkphish-license.php'), [], '0.2.2', true);
-        wp_enqueue_style('darkphish-licenses-admin', plugins_url('assets/admin.css', dirname(__DIR__) . '/darkphish-license.php'), [], '0.2.2');
+        wp_enqueue_script('darkphish-licenses-admin', plugins_url('assets/admin.js', dirname(__DIR__) . '/darkphish-license.php'), [], '0.2.3', true);
+        wp_enqueue_style('darkphish-licenses-admin', plugins_url('assets/admin.css', dirname(__DIR__) . '/darkphish-license.php'), [], '0.2.3');
     }
 });
 
@@ -121,7 +121,7 @@ function adminPage(): void {
     $result = null; $failed = false;
     try { $result = processLicenseForm($tab); }
     catch (\Throwable $error) { $failed = true; }
-    echo '<div class="wrap dp-admin"><header class="dp-admin-hero"><span class="dp-admin-mark" aria-hidden="true">D</span><div><p>DARKPHISH · LICENSE MANAGEMENT</p><h1>Darkphish Licenses</h1><span>One place for Community, Professional and Enterprise.</span></div></header>';
+    echo '<div class="wrap dp-admin"><header class="dp-admin-hero"><span class="dp-admin-mark" aria-hidden="true">D</span><div><p>DARKPHISH · LICENSE MANAGEMENT</p><h1>DarkPhish</h1><span>One place for Community, Professional and Enterprise.</span></div></header>';
     echo '<nav class="dp-admin-tabs" aria-label="License management">';
     foreach (['dashboard', 'community', 'professional', 'enterprise', 'settings'] as $name) {
         echo '<a href="' . esc_url(adminUrl($name)) . '"' . ($tab === $name ? ' class="is-active" aria-current="page"' : '') . '>' . esc_html(ucfirst($name)) . '</a>';
@@ -135,7 +135,7 @@ function adminPage(): void {
         if (in_array($tab, ['dashboard', 'community'], true) && store()->duplicateCommunityEmails() > 0) {
             echo '<div class="notice notice-error"><p>Some email addresses have multiple Community records. Registration and recovery for these addresses are blocked until the records are reviewed. No licenses have been deleted or merged automatically.</p></div>';
         }
-        if ($tab === 'settings') { echo '<section class="dp-admin-panel">'; adminSettings(); planSettings(); echo '</section>'; }
+        if ($tab === 'settings') { echo '<section class="dp-admin-panel">'; adminSettings(); emailPolicySettings(); planSettings(); echo '</section>'; }
         elseif ($tab === 'dashboard') { adminDashboard(); }
         else { adminEdition($tab); }
     } catch (\Throwable $error) { echo '<div class="notice notice-error"><p>License data is unavailable. Check the database upgrade and try again.</p></div>'; }

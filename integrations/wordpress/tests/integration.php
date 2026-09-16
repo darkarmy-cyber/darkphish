@@ -187,6 +187,7 @@ check($db->find('licenses', 'id', $license['license_id']) === $before, 'Rejected
 require __DIR__ . '/admin-editions.php';
 require __DIR__ . '/mail.php';
 require __DIR__ . '/recovery.php';
+require __DIR__ . '/email-policy.php';
 
 $_SERVER['HTTPS'] = 'off';
 check(call_api('activate', $activation)->get_status() === 503, 'Plaintext issuance accepted');

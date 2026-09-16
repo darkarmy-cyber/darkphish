@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: Darkphish Licenses
+ * Plugin Name: DarkPhish
  * Description: Community, Professional and Enterprise license management for Darkphish.
- * Version: 0.2.2
+ * Version: 0.2.3
  * Requires at least: 6.8
  * Requires PHP: 8.2
  * License: MIT
@@ -13,6 +13,7 @@ if (!defined('ABSPATH')) { exit; }
 require_once __DIR__ . '/includes/Signer.php';
 require_once __DIR__ . '/includes/KeySetup.php';
 require_once __DIR__ . '/includes/Store.php';
+require_once __DIR__ . '/includes/EmailPolicy.php';
 require_once __DIR__ . '/includes/Service.php';
 require_once __DIR__ . '/includes/Browser.php';
 require_once __DIR__ . '/includes/Mail.php';
@@ -119,6 +120,7 @@ function endpoint(string $operation, \WP_REST_Request $request): \WP_REST_Respon
                 !registrationUrlAllowed($settings['registration_url'] ?? '') || (!$recover && !hash_equals($settings['terms_version'], $data['terms_version']))) {
                 return reply(['message' => 'A valid email and current terms acceptance are required.'], 400);
             }
+            if (EmailPolicy::blocked($email)) { throw new EmailDomainBlocked(); }
             $challengeOrigin = $request->get_header('origin') ?: httpsOrigin($settings['registration_url']);
             if (!challenge($data['challenge_token'], (string) wp_parse_url($challengeOrigin, PHP_URL_HOST))) { return reply(['message' => 'Please complete the anti-abuse check.'], 400); }
             $generic = ['message' => 'If the request can be processed, a verification link will arrive by email.'];
@@ -143,6 +145,8 @@ function endpoint(string $operation, \WP_REST_Request $request): \WP_REST_Respon
         $credential = $operation === 'refresh' ? 'refresh_token' : 'license_key';
         $data = input($request, [$credential, 'installation_id', 'product_version']);
         return reply($service->exchange($data[$credential], $data['installation_id'], $data['product_version'], $operation === 'refresh', $now));
+    } catch (EmailDomainBlocked $error) {
+        return reply(['code' => 'email_domain_blocked', 'message' => EmailPolicy::MESSAGE], 400);
     } catch (\DomainException $error) {
         return reply(['message' => 'License or verification unavailable.'], 403);
     } catch (\InvalidArgumentException | \JsonException $error) {
@@ -225,7 +229,7 @@ add_shortcode('darkphish_license', function (): string {
         return '<p>Community registration is not available yet.</p>';
     }
     // Token is carried in the fragment, never in a query string or referrer.
-    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.2.2', true);
+    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.2.3', true);
     wp_enqueue_script('darkphish-turnstile', 'https://challenges.cloudflare.com/turnstile/v0/api.js', [], null, true);
     return '<section id="darkphish-license" data-api="' . esc_url(rest_url('darkphish-license/v1/')) . '" data-terms="' . esc_attr($settings['terms_version']) . '"><h2>Darkphish Community</h2><p>Free registration: 100 managed users and 1 active campaign.</p><p role="status" aria-live="polite" class="dp-status"></p><form class="dp-request"><label>Email <input type="email" name="email" maxlength="254" autocomplete="email" required></label><p class="dp-terms-row"><label><input type="checkbox" required> I accept the <a href="' . esc_url($settings['terms_url']) . '" target="_blank" rel="noopener noreferrer">Community terms</a>.</label></p><div class="cf-turnstile" data-action="darkphish-license" data-sitekey="' . esc_attr(DARKPHISH_TURNSTILE_SITE_KEY) . '"></div><button type="submit">Request license</button></form><button type="button" class="dp-verify" hidden>Confirm email and display my license key</button><pre class="dp-key" hidden></pre><p><a class="dp-recovery-link" href="' . esc_url($settings['registration_url'] . '?mode=recover') . '">Lost your license? Recover it</a></p></section>';
 });

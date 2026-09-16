@@ -10,6 +10,7 @@ final class Service {
         if (!is_email($email) || strlen($email) > 254 || !in_array($purpose, ['register', 'recover'], true)) {
             throw new \InvalidArgumentException('Invalid request');
         }
+        if (EmailPolicy::blocked($email)) { throw new EmailDomainBlocked(); }
         $token = Signer::encode(random_bytes(32));
         $this->store->insert('requests', ['token_hash' => hash('sha256', $token), 'email' => $email, 'terms_version' => $terms, 'purpose' => $purpose, 'expires_at' => $now + 1800]);
         return $token;
@@ -23,6 +24,10 @@ final class Service {
             $purpose = $request['purpose'] ?? 'register';
             if (!in_array($purpose, ['register', 'recover'], true)) { throw new \DomainException('Verification unavailable'); }
             $email = strtolower(trim($request['email']));
+            if (EmailPolicy::blocked($email)) {
+                $this->store->deleteRequest($hash);
+                return ['outcome' => 'email_domain_blocked'];
+            }
             $matches = $this->store->communityForEmail($email);
             $license = $matches[0] ?? null;
             // These results are disclosed only after proof of mailbox ownership.

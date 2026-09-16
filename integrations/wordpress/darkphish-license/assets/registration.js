@@ -51,7 +51,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const result = await send('verify', {token: token});
             token = '';
             if (!result.license_key) {
-                const messages = {already_registered: 'This email already has a Community license. Use Lost your license below to recover it.', not_found: 'No Community license exists for this verified email. Register first.', expired: 'Your license has expired. Contact license@darkphish.sk to request renewal.', revoked: 'This license is not available for recovery. Contact license@darkphish.sk.', support_required: 'Your license records need review. Contact license@darkphish.sk.'};
+                const messages = {email_domain_blocked: 'Please use your personal or business email address. Temporary email addresses are not accepted.', already_registered: 'This email already has a Community license. Use Lost your license below to recover it.', not_found: 'No Community license exists for this verified email. Register first.', expired: 'Your license has expired. Contact license@darkphish.sk to request renewal.', revoked: 'This license is not available for recovery. Contact license@darkphish.sk.', support_required: 'Your license records need review. Contact license@darkphish.sk.'};
                 status.textContent = messages[result.outcome] || 'Verification could not be completed.';
                 verify.hidden = true; return;
             }

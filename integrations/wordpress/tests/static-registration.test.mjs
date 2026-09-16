@@ -151,3 +151,36 @@ test('recovered key shows original expiry even when its email copy fails', async
     assert.match(p.nodes['.dp-status'].textContent, /Original expiry: 2027-01-15/);
     assert.match(p.nodes['.dp-status'].textContent, /email copy could not be sent/);
 });
+
+test('blocked domains display the personal/business mailbox message in both forms', async () => {
+    for (const search of ['', '?mode=recover']) {
+        const p = await page('', async url => url.endsWith('public-config')
+            ? {ok: true, json: async () => ({site_key: 'public', terms_url: 'https://www.darkphish.test/terms/', terms_version: 'v1', registration_url: 'https://www.darkphish.test/license/'})}
+            : {ok: false, status: 400, json: async () => ({code: 'email_domain_blocked', message: '<untrusted>'})}, search);
+        p.scripts[0].onload(); p.challenge().callback('valid-token');
+        await p.nodes['.dp-request'].handlers.submit({preventDefault() {}});
+        assert.equal(p.nodes['.dp-status'].textContent, 'Please use your personal or business email address. Temporary email addresses are not accepted.');
+        assert.equal(p.nodes['.dp-status'].focused, true);
+        assert.equal(p.nodes['.dp-status'].dataset.state, 'error');
+        assert.equal(p.nodes['.dp-confirmation'].hidden, true);
+        assert.equal(p.nodes['.dp-request'].hidden, false);
+    }
+});
+test('invalid error bodies use a safe generic message', async () => {
+    for (const json of [async () => { throw new SyntaxError(); }, async () => ({code: 'unknown', message: '<untrusted>'}), async () => null]) {
+        const p = await page('', async url => url.endsWith('public-config')
+            ? {ok: true, json: async () => ({site_key: 'public', terms_url: 'https://www.darkphish.test/terms/', terms_version: 'v1', registration_url: 'https://www.darkphish.test/license/'})}
+            : {ok: false, status: 400, json});
+        p.scripts[0].onload(); p.challenge().callback('valid-token');
+        await p.nodes['.dp-request'].handlers.submit({preventDefault() {}});
+        assert.match(p.nodes['.dp-status'].textContent, /Please reload the page/);
+    }
+});
+test('a verification blocked by an updated policy shows no key and offers registration', async () => {
+    const p = await page('#dp-verify=' + 'a'.repeat(43), async () => ({ok: true, json: async () => ({outcome: 'email_domain_blocked'})}));
+    await p.nodes['.dp-verify'].handlers.click();
+    assert.match(p.nodes['.dp-status'].textContent, /personal or business/);
+    assert.equal(p.nodes['.dp-key'].hidden, true);
+    assert.equal(p.nodes['.dp-verify'].hidden, true);
+    assert.equal(p.nodes['.dp-restart'].href, './');
+});

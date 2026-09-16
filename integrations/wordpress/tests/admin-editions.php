@@ -54,7 +54,7 @@ $stats = $db->statistics(time());
 check($stats['professional']['total'] === 1 && $stats['enterprise']['total'] === 52 && $stats['enterprise']['revoked'] === 1 && $stats['enterprise']['unbound'] === 51, 'Dashboard counts incorrect');
 check(count($db->recentLicenses('enterprise', 1)) === 50 && count($db->recentLicenses('enterprise', 2)) === 2, 'Edition pagination lost records');
 check(count($db->recentLicenses('professional')) === 1, 'Edition filter leaked rows');
-$menu = [[0 => 'Zeus', 2 => 'fsociety-zeus'], [0 => 'Darkphish Licenses', 2 => 'darkphish-licenses']];
+$menu = [[0 => 'Zeus', 2 => 'fsociety-zeus'], [0 => 'DarkPhish', 2 => 'darkphish-licenses']];
 check(Darkphish\Licensing\licenseMenuOrder(['index.php', 'darkphish-licenses', 'fsociety-zeus', 'edit.php']) === ['index.php', 'fsociety-zeus', 'darkphish-licenses', 'edit.php'], 'Menu not immediately below Zeus');
 $menu = [];
 check(Darkphish\Licensing\licenseMenuOrder(['index.php', 'darkphish-licenses']) === ['index.php', 'darkphish-licenses'], 'No-Zeus fallback changed menu');

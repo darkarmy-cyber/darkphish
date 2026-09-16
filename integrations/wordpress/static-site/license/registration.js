@@ -50,7 +50,12 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
             if (response.status === 429) throw new Error('Too many attempts. Please try again later.');
             if (['request', 'recover'].includes(operation) && response.status === 503) throw new Error('We could not send your verification email. Please try again later.');
-            if (['request', 'recover'].includes(operation) && response.status === 400) throw new Error('Please reload the page, check your email and complete the required fields and security check again.');
+            if (['request', 'recover'].includes(operation) && response.status === 400) {
+                let detail;
+                try { detail = await response.json(); } catch (_) { /* Preserve the generic error for non-JSON responses. */ }
+                if (detail?.code === 'email_domain_blocked') throw new Error('Please use your personal or business email address. Temporary email addresses are not accepted.');
+                throw new Error('Please reload the page, check your email and complete the required fields and security check again.');
+            }
             if (operation === 'verify' && response.status === 403) throw new Error('This link has expired or has already been used. Request a new verification email.');
             throw new Error('Registration could not be completed. Try again later or reload the page.');
         }
@@ -61,6 +66,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         try {
             const result = await send('verify', {token});
             const outcomes = {
+                email_domain_blocked: 'Please use your personal or business email address. Temporary email addresses are not accepted.',
                 already_registered: 'This email already has a Community license. Use license recovery to replace a lost key. Registration does not renew your license.',
                 not_found: 'No Community license was found for this verified email address. You can register for your first license.',
                 expired: 'Your Community license has expired. Recovery cannot renew it. Contact license@darkphish.sk.',

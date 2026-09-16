@@ -29,7 +29,7 @@ Ak má FTP prístup iba k verejnému webu, súkromný priečinok musí pripravi�
 1. Nahraj aktualizovaný ZIP a zvoľ nahradenie existujúcej verzie pluginu.
 2. Nastav `DARKPHISH_LICENSE_KEY_FILE` vo `wp-config.php` na nový, ešte neexistujúci
    JSON súbor v tomto priečinku (ukážka nižšie).
-3. Cez HTTPS otvor **Darkphish Licenses → Settings** a klikni na
+3. Cez HTTPS otvor **DarkPhish → Settings** a klikni na
    **Vytvoriť podpisový kľúč na serveri**. Funkcia vyžaduje oprávnenie správcu
    a platný formulárový nonce. Kľúč vznikne len na serveri s právami
    `0600`; do prehliadača sa jeho súkromná časť nikdy neposiela.
@@ -89,7 +89,7 @@ zostávajú iba na tomto serveri. Do HTML webu nepridávaj PHP ani WordPress.
    koreni HTML webu. Výsledná stránka je `https://www.darkphish.sk/license/`.
    Existujúcu hlavnú stránku neprepisuj. Na registráciu nepridávaj analytiku,
    reklamy ani iné skripty, ktoré môžu čítať token alebo zobrazený kľúč.
-3. V administrácii WordPressu **Darkphish Licenses → Settings** nastav
+3. V administrácii WordPressu **DarkPhish → Settings** nastav
    **Registration page URL** na `https://www.darkphish.sk/license/`, URL
    schválených podmienok a ich skutočnú verziu. Toto nastavenie určuje aj
    cieľ overovacieho e-mailu; ľubovoľné cudzie domény sú odmietnuté.
@@ -244,3 +244,31 @@ Nasadenie: nahraď plugin rovnakého názvu priečinka balíkom 0.2.2 a nahraj t
 súbory license/. Inštalácia doplní schému pri ďalšom načítaní; súkromný kľúč a
 nastavenia sa zachovajú. Skutočné údajné duplicitné riadky z produkcie neboli
 sprístupnené; príčina ich zobrazenia sa bez tejto kontroly nepovažuje za potvrdenú.
+
+## DarkPhish 0.2.3 — temporary email protection / en9
+
+Plugin sa v zozname pluginov, menu pod Zeusom a dashboarde vola **DarkPhish**.
+Priecinok `darkphish-license`, interne identifikatory a existujuce nastavenia sa nemenia.
+
+V **DarkPhish → Settings → Temporary email protection** je zapnuty uvodny zoznam
+21 domen. Da sa zapnut/vypnut a upravit: jedna domena na riadok, napriklad
+`temp-mail.org`, bez URL, @ a hviezdiciek. Porovnava sa domena za @ vratane
+subdomen, bez ohladu na velkost pismen. Nezadavaj verejne pripony ako `co.uk`.
+Medzinarodne domeny zapisuj ako punycode. Maximum je 1 000 domen.
+Prazdny ulozeny zoznam povoluje vsetky domeny a aktualizacia ho neprepise.
+Neplatny vstup zachova predchadzajuce nastavenie.
+
+Kontrola prebieha na serveri pred odoslanim overovacieho emailu aj pri potvrdeni
+uz odoslaneho odkazu. Plati pre verejnu Community registraciu a obnovu; nemeni
+existujuce licencie, aktivaciu/obnovovanie lease ani rucne vydavanie spravcom.
+Ziadne adresy sa kvoli kontrole neposielaju dalsej sluzbe. Pouzivatel uvidi:
+“Please use your personal or business email address. Temporary email addresses are not accepted.”
+
+Zoznam nie je vycerpavajuci ani automaticky aktualizovany. Sluzba moze pouzivat
+ine alebo nove postove domeny nez nazov svojho webu. Uvodne domeny vychadzaju z
+[disposable-email-domains](https://github.com/disposable-email-domains/disposable-email-domains)
+a [Mailinator](https://www.mailinator.com/) (overene 2026-09-16).
+
+Nasadenie: nahraď existujuci plugin ZIPom 0.2.3 a obsah priecinka `license/`
+na webe nahraď verziou en9 (HTML, CSS a JS) pre novu chybovu spravu.
+Netreba generovat novy podpisovy kluc ani menit wp-config.php.

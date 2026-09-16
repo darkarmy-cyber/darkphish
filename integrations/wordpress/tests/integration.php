@@ -180,6 +180,8 @@ catch (AdminDenied $expected) {}
 wp_set_current_user(0);
 check($db->find('licenses', 'id', $license['license_id']) === $before, 'Rejected admin request mutated license');
 
+require __DIR__ . '/admin-editions.php';
+
 $_SERVER['HTTPS'] = 'off';
 check(call_api('activate', $activation)->get_status() === 503, 'Plaintext issuance accepted');
 echo "WordPress integration passed: registration, verification, replay rejection, signing, activation, refresh, binding, revocation, reset, competing processes, audit rollback and rate limits.\n";

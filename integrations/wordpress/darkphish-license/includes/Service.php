@@ -20,13 +20,13 @@ final class Service {
             }
             $emailHash = hash('sha256', strtolower($request['email']));
             $license = $this->store->find('licenses', 'email_hash', $emailHash, true);
-            if ($license && $license['status'] !== 'active') {
+            if ($license && ($license['status'] !== 'active' || ($license['edition'] ?? 'community') !== 'community')) {
                 throw new \DomainException('Verification unavailable');
             }
             $key = 'DP-COM-' . Signer::encode(random_bytes(32));
             if (!$license) {
                 $license = ['id' => 'DP-' . bin2hex(random_bytes(16)), 'email' => $request['email'], 'email_hash' => $emailHash,
-                    'key_hash' => hash('sha256', $key), 'status' => 'active', 'managed_users' => 100, 'active_campaigns' => 1,
+                    'edition' => 'community', 'key_hash' => hash('sha256', $key), 'status' => 'active', 'managed_users' => 100, 'active_campaigns' => 1,
                     'expires_at' => $now + 365 * 86400, 'created_at' => $now, 'terms_version' => $request['terms_version']];
                 $this->store->insert('licenses', $license);
                 $this->store->event($license['id'], 'license.issue');
@@ -38,6 +38,38 @@ final class Service {
             }
             $this->store->deleteRequest($hash);
             return ['license_key' => $key, 'license_id' => $license['id'], 'expires_at' => (int) $license['expires_at']];
+        });
+    }
+
+    // Paid issuance is administrative only. Community self-service never looks up these hashes.
+    public function issuePaid(string $edition, string $email, int $users, int $campaigns, int $days, string $terms, int $actor, int $now): array {
+        $email = strtolower(trim($email));
+        if (!in_array($edition, ['professional', 'enterprise'], true) || !is_email($email) || strlen($email) > 254 ||
+            $users < 1 || $users > 100000000 || $campaigns < 1 || $campaigns > 1000000 || $days < 1 || $days > 3650 ||
+            trim($terms) === '' || strlen($terms) > 80 || $actor < 1) { throw new \InvalidArgumentException('Invalid license details'); }
+        return $this->store->transaction(function () use ($edition, $email, $users, $campaigns, $days, $terms, $actor, $now): array {
+            $emailHash = hash('sha256', $edition . ':' . $email);
+            if ($this->store->find('licenses', 'email_hash', $emailHash, true)) { throw new \DomainException('This email already has a license in this edition'); }
+            $key = ($edition === 'professional' ? 'DP-PRO-' : 'DP-ENT-') . Signer::encode(random_bytes(32));
+            $record = ['id' => 'DP-' . bin2hex(random_bytes(16)), 'edition' => $edition, 'email' => $email, 'email_hash' => $emailHash,
+                'key_hash' => hash('sha256', $key), 'status' => 'active', 'managed_users' => $users, 'active_campaigns' => $campaigns,
+                'expires_at' => $now + $days * 86400, 'created_at' => $now, 'terms_version' => $terms];
+            $this->store->insert('licenses', $record);
+            $this->store->event($record['id'], 'admin.issue.' . $edition, $actor);
+            return ['license_key' => $key, 'license_id' => $record['id']];
+        });
+    }
+
+    public function editPaid(string $id, string $edition, int $users, int $campaigns, int $expiry, int $actor, int $now): void {
+        if (!in_array($edition, ['professional', 'enterprise'], true) || $users < 1 || $users > 100000000 ||
+            $campaigns < 1 || $campaigns > 1000000 || $expiry <= $now || $expiry > $now + 3651 * 86400 || $actor < 1) {
+            throw new \InvalidArgumentException('Invalid license details');
+        }
+        $this->store->transaction(function () use ($id, $edition, $users, $campaigns, $expiry, $actor): void {
+            $license = $this->store->find('licenses', 'id', $id, true);
+            if (!$license || $license['edition'] !== $edition) { throw new \DomainException('License unavailable'); }
+            $this->store->update($id, ['managed_users' => $users, 'active_campaigns' => $campaigns, 'expires_at' => $expiry]);
+            $this->store->event($id, 'admin.edit', $actor);
         });
     }
 

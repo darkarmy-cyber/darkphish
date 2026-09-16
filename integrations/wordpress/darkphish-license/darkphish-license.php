@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: Darkphish Community Licensing
- * Description: Verified Community registration and signed installation leases for Darkphish.
- * Version: 0.1.2
+ * Plugin Name: Darkphish Licenses
+ * Description: Community, Professional and Enterprise license management for Darkphish.
+ * Version: 0.2.0
  * Requires at least: 6.8
  * Requires PHP: 8.2
  * License: MIT
@@ -15,6 +15,7 @@ require_once __DIR__ . '/includes/KeySetup.php';
 require_once __DIR__ . '/includes/Store.php';
 require_once __DIR__ . '/includes/Service.php';
 require_once __DIR__ . '/includes/Browser.php';
+require_once __DIR__ . '/includes/Admin.php';
 
 function store(): Store { global $wpdb; return new Store($wpdb); }
 function signer(): Signer {
@@ -45,14 +46,22 @@ function initializeSigningKey(): void {
 add_action('admin_post_darkphish_license_initialize_key', function (): void {
     try { initializeSigningKey(); }
     catch (\Throwable $error) { wp_die('Kľúč sa nepodarilo vytvoriť. Skontrolujte nakonfigurovanú súkromnú cestu, práva a či súbor už existuje. Existujúci kľúč sa neprepisuje.'); }
-    wp_safe_redirect(admin_url('options-general.php?page=darkphish-license')); exit;
+    wp_safe_redirect(admin_url('admin.php?page=darkphish-licenses&tab=settings')); exit;
 });
 
 register_activation_hook(__FILE__, function (bool $networkWide): void {
     if ($networkWide || is_multisite()) { wp_die('Activate only on a single-site WordPress installation.'); }
     if (!function_exists('sodium_crypto_sign_detached')) { wp_die('PHP sodium is required.'); }
     store()->install();
+    update_option('darkphish_license_schema', '2', false);
     if (!wp_next_scheduled('darkphish_license_cleanup')) { wp_schedule_event(time() + 3600, 'hourly', 'darkphish_license_cleanup'); }
+});
+// ZIP replacement does not rerun the activation hook. Additive, retryable upgrade.
+add_action('plugins_loaded', function (): void {
+    if (get_option('darkphish_license_schema') !== '2') {
+        try { store()->install(); update_option('darkphish_license_schema', '2', false); }
+        catch (\Throwable $error) { /* Keep the old version marker so the next request retries. */ }
+    }
 });
 register_deactivation_hook(__FILE__, function (): void { wp_clear_scheduled_hook('darkphish_license_cleanup'); });
 add_action('darkphish_license_cleanup', function (): void { store()->cleanup(); });
@@ -163,14 +172,10 @@ add_action('admin_init', function (): void {
     }]);
 });
 
-add_action('admin_menu', function (): void {
-    add_options_page('Darkphish licensing', 'Darkphish licensing', 'manage_options', 'darkphish-license', __NAMESPACE__ . '\\adminPage');
-});
-
-function adminPage(): void {
+function adminSettings(): void {
     if (!current_user_can('manage_options')) { wp_die('Forbidden', '', ['response' => 403]); }
     $settings = get_option('darkphish_license_settings', []);
-    echo '<div class="wrap"><h1>Darkphish Community licensing</h1><p>Community: 100 managed users, 1 active campaign, 365-day license. Lease: 30 days + up to 30 days offline grace.</p>';
+    echo '<h2>Service settings</h2><p>Community registration: 100 managed users, 1 active campaign, 365 days.</p>';
     try {
         $keyring = signer()->keyring();
         echo '<h2>Public verification keyring</h2><p>Copy this public JSON to Darkphish. No private key is displayed.</p><pre>' . esc_html(wp_json_encode($keyring, JSON_PRETTY_PRINT)) . '</pre>';
@@ -192,23 +197,17 @@ function adminPage(): void {
     foreach (['registration_url' => 'Registration page URL (static HTML or shortcode)', 'terms_url' => 'Community terms URL', 'terms_version' => 'Terms version (for example 2026-09-16)'] as $field => $label) {
         echo '<p><label>' . esc_html($label) . '<br><input class="regular-text" name="darkphish_license_settings[' . esc_attr($field) . ']" value="' . esc_attr($settings[$field] ?? '') . '" required></label></p>';
     }
-    submit_button(); echo '</form><h2>Latest 100 licenses</h2><p>Revocation prevents further leases. Previously signed leases remain usable until their signed grace deadline. Reset does not invalidate an offline lease.</p><table class="widefat"><thead><tr><th>License / email</th><th>Status / expires</th><th>Installation</th><th>Action</th></tr></thead><tbody>';
-    foreach (store()->recentLicenses() as $license) {
-        echo '<tr><td>' . esc_html($license['id']) . '<br>' . esc_html($license['email']) . '</td><td>' . esc_html($license['status']) . '<br>' . esc_html(gmdate('Y-m-d', (int) $license['expires_at'])) . '</td><td>' . esc_html($license['installation'] ?: 'Not activated') . '</td><td><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
-        wp_nonce_field('darkphish-license:' . $license['id']);
-        echo '<input type="hidden" name="action" value="darkphish_license_admin"><input type="hidden" name="license_id" value="' . esc_attr($license['id']) . '"><select name="operation"><option value="revoke">Revoke</option><option value="restore">Restore</option><option value="reset">Reset installation</option><option value="renew">Renew for 365 days</option></select> <button class="button">Apply</button></form></td></tr>';
-    }
-    echo '</tbody></table></div>';
+    submit_button(); echo '</form>';
 }
 
 add_action('admin_post_darkphish_license_admin', function (): void {
-    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || !current_user_can('manage_options')) { wp_die('Forbidden', '', ['response' => 403]); }
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || !is_ssl() || !current_user_can('manage_options')) { wp_die('Forbidden', '', ['response' => 403]); }
     $id = sanitize_text_field(wp_unslash($_POST['license_id'] ?? ''));
     check_admin_referer('darkphish-license:' . $id);
     // Emergency revocation must remain available if the signing file is missing.
     try { (new Service(store()))->administer($id, sanitize_key($_POST['operation'] ?? ''), get_current_user_id(), time()); }
     catch (\Throwable $error) { wp_die('The licensing action could not be completed.'); }
-    wp_safe_redirect(admin_url('options-general.php?page=darkphish-license')); exit;
+    wp_safe_redirect(admin_url('admin.php?page=darkphish-licenses&tab=' . adminTab($_POST['edition'] ?? 'community'))); exit;
 });
 
 add_shortcode('darkphish_license', function (): string {
@@ -217,7 +216,7 @@ add_shortcode('darkphish_license', function (): string {
         return '<p>Community registration is not available yet.</p>';
     }
     // Token is carried in the fragment, never in a query string or referrer.
-    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.1.2', true);
+    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.2.0', true);
     wp_enqueue_script('darkphish-turnstile', 'https://challenges.cloudflare.com/turnstile/v0/api.js', [], null, true);
     return '<section id="darkphish-license" data-api="' . esc_url(rest_url('darkphish-license/v1/')) . '" data-terms="' . esc_attr($settings['terms_version']) . '"><h2>Darkphish Community</h2><p>Free registration: 100 managed users and 1 active campaign.</p><p role="status" aria-live="polite" class="dp-status"></p><form class="dp-request"><label>Email <input type="email" name="email" maxlength="254" autocomplete="email" required></label><p><label><input type="checkbox" required> I accept the <a href="' . esc_url($settings['terms_url']) . '" target="_blank" rel="noopener noreferrer">Community terms</a>.</label></p><div class="cf-turnstile" data-action="darkphish-license" data-sitekey="' . esc_attr(DARKPHISH_TURNSTILE_SITE_KEY) . '"></div><button type="submit">Request license</button></form><button type="button" class="dp-verify" hidden>Confirm email and display my license key</button><pre class="dp-key" hidden></pre></section>';
 });

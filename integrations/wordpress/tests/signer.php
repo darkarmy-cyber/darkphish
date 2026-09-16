@@ -22,6 +22,14 @@ $shortPayload = json_decode(base64_decode(strtr($short['payload'], '-_', '+/')),
 check($shortPayload['grace_until'] === $now + 600, 'Lease outlives license');
 try { $signer->lease(array_replace($license, ['expires_at' => $now]), 'installation', $now); throw new RuntimeException('Expired license accepted'); }
 catch (DomainException $expected) {}
+foreach (['professional', 'enterprise'] as $edition) {
+    $paid = $signer->lease(array_replace($license, ['edition' => $edition]), $decoded['installation_id'], $now);
+    $body = base64_decode(strtr($paid['payload'], '-_', '+/'));
+    check(json_decode($body, true)['edition'] === $edition, 'Paid edition changed');
+    check(sodium_crypto_sign_verify_detached(base64_decode(strtr($paid['signature'], '-_', '+/')), $body, sodium_crypto_sign_publickey($pair)), 'Paid signature invalid');
+}
+try { $signer->lease(array_replace($license, ['edition' => 'unknown']), 'installation', $now); throw new RuntimeException('Unknown edition signed'); }
+catch (DomainException $expected) {}
 $fixture = ['envelope' => $envelope, 'keyring' => $signer->keyring(), 'now' => $now, 'installation_id' => $decoded['installation_id']];
 if (isset($argv[1])) { file_put_contents($argv[1], json_encode($fixture, JSON_THROW_ON_ERROR)); }
 echo "Signer policy, tamper and expiry tests passed.\n";

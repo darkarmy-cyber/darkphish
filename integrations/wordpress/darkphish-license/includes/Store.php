@@ -15,7 +15,7 @@ final class Store {
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         $charset = $this->db->get_charset_collate();
         $tables = [
-            'licenses' => "id varchar(40) NOT NULL, email varchar(254) NOT NULL, email_hash char(64) NOT NULL, key_hash char(64) NOT NULL, status varchar(16) NOT NULL, managed_users int NOT NULL, active_campaigns int NOT NULL, expires_at bigint NOT NULL, installation varchar(80) NOT NULL DEFAULT '', refresh_hash char(64) NOT NULL DEFAULT '', product_version varchar(40) NOT NULL DEFAULT '', last_seen bigint NOT NULL DEFAULT 0, created_at bigint NOT NULL, terms_version varchar(80) NOT NULL, PRIMARY KEY  (id), UNIQUE KEY email_hash (email_hash), UNIQUE KEY key_hash (key_hash), KEY refresh_hash (refresh_hash)",
+            'licenses' => "id varchar(40) NOT NULL, email varchar(254) NOT NULL, email_hash char(64) NOT NULL, edition varchar(20) NOT NULL DEFAULT 'community', key_hash char(64) NOT NULL, status varchar(16) NOT NULL, managed_users int NOT NULL, active_campaigns int NOT NULL, expires_at bigint NOT NULL, installation varchar(80) NOT NULL DEFAULT '', refresh_hash char(64) NOT NULL DEFAULT '', product_version varchar(40) NOT NULL DEFAULT '', last_seen bigint NOT NULL DEFAULT 0, created_at bigint NOT NULL, terms_version varchar(80) NOT NULL, PRIMARY KEY  (id), UNIQUE KEY email_hash (email_hash), UNIQUE KEY key_hash (key_hash), KEY refresh_hash (refresh_hash)",
             'requests' => "token_hash char(64) NOT NULL, email varchar(254) NOT NULL, expires_at bigint NOT NULL, terms_version varchar(80) NOT NULL, PRIMARY KEY  (token_hash)",
             'limits' => "bucket char(64) NOT NULL, hits int NOT NULL DEFAULT 0, expires_at bigint NOT NULL, PRIMARY KEY  (bucket)",
             'events' => "id bigint unsigned NOT NULL AUTO_INCREMENT, license_id varchar(40) NOT NULL, action varchar(40) NOT NULL, actor bigint unsigned NOT NULL DEFAULT 0, created_at bigint NOT NULL, PRIMARY KEY  (id), KEY license_id (license_id)",
@@ -24,6 +24,9 @@ final class Store {
             // dbDelta requires one definition per line and PRIMARY KEY's two spaces.
             $sql = 'CREATE TABLE ' . $this->prefix . $name . " (\n" . str_replace(', ', ",\n", $columns) . "\n) ENGINE=InnoDB $charset;";
             dbDelta($sql);
+            if ($name === 'licenses' && !$this->db->get_row("SHOW COLUMNS FROM {$this->prefix}licenses LIKE 'edition'")) {
+                throw new \RuntimeException('License edition upgrade unavailable');
+            }
             $actual = $this->db->get_row($this->db->prepare('SHOW TABLE STATUS WHERE Name = %s', $this->prefix . $name), ARRAY_A);
             if (!$actual || strcasecmp($actual['Engine'], 'InnoDB') !== 0) {
                 throw new \RuntimeException('Transactional licensing tables unavailable');
@@ -103,7 +106,22 @@ final class Store {
         }
     }
 
-    public function recentLicenses(): array {
-        return $this->db->get_results("SELECT id,email,status,installation,expires_at FROM {$this->prefix}licenses ORDER BY created_at DESC LIMIT 100", ARRAY_A) ?: [];
+    public function recentLicenses(string $edition = 'community', int $page = 1): array {
+        if (!in_array($edition, ['community', 'professional', 'enterprise'], true)) { throw new \InvalidArgumentException('Invalid edition'); }
+        $rows = $this->db->get_results($this->db->prepare("SELECT id,email,edition,status,managed_users,active_campaigns,installation,expires_at FROM {$this->prefix}licenses WHERE edition=%s ORDER BY created_at DESC,id DESC LIMIT 50 OFFSET %d", $edition, (max(1, $page) - 1) * 50), ARRAY_A);
+        if ($this->db->last_error !== '') { throw new \RuntimeException('Licensing storage unavailable'); }
+        return $rows ?: [];
+    }
+
+    public function statistics(int $now): array {
+        $rows = $this->db->get_results($this->db->prepare("SELECT edition,COUNT(*) AS total,SUM(status='active' AND expires_at>%d) AS active,SUM(status='active' AND expires_at>%d AND installation='') AS unbound,SUM(status='active' AND expires_at<=%d) AS expired,SUM(status='revoked') AS revoked FROM {$this->prefix}licenses GROUP BY edition", $now, $now, $now), ARRAY_A);
+        if ($this->db->last_error !== '') { throw new \RuntimeException('Licensing storage unavailable'); }
+        $result = [];
+        foreach (['community', 'professional', 'enterprise'] as $edition) { $result[$edition] = array_fill_keys(['total','active','unbound','expired','revoked'], 0); }
+        foreach ($rows ?: [] as $row) {
+            if (!isset($result[$row['edition']])) { continue; }
+            foreach ($result[$row['edition']] as $key => $_) { $result[$row['edition']][$key] = (int) $row[$key]; }
+        }
+        return $result;
     }
 }

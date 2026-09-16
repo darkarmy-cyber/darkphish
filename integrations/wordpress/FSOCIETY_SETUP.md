@@ -35,10 +35,10 @@ absolútnu serverovú cestu. Plugin aj tak skontroluje skutočné umiestnenie.
 
 ## 3. Aktualizácia pluginu a vytvorenie kľúča
 
-Nahraj ZIP verzie **0.1.2** cez **Pluginy → Pridať nový → Nahrať plugin**
+Nahraj ZIP verzie **0.2.0** cez **Pluginy → Pridať nový → Nahrať plugin**
 a zvoľ nahradenie nainštalovanej verzie. Licencie a databázové tabuľky zostanú.
 
-Cez HTTPS otvor **Nastavenia → Darkphish licensing**. Klikni na
+Cez HTTPS otvor **Darkphish Licenses → Settings**. Klikni na
 **Vytvoriť podpisový kľúč na serveri**. Táto operácia nevypíše súkromný kľúč,
 nevytvorí ho vo verejnom adresári a nikdy neprepíše existujúci súbor.
 

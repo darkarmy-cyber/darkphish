@@ -29,7 +29,7 @@ Ak má FTP prístup iba k verejnému webu, súkromný priečinok musí pripravi�
 1. Nahraj aktualizovaný ZIP a zvoľ nahradenie existujúcej verzie pluginu.
 2. Nastav `DARKPHISH_LICENSE_KEY_FILE` vo `wp-config.php` na nový, ešte neexistujúci
    JSON súbor v tomto priečinku (ukážka nižšie).
-3. Cez HTTPS otvor **Nastavenia → Darkphish licensing** a klikni na
+3. Cez HTTPS otvor **Darkphish Licenses → Settings** a klikni na
    **Vytvoriť podpisový kľúč na serveri**. Funkcia vyžaduje oprávnenie správcu
    a platný formulárový nonce. Kľúč vznikne len na serveri s právami
    `0600`; do prehliadača sa jeho súkromná časť nikdy neposiela.
@@ -89,7 +89,7 @@ zostávajú iba na tomto serveri. Do HTML webu nepridávaj PHP ani WordPress.
    koreni HTML webu. Výsledná stránka je `https://www.darkphish.sk/license/`.
    Existujúcu hlavnú stránku neprepisuj. Na registráciu nepridávaj analytiku,
    reklamy ani iné skripty, ktoré môžu čítať token alebo zobrazený kľúč.
-3. V administrácii WordPressu **Nastavenia → Darkphish licensing** nastav
+3. V administrácii WordPressu **Darkphish Licenses → Settings** nastav
    **Registration page URL** na `https://www.darkphish.sk/license/`, URL
    schválených podmienok a ich skutočnú verziu. Toto nastavenie určuje aj
    cieľ overovacieho e-mailu; ľubovoľné cudzie domény sú odmietnuté.
@@ -197,3 +197,9 @@ Anglické návrhy podmienok a oznámenia o ochrane údajov sú v
 spoločnosť a IČO `XXXX`; nie sú určené na publikovanie ani zapnutie registrácie.
 Postup pre plánovanú licenčnú schránku `license@darkphish.sk` u Websupportu je v
 [návode na SMTP](legal-drafts/MAIL_SETUP.sk.md).
+
+## Darkphish Licenses 0.2.0
+
+Samostatné menu sa zaradí priamo pod Zeus, ak je prítomný. Záložky Dashboard, Community, Professional, Enterprise a Settings zobrazujú skutočné štatistiky a stránkované licencie. Správca môže ručne vydať Professional/Enterprise licenciu, upraviť jej limity a platnosť alebo použiť revoke/restore/reset/renew. Predvolené limity sa upravujú v Settings a nevynucujú sa spätne na už vydaných licenciách. Ručné vydanie neoveruje platbu ani neposiela kľúč poštou. Kľúč sa zobrazí iba v odpovedi na vydanie.
+
+Aktualizácia zachová názov priečinka darkphish-license, konštanty, nastavenia, podpisový súbor a existujúce licencie. Databáza sa rozšíri pri nasledujúcom načítaní pluginov; existujúce licencie sú Community. Verejné vydanie/obnova Community nemôžu prepísať komerčnú licenciu pre rovnaký e-mail. Zmeny limitov a zrušenie sa prejavia pri ďalšom podpísanom lease, nie v už vydanom offline zázname. Platená licencia potrebuje klienta s podporou danej edície; sama nepridáva ďalšie produktové funkcie.

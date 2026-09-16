@@ -1,7 +1,7 @@
-=== Darkphish Community Licensing ===
+=== Darkphish Licenses ===
 Requires at least: 6.8
 Requires PHP: 8.2
-Stable tag: 0.1.2
+Stable tag: 0.2.0
 License: MIT
 
 Email-verified Community registration and Ed25519 activation leases.
@@ -11,7 +11,7 @@ Email-verified Community registration and Ed25519 activation leases.
 Use a staging site first. Upload this folder as a ZIP in Plugins > Add New.
 Requires HTTPS, PHP sodium, MySQL/MariaDB InnoDB and single-site WordPress.
 
-Generate the signing key in Settings > Darkphish licensing (version 0.1.1,
+Generate the signing key in Darkphish Licenses > Settings (version 0.1.1,
 no SSH required), or with tools/create-key.php on the hosting server.
 The destination must be outside its public document root, mode 0600, readable
 by the PHP user. Configure DARKPHISH_LICENSE_KEY_FILE in wp-config.php.
@@ -21,7 +21,7 @@ Configure DARKPHISH_TURNSTILE_SITE_KEY and DARKPHISH_TURNSTILE_SECRET in
 wp-config.php. Never send the secret key or private signing file through chat.
 
 Use the static-site registration page or a page with [darkphish_license]. For an external HTML site, configure DARKPHISH_LICENSE_REGISTRATION_ORIGIN in wp-config.php. Set the registration HTTPS URL, Community terms URL
-and terms version in Settings > Darkphish licensing. Verify actual mail delivery.
+and terms version in Darkphish Licenses > Settings. Verify actual mail delivery.
 
 The complete Slovak deployment guide is INSTALL.md in this package and
 integrations/wordpress/README.md in the source repository.

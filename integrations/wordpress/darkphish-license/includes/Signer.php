@@ -37,12 +37,14 @@ final class Signer {
     }
 
     public function lease(array $license, string $installation, int $now): array {
+        $edition = $license['edition'] ?? 'community';
+        if (!in_array($edition, ['community', 'professional', 'enterprise'], true)) { throw new \DomainException('Invalid edition'); }
         $expiry = min($now + 30 * 86400, (int) $license['expires_at']);
         if ($expiry <= $now) {
             throw new \DomainException('License unavailable');
         }
         $payload = json_encode([
-            'schema' => 'darkphish-license-lease/v1', 'product' => 'darkphish', 'edition' => 'community',
+            'schema' => 'darkphish-license-lease/v1', 'product' => 'darkphish', 'edition' => $edition,
             'license_id' => $license['id'], 'installation_id' => $installation,
             'issued_at' => $now, 'not_before' => $now, 'expires_at' => $expiry,
             'grace_until' => min($expiry + 30 * 86400, (int) $license['expires_at']),

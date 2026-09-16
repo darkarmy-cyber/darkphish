@@ -21,6 +21,27 @@ nevytvorí produkčný podpisový kľúč ani nezačne posielať správy použí
 
 ## Vytvorenie podpisového kľúča na hostingu
 
+Od verzie 0.1.1 **SSH nie je potrebné**. Najprv cez FTP alebo správcu hostingu
+vytvor súkromný priečinok mimo všetkých verejných webových adresárov a zisti
+jeho absolútnu serverovú cestu. Relatívna cesta z FTP nemusí zodpovedať serverovej.
+Ak má FTP prístup iba k verejnému webu, súkromný priečinok musí pripraviť hosting.
+
+1. Nahraj aktualizovaný ZIP a zvoľ nahradenie existujúcej verzie pluginu.
+2. Nastav `DARKPHISH_LICENSE_KEY_FILE` vo `wp-config.php` na nový, ešte neexistujúci
+   JSON súbor v tomto priečinku (ukážka nižšie).
+3. Cez HTTPS otvor **Nastavenia → Darkphish licensing** a klikni na
+   **Vytvoriť podpisový kľúč na serveri**. Funkcia vyžaduje oprávnenie správcu
+   a platný formulárový nonce. Kľúč vznikne len na serveri s právami
+   `0600`; do prehliadača sa jeho súkromná časť nikdy neposiela.
+4. Po obnovení stránky skopíruj zobrazený **verejný keyring JSON**.
+
+Tlačidlo neprepíše existujúci súbor ani nevytvorí kľúč vo verejnom adresári.
+Neplatný/poškodený existujúci súbor treba najprv preveriť; automatická výmena
+by mohla zneplatniť podpisy. Administrácia zobrazuje WordPress a document-root
+cesty iba oprávnenému správcovi, aby vedel overiť umiestnenie súkromného súboru.
+
+Nasledujúci CLI postup zostáva alternatívou pre hosting so SSH:
+
 Príklad cesty `/home/ACCOUNT/private/darkphish-signing.json` musí správca
 nahradiť skutočnou cestou **mimo document root** (napríklad mimo `public_html`).
 Priečinok má byť súkromný a súbor čitateľný len používateľom PHP. Na Linuxe

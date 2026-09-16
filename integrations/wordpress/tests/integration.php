@@ -51,6 +51,24 @@ if (($argv[1] ?? '') === 'compete') {
 
 $db = new Darkphish\Licensing\Store($wpdb);
 $db->install(); // upgrade/install idempotency
+class AdminDenied extends RuntimeException {}
+add_filter('wp_die_handler', static fn () => static function () { throw new AdminDenied('denied'); });
+$_SERVER['REQUEST_METHOD'] = 'POST';
+$_REQUEST = [];
+wp_set_current_user(0);
+try { Darkphish\Licensing\initializeSigningKey(); throw new LogicException('Anonymous key setup accepted'); }
+catch (AdminDenied $expected) {}
+wp_set_current_user(1);
+try { Darkphish\Licensing\initializeSigningKey(); throw new LogicException('Key setup without nonce accepted'); }
+catch (AdminDenied $expected) {}
+check(!file_exists($keyPath), 'Unauthorized setup created a private key');
+$_REQUEST['_wpnonce'] = wp_create_nonce('darkphish-license-initialize-key');
+Darkphish\Licensing\initializeSigningKey();
+$keyDigest = hash_file('sha256', $keyPath);
+try { Darkphish\Licensing\initializeSigningKey(); throw new LogicException('Existing key replaced'); }
+catch (RuntimeException $expected) {}
+check(hash_file('sha256', $keyPath) === $keyDigest, 'Setup changed an existing private key');
+wp_set_current_user(0); $_REQUEST = [];
 $service = new Darkphish\Licensing\Service($db, Darkphish\Licensing\signer());
 $settings = ['registration_url' => 'https://fsociety.test/license/', 'terms_url' => 'https://fsociety.test/terms/', 'terms_version' => 'test-v1'];
 update_option('darkphish_license_settings', $settings);
@@ -126,8 +144,6 @@ check($db->rate('test', 'same-client', 1, 3600, time()) && !$db->rate('test', 's
 
 // Exercise the registered admin handler's permission and CSRF gates without
 // following its successful redirect/exit path.
-class AdminDenied extends RuntimeException {}
-add_filter('wp_die_handler', static fn () => static function () { throw new AdminDenied('denied'); });
 $_SERVER['REQUEST_METHOD'] = 'POST';
 $_POST = ['license_id' => $license['license_id'], 'operation' => 'revoke'];
 wp_set_current_user(0);

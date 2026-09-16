@@ -1,7 +1,7 @@
 === Darkphish Community Licensing ===
 Requires at least: 6.8
 Requires PHP: 8.2
-Stable tag: 0.1.0
+Stable tag: 0.1.1
 License: MIT
 
 Email-verified Community registration and Ed25519 activation leases.
@@ -11,7 +11,8 @@ Email-verified Community registration and Ed25519 activation leases.
 Use a staging site first. Upload this folder as a ZIP in Plugins > Add New.
 Requires HTTPS, PHP sodium, MySQL/MariaDB InnoDB and single-site WordPress.
 
-Generate the signing key with tools/create-key.php on the hosting server.
+Generate the signing key in Settings > Darkphish licensing (version 0.1.1,
+no SSH required), or with tools/create-key.php on the hosting server.
 The destination must be outside its public document root, mode 0600, readable
 by the PHP user. Configure DARKPHISH_LICENSE_KEY_FILE in wp-config.php.
 Only the public verification keyring may be copied to Darkphish clients.

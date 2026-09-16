@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Darkphish Community Licensing
  * Description: Verified Community registration and signed installation leases for Darkphish.
- * Version: 0.1.0
+ * Version: 0.1.1
  * Requires at least: 6.8
  * Requires PHP: 8.2
  * License: MIT
@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace Darkphish\Licensing;
 if (!defined('ABSPATH')) { exit; }
 require_once __DIR__ . '/includes/Signer.php';
+require_once __DIR__ . '/includes/KeySetup.php';
 require_once __DIR__ . '/includes/Store.php';
 require_once __DIR__ . '/includes/Service.php';
 
@@ -24,6 +25,27 @@ function signer(): Signer {
     return Signer::fromFile(DARKPHISH_LICENSE_KEY_FILE, $root !== '' ? $root : ABSPATH);
 }
 function service(): Service { return new Service(store(), signer()); }
+
+function initializeSigningKey(): void {
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || !is_ssl() || !current_user_can('manage_options')) {
+        wp_die('Forbidden', '', ['response' => 403]);
+    }
+    check_admin_referer('darkphish-license-initialize-key');
+    if (!defined('DARKPHISH_LICENSE_KEY_FILE')) { throw new \RuntimeException('Configure the private key path first'); }
+    $roots = [ABSPATH];
+    if (!empty($_SERVER['DOCUMENT_ROOT'])) { $roots[] = $_SERVER['DOCUMENT_ROOT']; }
+    $id = 'DP-COM-' . gmdate('Ymd') . '-' . bin2hex(random_bytes(4));
+    $db = store();
+    $db->event('', 'signing.initialize.request', get_current_user_id());
+    KeySetup::create(DARKPHISH_LICENSE_KEY_FILE, $id, $roots);
+    $db->event('', 'signing.initialize.success', get_current_user_id());
+}
+
+add_action('admin_post_darkphish_license_initialize_key', function (): void {
+    try { initializeSigningKey(); }
+    catch (\Throwable $error) { wp_die('Kľúč sa nepodarilo vytvoriť. Skontrolujte nakonfigurovanú súkromnú cestu, práva a či súbor už existuje. Existujúci kľúč sa neprepisuje.'); }
+    wp_safe_redirect(admin_url('options-general.php?page=darkphish-license')); exit;
+});
 
 register_activation_hook(__FILE__, function (bool $networkWide): void {
     if ($networkWide || is_multisite()) { wp_die('Activate only on a single-site WordPress installation.'); }
@@ -147,7 +169,18 @@ function adminPage(): void {
         $keyring = signer()->keyring();
         echo '<h2>Public verification keyring</h2><p>Copy this public JSON to Darkphish. No private key is displayed.</p><pre>' . esc_html(wp_json_encode($keyring, JSON_PRETTY_PRINT)) . '</pre>';
         echo '<p>API: <code>' . esc_html(rest_url('darkphish-license/v1')) . '</code></p>';
-    } catch (\Throwable $error) { echo '<p>Signing is unavailable. Configure the private key file outside the web root; see the installation guide.</p>'; }
+    } catch (\Throwable $error) {
+        echo '<h2>Vytvorenie podpisového kľúča bez SSH</h2><p>Vo wp-config.php nastavte DARKPHISH_LICENSE_KEY_FILE na absolútnu cestu k novému JSON súboru v existujúcom súkromnom priečinku mimo verejného webu. Priečinok musí byť zapisovateľný používateľom PHP.</p>';
+        echo '<p>WordPress: <code>' . esc_html(ABSPATH) . '</code><br>Verejný koreň webu: <code>' . esc_html($_SERVER['DOCUMENT_ROOT'] ?? ABSPATH) . '</code></p>';
+        if (defined('DARKPHISH_LICENSE_KEY_FILE')) {
+            echo '<p>Nakonfigurovaná cesta: <code>' . esc_html(DARKPHISH_LICENSE_KEY_FILE) . '</code></p>';
+            if (!file_exists(DARKPHISH_LICENSE_KEY_FILE) && !is_link(DARKPHISH_LICENSE_KEY_FILE) && is_ssl()) {
+                echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+                wp_nonce_field('darkphish-license-initialize-key');
+                echo '<input type="hidden" name="action" value="darkphish_license_initialize_key"><button class="button button-primary">Vytvoriť podpisový kľúč na serveri</button></form><p>Súkromný kľúč sa nevypíše ani neodošle do prehliadača. Existujúci súbor sa nikdy neprepíše.</p>';
+            } else { echo '<p>Súbor už existuje alebo administrácia nepoužíva HTTPS. Overte konfiguráciu; nevytvárajte náhradný kľúč bez plánovanej rotácie.</p>'; }
+        }
+    }
     echo '<form action="options.php" method="post">';
     settings_fields('darkphish_license');
     foreach (['registration_url' => 'Page containing [darkphish_license]', 'terms_url' => 'Community terms URL', 'terms_version' => 'Terms version (for example 2026-09-16)'] as $field => $label) {
@@ -178,7 +211,7 @@ add_shortcode('darkphish_license', function (): string {
         return '<p>Community registration is not available yet.</p>';
     }
     // Token is carried in the fragment, never in a query string or referrer.
-    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.1.0', true);
+    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.1.1', true);
     wp_enqueue_script('darkphish-turnstile', 'https://challenges.cloudflare.com/turnstile/v0/api.js', [], null, true);
     return '<section id="darkphish-license" data-api="' . esc_url(rest_url('darkphish-license/v1/')) . '" data-terms="' . esc_attr($settings['terms_version']) . '"><h2>Darkphish Community</h2><p>Free registration: 100 managed users and 1 active campaign.</p><p role="status" aria-live="polite" class="dp-status"></p><form class="dp-request"><label>Email <input type="email" name="email" maxlength="254" autocomplete="email" required></label><p><label><input type="checkbox" required> I accept the <a href="' . esc_url($settings['terms_url']) . '" target="_blank" rel="noopener noreferrer">Community terms</a>.</label></p><div class="cf-turnstile" data-action="darkphish-license" data-sitekey="' . esc_attr(DARKPHISH_TURNSTILE_SITE_KEY) . '"></div><button type="submit">Request license</button></form><button type="button" class="dp-verify" hidden>Confirm email and display my license key</button><pre class="dp-key" hidden></pre></section>';
 });

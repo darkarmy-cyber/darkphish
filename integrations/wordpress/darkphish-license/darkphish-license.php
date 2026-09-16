@@ -2,7 +2,7 @@
 /**
  * Plugin Name: DarkPhish
  * Description: Community, Professional and Enterprise license management for Darkphish.
- * Version: 0.2.4
+ * Version: 0.2.5
  * Requires at least: 6.8
  * Requires PHP: 8.2
  * License: MIT
@@ -87,7 +87,9 @@ add_action('darkphish_license_cleanup_backlog', __NAMESPACE__ . '\\cleanupStorag
 // normally enqueued header scripts. It does nothing after DOM readiness unless
 // the licensing form exists, and never exposes the token through a global.
 add_action('wp_head', function (): void {
-    wp_print_inline_script_tag(file_get_contents(__DIR__ . '/assets/registration.js'), ['id' => 'darkphish-license-early']);
+    // Parser-blocking, same-origin asset: works with script-src 'self' without
+    // unsafe-inline, and completes before later header scripts execute.
+    wp_print_script_tag(['id' => 'darkphish-license-early', 'src' => plugins_url('assets/registration.js', __FILE__) . '?ver=0.2.5']);
 }, PHP_INT_MIN);
 
 function reply(array $body, int $status = 200): \WP_REST_Response {

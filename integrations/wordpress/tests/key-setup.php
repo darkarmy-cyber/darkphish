@@ -31,16 +31,18 @@ try {
     // Exercise the documented CLI itself, not just the admin setup helper.
     $cliPath = $base . '/private/cli-key.json';
     $cli = dirname(__DIR__) . '/darkphish-license/tools/create-key.php';
-    $runCli = function (string $fault) use ($cli, $cliPath): array {
-        $code = '$GLOBALS["keySetupFault"]=' . var_export($fault, true) . '; require ' . var_export(__DIR__ . '/key-setup-faults.php', true) . '; $argv=["create-key.php",' . var_export($cliPath, true) . ',"cli-test"]; $argc=3; require ' . var_export($cli, true) . ';';
+    $runCli = function (string $fault, ?string $destination = null) use ($cli, $cliPath, $base): array {
+        $code = '$GLOBALS["keySetupFault"]=' . var_export($fault, true) . '; require ' . var_export(__DIR__ . '/key-setup-faults.php', true) . '; $argv=["create-key.php",' . var_export($destination ?? $cliPath, true) . ',"cli-test"]; $argc=3; require ' . var_export($cli, true) . ';';
         $command = [PHP_BINARY];
         if (PHP_OS_FAMILY === 'Windows') { array_push($command, '-d', 'extension_dir=' . ini_get('extension_dir'), '-d', 'extension=php_sodium.dll'); }
         array_push($command, '-r', $code);
-        $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $base . '/public');
         check(is_resource($process), 'CLI test process unavailable'); fclose($pipes[0]);
         $out = stream_get_contents($pipes[1]); $err = stream_get_contents($pipes[2]); fclose($pipes[1]); fclose($pipes[2]);
         return [proc_close($process), $out, $err];
     };
+    [$status, $out] = $runCli('', 'relative-key.json');
+    check($status === 1 && $out === '' && !file_exists($base . '/public/relative-key.json'), 'CLI created a relative key in the public working directory');
     foreach (['write', 'flush', 'sync'] as $fault) {
         [$status, $out] = $runCli($fault);
         clearstatcache(true, $cliPath);
@@ -70,6 +72,8 @@ try {
             rejected(fn () => Signer::fromFile($base . '/public/key-alias.json', $base . '/public'));
             rejected(fn () => Signer::fromFile($base . '/public/dir-alias/key.json', $base . '/public'));
             rejected(fn () => KeySetup::create($base . '/public/dir-alias/new.json', 'test', [$base . '/public']));
+            [$status] = $runCli('', $base . '/public/dir-alias/new.json');
+            check($status === 1, 'CLI accepted a public symlink directory');
             check(!file_exists($base . '/private/new.json'), 'Public alias setup created a signing key');
         } finally { unlink($base . '/public/key-alias.json'); unlink($base . '/public/dir-alias'); }
         symlink($base . '/public', $base . '/link');

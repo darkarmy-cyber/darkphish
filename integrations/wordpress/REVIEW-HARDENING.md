@@ -1,4 +1,4 @@
-# WordPress licensing 0.2.4 review hardening
+# WordPress licensing 0.2.5 review hardening
 
 This candidate addresses the six findings on PR75 head `3b0fbf4` and the
 four follow-up findings on `491fa8a`, plus header timing and cleanup backlog
@@ -18,17 +18,21 @@ and public signing-path alias findings on `b6d93fe`.
   A public root that cannot be resolved is rejected. Additional web-server
   aliases or hardlinks unrelated to the configured path remain the operator's
   responsibility; do not expose the private directory through server aliases.
-- The shortcode script is emitted inline at the earliest `wp_head` priority,
+- The shortcode script is loaded as a parser-blocking same-origin asset at the
+  earliest `wp_head` priority, compatible with CSP `script-src 'self'`,
   before WordPress-enqueued theme, plugin and analytics scripts. It removes
   mailbox-verification fragments synchronously and keeps the token in a closure
   until explicit confirmation. Themes must call `wp_head` before their own raw
   scripts; registration pages must not include untrusted scripts. Scripts that
-  a theme hardcodes before `wp_head` cannot be retroactively protected.
+  a theme hardcodes before `wp_head` cannot be retroactively protected. Exclude
+  this bootstrap from script optimizers that add async/defer or relocate scripts.
 - Public configuration returns unavailable unless schema 4 and signing are
   ready. The shortcode uses the same readiness gate. Errors do not expose
   paths, keys or database details.
 - CLI key creation also removes its own incomplete file on write, flush or
-  sync failure, permits a safe retry, and never overwrites existing keys.
+  sync failure, permits a safe retry, and never overwrites existing keys. It
+  validates the direct absolute destination before creating any file, even when
+  the operator's working directory is publicly served.
 - If key creation succeeds but its completion audit fails, the administrator
   sees a truthful saved-key warning rather than a failed-creation message.
   The initial audit request remains mandatory before creating the file.

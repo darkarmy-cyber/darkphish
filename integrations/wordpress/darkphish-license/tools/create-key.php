@@ -8,6 +8,8 @@ require_once dirname(__DIR__) . '/includes/Signer.php';
 if ($argc !== 3 || !preg_match('/^[A-Za-z0-9._-]{1,80}$/D', $argv[2])) {
     fwrite(STDERR, "Usage: php create-key.php /private/path/key.json KEY-ID\n"); exit(1);
 }
+try { SigningPath::requireDirectAbsolute($argv[1]); }
+catch (\Throwable $error) { \fwrite(STDERR, "A direct absolute private signing path without symlinks is required.\n"); exit(1); }
 umask(0077);
 $handle = @fopen($argv[1], 'x');
 if (!$handle) { fwrite(STDERR, "Cannot create key file; existing files are never overwritten.\n"); exit(1); }

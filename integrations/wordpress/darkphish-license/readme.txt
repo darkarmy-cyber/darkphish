@@ -1,7 +1,7 @@
 === DarkPhish ===
 Requires at least: 6.8
 Requires PHP: 8.2
-Stable tag: 0.2.4
+Stable tag: 0.2.5
 License: MIT
 
 Community registration, edition dashboards and manual Professional/Enterprise licensing with Ed25519 leases.

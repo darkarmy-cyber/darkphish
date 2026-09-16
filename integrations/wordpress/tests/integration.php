@@ -142,7 +142,10 @@ remove_action('wp_head', $headerProbe, 0);
 $bootstrapOffset = strpos($header, 'id="darkphish-license-early"');
 $probeOffset = strpos($header, 'id="theme-header-probe"');
 check($bootstrapOffset !== false && $probeOffset !== false && $bootstrapOffset < $probeOffset, 'Token removal was not emitted before header scripts');
-check(str_contains(substr($header, $bootstrapOffset, $probeOffset - $bootstrapOffset), 'history.replaceState'), 'Early script lacks synchronous token cleanup');
+$earlyTag = substr($header, $bootstrapOffset, strpos($header, '</script>', $bootstrapOffset) - $bootstrapOffset);
+check(str_contains($earlyTag, 'src="' . esc_url(plugins_url('assets/registration.js', WP_PLUGIN_DIR . '/darkphish-license/darkphish-license.php')) . '?ver=0.2.5"'), 'Early script is not the bundled same-origin CSP-compatible asset');
+check(!preg_match('/\s(?:async|defer)(?:\s|=|>)/i', $earlyTag), 'Token cleanup script is not parser-blocking');
+check(!str_contains($earlyTag, 'history.replaceState'), 'Inline cleanup would be blocked by script-src self');
 check(!wp_script_is('darkphish-license', 'enqueued'), 'A footer copy would discard the captured token');
 check(!str_contains(json_encode($publicConfig->get_data()), DARKPHISH_TURNSTILE_SECRET), 'Public config leaked secret');
 foreach (['https://evil.test', 'null', 'http://darkphish.test', 'https://darkphish.test.evil.test', 'https://darkphish.test:444'] as $origin) {

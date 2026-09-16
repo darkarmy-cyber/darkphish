@@ -150,11 +150,19 @@ final class Store {
         });
     }
 
-    public function cleanup(): void {
+    /** Bounded work per cron invocation; true requests another prompt batch. */
+    public function cleanup(): bool {
         $now = time();
+        $pending = false;
         foreach (['requests', 'limits'] as $table) {
-            $this->execute($this->db->prepare("DELETE FROM {$this->prefix}$table WHERE expires_at < %d LIMIT 1000", $now));
+            for ($batch = 0; $batch < 10; $batch++) {
+                $deleted = $this->sql('query', $this->db->prepare("DELETE FROM {$this->prefix}$table WHERE expires_at < %d LIMIT 1000", $now));
+                if ($deleted === false) { throw new \RuntimeException('Licensing cleanup unavailable'); }
+                if ($deleted < 1000) { break; }
+                if ($batch === 9) { $pending = true; }
+            }
         }
+        return $pending;
     }
 
     public function recentLicenses(string $edition = 'community', int $page = 1): array {

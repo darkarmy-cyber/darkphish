@@ -1,10 +1,12 @@
 <?php
 declare(strict_types=1);
 namespace Darkphish\Licensing;
+require_once __DIR__ . '/SigningPath.php';
 
 final class KeySetup {
     /** The path comes only from wp-config.php, never from an HTTP parameter. */
     public static function create(string $path, string $id, array $publicRoots): void {
+        SigningPath::requireDirectAbsolute($path);
         if (!function_exists('sodium_crypto_sign_keypair') || !preg_match('/^[A-Za-z0-9._-]{1,80}$/D', $id)) {
             throw new \RuntimeException('Invalid signing setup');
         }

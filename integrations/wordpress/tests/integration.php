@@ -134,6 +134,16 @@ try {
 } finally { file_put_contents($keyPath, $savedKey); chmod($keyPath, 0600); sodium_memzero($savedKey); }
 check($publicConfig->get_status() === 200 && $publicConfig->get_data()['site_key'] === 'test-public-site-key', 'Public config unavailable');
 check(str_contains(do_shortcode('[darkphish_license]'), '<form'), 'Ready shortcode unavailable');
+// Verify actual WordPress rendering order, not only the JS callback timing.
+$headerProbe = static function (): void { echo '<script id="theme-header-probe">window.headerProbe=location.hash;</script>'; };
+add_action('wp_head', $headerProbe, 0);
+ob_start(); do_action('wp_head'); $header = ob_get_clean();
+remove_action('wp_head', $headerProbe, 0);
+$bootstrapOffset = strpos($header, 'id="darkphish-license-early"');
+$probeOffset = strpos($header, 'id="theme-header-probe"');
+check($bootstrapOffset !== false && $probeOffset !== false && $bootstrapOffset < $probeOffset, 'Token removal was not emitted before header scripts');
+check(str_contains(substr($header, $bootstrapOffset, $probeOffset - $bootstrapOffset), 'history.replaceState'), 'Early script lacks synchronous token cleanup');
+check(!wp_script_is('darkphish-license', 'enqueued'), 'A footer copy would discard the captured token');
 check(!str_contains(json_encode($publicConfig->get_data()), DARKPHISH_TURNSTILE_SECRET), 'Public config leaked secret');
 foreach (['https://evil.test', 'null', 'http://darkphish.test', 'https://darkphish.test.evil.test', 'https://darkphish.test:444'] as $origin) {
     check(call_api('public-config', [], $origin, 'GET')->get_status() === 403, 'Untrusted browser origin accepted');
@@ -222,6 +232,7 @@ require __DIR__ . '/admin-editions.php';
 require __DIR__ . '/mail.php';
 require __DIR__ . '/recovery.php';
 require __DIR__ . '/email-policy.php';
+require __DIR__ . '/cleanup.php';
 
 $_SERVER['HTTPS'] = 'off';
 check(call_api('activate', $activation)->get_status() === 503, 'Plaintext issuance accepted');

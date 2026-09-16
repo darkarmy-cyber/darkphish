@@ -70,8 +70,25 @@ add_action('plugins_loaded', function (): void {
         catch (\Throwable $error) { /* Keep the old version marker so the next request retries. */ }
     }
 });
-register_deactivation_hook(__FILE__, function (): void { wp_clear_scheduled_hook('darkphish_license_cleanup'); });
-add_action('darkphish_license_cleanup', function (): void { store()->cleanup(); });
+register_deactivation_hook(__FILE__, function (): void {
+    wp_clear_scheduled_hook('darkphish_license_cleanup');
+    wp_clear_scheduled_hook('darkphish_license_cleanup_backlog');
+});
+function cleanupStorage(): void {
+    if (store()->cleanup() && !wp_next_scheduled('darkphish_license_cleanup_backlog')) {
+        wp_schedule_single_event(time() + 60, 'darkphish_license_cleanup_backlog');
+    }
+}
+add_action('darkphish_license_cleanup', __NAMESPACE__ . '\\cleanupStorage');
+add_action('darkphish_license_cleanup_backlog', __NAMESPACE__ . '\\cleanupStorage');
+
+// Shortcodes may be rendered by widgets/blocks only after wp_head has run.
+// Install the self-contained closure early on every themed page, before any
+// normally enqueued header scripts. It does nothing after DOM readiness unless
+// the licensing form exists, and never exposes the token through a global.
+add_action('wp_head', function (): void {
+    wp_print_inline_script_tag(file_get_contents(__DIR__ . '/assets/registration.js'), ['id' => 'darkphish-license-early']);
+}, PHP_INT_MIN);
 
 function reply(array $body, int $status = 200): \WP_REST_Response {
     return new \WP_REST_Response($body, $status, ['Cache-Control' => 'no-store, private', 'Pragma' => 'no-cache', 'X-Content-Type-Options' => 'nosniff', 'Referrer-Policy' => 'no-referrer']);
@@ -234,7 +251,6 @@ add_shortcode('darkphish_license', function (): string {
         return '<p>Community registration is not available yet.</p>';
     }
     // Token is carried in the fragment, never in a query string or referrer.
-    wp_enqueue_script('darkphish-license', plugins_url('assets/registration.js', __FILE__), [], '0.2.4', true);
     wp_enqueue_script('darkphish-turnstile', 'https://challenges.cloudflare.com/turnstile/v0/api.js', [], null, true);
     return '<section id="darkphish-license" data-api="' . esc_url(rest_url('darkphish-license/v1/')) . '" data-terms="' . esc_attr($settings['terms_version']) . '"><h2>Darkphish Community</h2><p>Free registration: 100 managed users and 1 active campaign.</p><p role="status" aria-live="polite" class="dp-status"></p><form class="dp-request"><label>Email <input type="email" name="email" maxlength="254" autocomplete="email" required></label><p class="dp-terms-row"><label><input type="checkbox" required> I accept the <a href="' . esc_url($settings['terms_url']) . '" target="_blank" rel="noopener noreferrer">Community terms</a>.</label></p><div class="cf-turnstile" data-action="darkphish-license" data-sitekey="' . esc_attr(DARKPHISH_TURNSTILE_SITE_KEY) . '"></div><button type="submit">Request license</button></form><button type="button" class="dp-verify" hidden>Confirm email and display my license key</button><pre class="dp-key" hidden></pre><p><a class="dp-recovery-link" href="' . esc_url($settings['registration_url'] . '?mode=recover') . '">Lost your license? Recover it</a></p></section>';
 });

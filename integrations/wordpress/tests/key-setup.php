@@ -64,6 +64,14 @@ try {
     check(hash_file('sha256', $path) === $before, 'Existing key was overwritten');
     if (PHP_OS_FAMILY !== 'Windows') {
         check((fileperms($path) & 0777) === 0600, 'Private file permissions incorrect');
+        symlink($path, $base . '/public/key-alias.json');
+        symlink($base . '/private', $base . '/public/dir-alias');
+        try {
+            rejected(fn () => Signer::fromFile($base . '/public/key-alias.json', $base . '/public'));
+            rejected(fn () => Signer::fromFile($base . '/public/dir-alias/key.json', $base . '/public'));
+            rejected(fn () => KeySetup::create($base . '/public/dir-alias/new.json', 'test', [$base . '/public']));
+            check(!file_exists($base . '/private/new.json'), 'Public alias setup created a signing key');
+        } finally { unlink($base . '/public/key-alias.json'); unlink($base . '/public/dir-alias'); }
         symlink($base . '/public', $base . '/link');
         rejected(fn () => KeySetup::create($base . '/link/key.json', 'test', [$base . '/public']));
         unlink($base . '/link');

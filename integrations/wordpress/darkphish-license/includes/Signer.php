@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 namespace Darkphish\Licensing;
+require_once __DIR__ . '/SigningPath.php';
 
 final class Signer {
     public function __construct(private string $id, #[\SensitiveParameter] private string $secret) {
@@ -10,6 +11,7 @@ final class Signer {
     }
 
     public static function fromFile(string $path, string|array $webRoot): self {
+        SigningPath::requireDirectAbsolute($path);
         $file = realpath($path);
         $roots = is_array($webRoot) ? $webRoot : [$webRoot];
         if (!$file || !$roots || !is_file($file) || !is_readable($file) || filesize($file) > 4096) {

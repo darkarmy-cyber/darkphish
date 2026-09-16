@@ -1,7 +1,8 @@
 # WordPress licensing 0.2.4 review hardening
 
 This candidate addresses the six findings on PR75 head `3b0fbf4` and the
-four follow-up findings on `491fa8a`.
+four follow-up findings on `491fa8a`, plus header timing and cleanup backlog
+and public signing-path alias findings on `b6d93fe`.
 
 - Successful recovery invalidates every pending recovery request for the same
   normalized mailbox in the key-rotation transaction. Other mailboxes and
@@ -11,12 +12,18 @@ four follow-up findings on `491fa8a`.
 - Failed exclusive signing-key initialization removes only the file it created,
   after checking file identity. Existing keys are never overwritten or removed.
 - Loading a signing key checks both the resolved WordPress directory and the
-  document root, including aliases/symlinks. A root that cannot be resolved is
-  rejected. Additional web-server aliases remain the operator's responsibility.
-- The shortcode script removes mailbox-verification fragments synchronously
-  when loaded, before waiting for DOM readiness. Registration pages should not
-  include untrusted scripts; code that executes before this script cannot be
-  retroactively protected.
+  document root. Both key loading and admin initialization reject any symlink
+  component, relative path or dot segment before resolving the configured
+  pathname, so a public symlink cannot disappear into its private target.
+  A public root that cannot be resolved is rejected. Additional web-server
+  aliases or hardlinks unrelated to the configured path remain the operator's
+  responsibility; do not expose the private directory through server aliases.
+- The shortcode script is emitted inline at the earliest `wp_head` priority,
+  before WordPress-enqueued theme, plugin and analytics scripts. It removes
+  mailbox-verification fragments synchronously and keeps the token in a closure
+  until explicit confirmation. Themes must call `wp_head` before their own raw
+  scripts; registration pages must not include untrusted scripts. Scripts that
+  a theme hardcodes before `wp_head` cannot be retroactively protected.
 - Public configuration returns unavailable unless schema 4 and signing are
   ready. The shortcode uses the same readiness gate. Errors do not expose
   paths, keys or database details.
@@ -27,6 +34,10 @@ four follow-up findings on `491fa8a`.
   The initial audit request remains mandatory before creating the file.
 - Licensing SQL suppression is scoped to each operation and restored in a
   `finally` block, preserving error reporting for the rest of WordPress.
+- Cleanup drains up to ten 1,000-row batches per table per invocation and
+  schedules a separate one-minute continuation when the bounded budget is
+  exhausted. Hourly scheduling no longer limits cleanup to 1,000 rows per hour;
+  production sites should invoke WordPress cron regularly even without traffic.
 - Additive schema 4 backfills and indexes canonical email hashes separately
   from existing identity hashes. Mailbox verification uses an indexed locking
   lookup. Existing IDs, keys, bindings, terms and duplicate records are retained;

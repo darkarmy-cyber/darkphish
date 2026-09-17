@@ -1,4 +1,6 @@
 import { appendFileSync, readFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { fileURLToPath } from "node:url"
 import { api, pages, repository, versionTag } from "../../scripts/release-lib.mjs"
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -26,13 +28,20 @@ async function directSnapshot(repo, ids) {
   return Promise.all([...ids].map((id) => api(`repos/${repo}/releases/${id}`, { missing: true })))
 }
 
-async function withdrawWhileTagAbsent(repo, tag, releases) {
+async function withdrawWhileTagAbsent(repo, tag, releases, executionSHA) {
   let tagAppeared = false
   const ids = new Set(releases.filter((release) => Number.isSafeInteger(release?.id)).map((release) => release.id))
   for (let attempt = 1; ; attempt += 1) {
     for (const release of await publicReleases(repo, tag)) ids.add(release.id)
 
     for (const id of ids) {
+      // Run the same trusted immutable-execution gate used by provenance
+      // withdrawal, immediately before EVERY target and ambiguous PATCH retry.
+      // Keep authorization failures outside the catch that retries PATCHes.
+      if (!sha40(executionSHA)) throw new Error("recovery execution SHA is invalid")
+      execFileSync(process.execPath, [fileURLToPath(new URL("./release-publication-guard.mjs", import.meta.url)), "execution"], {
+        stdio: "pipe", env: { ...process.env, RECOVERY_EXECUTION_SHA: executionSHA },
+      })
       try {
         await api(`repos/${repo}/releases/${id}`, {
           method: "PATCH",
@@ -65,6 +74,7 @@ async function withdrawWhileTagAbsent(repo, tag, releases) {
 }
 
 async function main() {
+  const executionSHA = process.env.RECOVERY_EXECUTION_SHA
   const repo = repository()
   const version = readFileSync("VERSION", "utf8").trim()
   const tag = versionTag(version)
@@ -81,7 +91,7 @@ async function main() {
     return
   }
 
-  await withdrawWhileTagAbsent(repo, tag, releases)
+  await withdrawWhileTagAbsent(repo, tag, releases, executionSHA)
   output("tag_absent", "true")
 }
 

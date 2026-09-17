@@ -112,6 +112,35 @@ test("observed security heading retains original body and all identity/head/chro
   }
 })
 
+test("summary quantization honors every accepted decimal precision without truncating chronology", async () => {
+  const fractional = digits => at(9).replace("Z", `.${digits}Z`)
+  for (let digits = 0; digits <= 9; digits++) {
+    const f = fixture(), completion = "039349123"
+    f.comments[0].body = f.comments[0].body.replaceAll(at(9), fractional(completion))
+    f.comments[0].updated_at = digits ? fractional(completion.slice(0, digits)) : at(9)
+    const proof = await f.verify()
+    assert.equal(proof.head, sha); assert.doesNotThrow(() => JSON.stringify(proof))
+    assert.equal(BigInt(proof.completedNanoseconds.security), BigInt(Date.parse(at(9))) * 1000000n + 39349123n)
+  }
+  const candidate = () => {
+    const f = fixture()
+    f.comments[0].body = f.comments[0].body.replaceAll(at(9), fractional("039999999"))
+    f.comments[0].updated_at = fractional("039999999")
+    return f
+  }
+  for (const updated of ["0390", "03900", "039000", "0399990", "03999998", "039999998"]) {
+    const f = candidate(); f.comments[0].updated_at = fractional(updated)
+    await assert.rejects(f.verify(), /Inconsistent review summary timestamps/)
+  }
+  const merged = candidate(); merged.pr.merged_at = fractional("039999998")
+  await assert.rejects(merged.verify(), /permitted merge boundary/)
+  const lateClean = candidate(); lateClean.comments[2].created_at = fractional("040000000")
+  await assert.rejects(lateClean.verify(), /newer than its completion/)
+  const finding = fixture()
+  finding.reviews = [{id:44,user:finding.comments[1].user,state:"COMMENTED",commit_id:sha,submitted_at:at(4).replace("Z", ".000000001Z"),body:"finding"}]
+  await assert.rejects(finding.verify(), /supersedes clean results/)
+})
+
 test("missing, forged, stale, running, failed or malformed evidence always blocks", () => {
   const mutations = [
     f => { f.comments = [] },

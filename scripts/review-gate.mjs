@@ -54,10 +54,14 @@ function summaryFindingIDs(repo, number, body) {
 }
 function timestamp(value) {
   requireReview(typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value), "Invalid review timestamp")
-  const result = Date.parse(value)
+  const whole = value.replace(/\.\d+Z$/, "Z")
+  const result = Date.parse(whole)
   requireReview(Number.isFinite(result), "Invalid review timestamp")
-  return result
+  const fraction = /\.(\d+)Z$/.exec(value)?.[1] || ""
+  return BigInt(result) * 1000000n + BigInt(fraction.padEnd(9, "0"))
 }
+const earliest = values => values.reduce((a, b) => a < b ? a : b)
+const latestTime = values => values.reduce((a, b) => a > b ? a : b)
 function completedRow(body, kind, sha, latest) {
   const rows = body.split("\n").filter(line => line.includes(`**${kind} Review**`))
   requireReview(rows.length === 1, `Missing or ambiguous ${kind} review status`)
@@ -85,18 +89,19 @@ export function reviewEvidence(repo, pr, comments, now = Date.now()) {
   try { security = JSON.parse(markers[0][1]) } catch { throw new ReviewGateError("Malformed security review marker") }
   requireReview(security?.repository === repo && security.pullRequestNumber === pr.number &&
     security.headSha === pr.head.sha && security.status === "completed", "Security review does not certify this PR head")
-  const latest = pr.merged_at ? timestamp(pr.merged_at) : now
+  requireReview(Number.isSafeInteger(now), "Invalid review clock")
+  const latest = pr.merged_at ? timestamp(pr.merged_at) : BigInt(now) * 1000000n
   const completed = {
     code: completedRow(summary.body, "Code", pr.head.sha, latest),
     security: completedRow(summary.body, "Security", pr.head.sha, latest),
   }
   const summaryUpdated = timestamp(summary.updated_at)
-  // GitHub's observed whole-second metadata cannot order fractional events
-  // within that second. Normalize only this summary self-consistency bound;
-  // do not round review/finding chronology or the pre-merge boundary below.
-  const summaryPrecision = summary.updated_at.includes(".") ? 1 : 1000
-  requireReview(timestamp(summary.created_at) <= Math.min(...Object.values(completed)) &&
-    Math.floor(summaryUpdated / summaryPrecision) >= Math.floor(Math.max(...Object.values(completed)) / summaryPrecision), "Inconsistent review summary timestamps")
+  // Normalize ONLY summary self-consistency to its reported decimal precision.
+  // All finding and merge chronology retains exact nanosecond comparisons.
+  const digits = /\.(\d+)Z$/.exec(summary.updated_at)?.[1].length || 0
+  const summaryPrecision = 10n ** BigInt(9 - digits)
+  requireReview(timestamp(summary.created_at) <= earliest(Object.values(completed)) &&
+    summaryUpdated / summaryPrecision >= latestTime(Object.values(completed)) / summaryPrecision, "Inconsistent review summary timestamps")
   const clean = {}
   for (const kind of Object.keys(cleanMessages)) {
     const candidates = trusted.filter(comment => cleanResult(comment.body, kind))
@@ -113,14 +118,18 @@ export function reviewEvidence(repo, pr, comments, now = Date.now()) {
     }
     requireReview(clean[kind], `Missing clean ${kind} review for this head`)
   }
-  const firstClean = Math.min(...Object.values(clean).map(item => timestamp(item.createdAt)))
+  const firstClean = earliest(Object.values(clean).map(item => timestamp(item.createdAt)))
   for (const comment of trusted) {
     if (comment.id === summary.id || Object.keys(cleanMessages).some(kind => cleanResult(comment.body, kind))) continue
     requireReview(timestamp(comment.created_at) < firstClean, "A later unrecognized connector result supersedes clean review evidence")
   }
   const records = [{ id: summary.id, nodeID: summary.node_id, body: summary.body, updatedAt: summary.updated_at }, ...Object.values(clean)]
   requireReview(records.every(record => typeof record.nodeID === "string" && record.nodeID.length > 0 && record.nodeID.length < 128), "Missing review comment node identity")
-  return { head: pr.head.sha, summaryID: summary.id, completed, clean, records,
+  // Retain JSON-compatible legacy millisecond evidence; authorization above
+  // uses only exact values. Include exact values for independent audit tools.
+  return { head: pr.head.sha, summaryID: summary.id,
+    completed: Object.fromEntries(Object.entries(completed).map(([kind, value]) => [kind, Number(value) / 1000000])),
+    completedNanoseconds: Object.fromEntries(Object.entries(completed).map(([kind, value]) => [kind, String(value)])), clean, records,
     summaryFindings: summaryFindingIDs(repo, pr.number, summary.body) }
 }
 
@@ -169,7 +178,7 @@ export async function verifyPullRequestReviews(repo, pr, { get, query, now = Dat
     if (["APPROVED", "CHANGES_REQUESTED"].includes(review.state)) opinions.set(review.user.login, review.state)
   }
   requireReview(![...opinions.values()].includes("CHANGES_REQUESTED"), "A reviewer still requests changes")
-  const firstClean = Math.min(...Object.values(evidence.clean).map(item => timestamp(item.createdAt)))
+  const firstClean = earliest(Object.values(evidence.clean).map(item => timestamp(item.createdAt)))
   const reviewComments = await readPages(get, `repos/${repo}/pulls/${pr.number}/comments`)
   const historical = new Set()
   for (const comment of reviewComments.filter(item => connectorClaim(item.user))) {

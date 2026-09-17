@@ -31,7 +31,21 @@ native provenance and historical proof rather than claiming a new native build.
 PR86 exposed an independent review-integration boundary: authentic completion
 was reported at18:47:07.039349Z, while the GitHub summary updated_at was
 18:47:07Z. Only the summary's self-consistency comparison now uses the precision
-actually present in that API timestamp. Explicit fractional API timestamps still
-use the existing exact millisecond comparison. Review/finding order, identities,
+actually present in that API timestamp. The PR87 follow-up found that checking
+only for a decimal point incorrectly treated all fractions as milliseconds.
+Comparisons now retain nanoseconds and use the actual zero-to-nine fractional
+digit count for summary self-consistency only. Review/finding order, identities,
 full head SHA, content provenance and pre-merge completion remain unchanged and
 strict. A preceding-second summary or completion after merge still fails.
+
+## Tagless withdrawal follow-up
+
+PR87 review also identified the separate missing-tag guard as a withdrawal path
+not covered by the first fix. Its workflow now passes the immutable execution
+SHA explicitly. Before each target and each ambiguous PATCH retry, the guard
+synchronously invokes the same trusted publication guard's execution-only mode.
+Any failed execution check stops outside the PATCH retry catch, without an
+absent-tag output authorizing later recovery. Tests cover multiple targets,
+missing SHA, stale authorization and retries; genuine tagless publications
+still follow the existing fail-closed withdrawal policy. The residual GitHub
+read/PATCH race described above remains: this does not create an atomic CAS.

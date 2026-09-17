@@ -1,6 +1,11 @@
 # Resume the verified v0.7.1 release
 
-This is the final, explicitly maintainer-authorized recovery stage for v0.7.1.
+This records the explicitly maintainer-authorized recovery stage for v0.7.1.
+That historical recovery is complete. For the current manual-only execution
+policy, see the operator instructions below and
+[release queue maintenance](RELEASE_QUEUE_MAINTENANCE.md). The later
+[timestamp correction](RELEASE_RESUME_TIMESTAMP.md) supersedes the original
+publication-timestamp requirement recorded here.
 It must preserve the immutable release source and reuse the original verified
 artifact bytes. It must not delete duplicate historical drafts, replace assets,
 move tags, bypass branch protection or fabricate review evidence.
@@ -23,8 +28,8 @@ the temporary normalization hold while leaving the pending-publication freeze
 for ordinary engineering and dependency merges intact. All existing review,
 CI, CodeQL and protected synchronous merge gates remain mandatory.
 
-The resumption workflow executes only immutable protected-main code after CI or
-CodeQL completion and uses the shared `protected-main-mutation` concurrency
+The resumption workflow executes only immutable protected-main code after an
+explicit manual dispatch and uses the shared `protected-main-mutation` concurrency
 group. It additionally requires main to be the exact reviewed PR58 merge and
 verifies release PR31, source/tag identity, canonical notes, receipt, all asset
 bytes and their original workflow attestations. It repeats checks before and
@@ -43,7 +48,19 @@ returns for the next version. Later main commits skip the one-shot resumption.
 Failed publication withdrawal retries PATCH plus direct-ID, release collection
 and tag probes, with a critical failure if private state cannot be confirmed.
 
-A staggered 15-minute default-main schedule is the durable retry path if GitHub
-replaces a pending concurrency-group member. It uses immutable `github.sha`,
-the same authorization/verification rules and the same serialization group;
-later main commits no-op. There is no branch-dispatchable privileged entry point.
+## Current operator instructions
+
+There is no scheduled or CI/CodeQL-completion retry of this completed historical
+repair. Do not wait for an automatic run. Only if explicitly authorized to retry
+this exact historical operation, open **Actions → Resume verified v0.7.1 → Run
+workflow**, select **main**, and enter **resume-original-071** in the confirmation
+field. Do not dispatch it to publish a different draft or repair a newer version.
+
+The job rejects non-main refs and incorrect confirmation strings. It uses the
+immutable dispatch `github.sha`, the existing one-shot authorization/provenance
+rules and the shared non-cancelling bounded queue. Later main commits no-op;
+manual dispatch does not revive the historical exception or authorize a new
+publication. Normal current-version retries belong to the native/recovery
+publisher, not this historical workflow. Review the actual run result: a no-op
+or skipped job is not evidence of publication. Never replace assets or tags to
+make this procedure succeed.

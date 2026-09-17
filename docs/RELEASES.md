@@ -45,13 +45,19 @@ See [repository administration](REPOSITORY_ADMIN.md) for exact external settings
 required check names, token permissions and unavailable plan features.
 
 Preparation is triggered only from trusted `main` CI/CodeQL workflow completion
-or the non-cancelling reconciliation schedule. Branch-dispatchable write paths
-are intentionally absent. The reconciliation schedule can dispatch missing main
+or the non-cancelling preparation reconciliation schedule. Preparation has no
+branch-dispatchable write path. Its schedule can dispatch missing main
 checks when a GitHub-token merge suppresses push events. Failed checks are not
 automatically repeated without a code change or an explicit GitHub rerun of the
 existing trusted workflow. Release PRs receive explicit CI/CodeQL dispatches
 using ephemeral GitHub tokens; no personal PAT is required. Publication waits
 for green checks on the resulting main merge.
+
+Protected mutation workflows use one shared bounded queue. Completed historical
+v0.7.1 repairs and public metadata maintenance are manual-only, require explicit
+confirmation, and reject non-main refs; they do not run on the preparation
+schedule. See [release queue and historical maintenance](RELEASE_QUEUE_MAINTENANCE.md)
+for the exact entry points and retained-draft policy.
 
 Before remote mutation, preparation verifies protected main, all checks,
 tag/release absence, fragments, branch ancestry and existing PR state. The

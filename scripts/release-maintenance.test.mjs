@@ -64,3 +64,11 @@ test("queued automatic mutators still revalidate source and cannot overwrite pub
   const legacy = read("../.github/workflows/release-title-repair.yml")
   assert.ok(legacy.indexOf("release-reconcile.mjs verify-execution") < legacy.indexOf("gh api --method PATCH"))
 })
+
+test("historical resumption runbook documents manual main-only execution", () => {
+  const text = readFileSync(new URL("../docs/RELEASE_RESUME_071.md", import.meta.url), "utf8")
+  assert.match(text, /resume-original-071/)
+  assert.match(text, /select \*\*main\*\*/)
+  assert.match(text, /Later main commits no-op/)
+  assert.doesNotMatch(text, /15-minute default-main schedule|There is no branch-dispatchable/)
+})

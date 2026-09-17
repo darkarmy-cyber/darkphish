@@ -26,7 +26,8 @@ function fixture() {
   const f = { pr, comments, reviews: [], reviewComments: [], threads: [], now: Date.parse(at(11)), calls: [], writes: [], canceled: [],
     checks: requiredChecks.map((name, id) => ({ id: id + 1, name, status: "completed", conclusion: "success", app: { slug: "github-actions" } })),
     alerts: [], metadata: { full_name: repo, default_branch: "main", private: false, fork: false, allow_auto_merge: true },
-    branch: { protected: true, commit: { sha: base } },
+    branch: { protected: true, commit: { sha: base }, protection: {required_status_checks: {contexts: [...requiredChecks], checks: []}} },
+    statuses: [], rules: [],
   }
   f.nodes = () => f.comments.map(c => ({ databaseId: c.id, body: c.body, updatedAt: c.updated_at,
     lastEditedAt: c.id === 1 ? c.updated_at : null, author: bot, editor: c.id === 1 ? bot : null }))
@@ -47,6 +48,8 @@ function fixture() {
     if (path.startsWith(`repos/${repo}/pulls/42/comments?`)) return structuredClone(f.reviewComments)
     if (path.includes("/git/ref/")) { assert.equal(options.missing, true); return f.shadow || null }
     if (path.includes("/check-runs?")) return { check_runs: structuredClone(f.checks) }
+    if (path.includes("/statuses?")) return structuredClone(f.statuses)
+    if (path.includes("/rules/branches/main?")) return structuredClone(f.rules)
     if (path.includes("/code-scanning/alerts?")) return structuredClone(f.alerts)
     if (path === `repos/${repo}/commits/${sha.slice(0, 10)}`) return { sha: f.resolvedSHA || sha }
     if (path === `repos/${repo}/pulls/42`) return structuredClone(f.finalPR || f.pr)
@@ -349,6 +352,26 @@ test("one synchronous protected merge uses all gates and never creates auto-merg
   assert.deepEqual(f.writes, [{ path: `repos/${repo}/pulls/42/merge`, method: "PUT", body: { sha, merge_method: "squash" } }])
   assert.deepEqual(f.canceled, [])
   assert.equal(f.calls.some(call => JSON.stringify(call.options).includes("enablePullRequestAutoMerge")), false)
+})
+
+test("optional GitBook preview passes only with all protected merge gates intact", async () => {
+  const prepare = () => {
+    const f = fixture(); f.pr.mergeable_state = "unstable"
+    f.statuses = [{id: 1, context: "GitBook (./changes)", state: "pending", creator: {login: "gitbook-com[bot]", id: 92167642, type: "Bot"}}]
+    return f
+  }
+  const f = prepare()
+  assert.equal(await f.merge(), true)
+  assert.deepEqual(f.writes, [{path: `repos/${repo}/pulls/42/merge`, method: "PUT", body: {sha, merge_method: "squash"}}])
+  for (const mutate of [
+    g => {g.checks[0].conclusion = "failure"}, g => {g.comments = []},
+    g => {g.alerts = [{number: 1}]}, g => {g.statuses[0].creator.id = 1},
+    g => {g.branch.protection.required_status_checks.contexts.push("GitBook (./changes)")},
+    g => {g.checks.push({id: 999, name: "additional CI", status: "completed", conclusion: "failure", app: {slug: "github-actions"}})},
+  ]) {
+    const blocked = prepare(); mutate(blocked)
+    assert.equal(await blocked.merge(), false); assert.deepEqual(blocked.writes, [])
+  }
 })
 
 test("queued legacy permission is revoked before pending or changed-head checks", async () => {

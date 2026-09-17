@@ -11,6 +11,7 @@ import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
 import { assertNoUnstagedRelease } from "../../scripts/release-pending.mjs"
+import { uploadReleaseAsset } from "../../scripts/release-upload.mjs"
 
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
@@ -298,10 +299,7 @@ function localArtifacts(version) {
   return { receiptName, names, bytes, hashes }
 }
 async function uploadAsset(release, name, content) {
-  const url = new URL(release.upload_url.split("{")[0]); if (url.origin !== "https://uploads.github.com") throw new Error("unexpected release upload host")
-  url.searchParams.set("name", name)
-  const response = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${process.env.GH_TOKEN || process.env.GITHUB_TOKEN}`, "Content-Type": "application/octet-stream" }, body: content, redirect: "error", signal: AbortSignal.timeout(30000) })
-  if (!response.ok) throw new Error(`release recovery asset upload failed with HTTP ${response.status}`)
+  return uploadReleaseAsset(repository(), release, name, content)
 }
 function assertUploadedAssetSet(assets, local, receiptHash, receiptLength) {
   const expected = [...local.names, local.receiptName].sort(), names = assets.map((asset) => asset?.name).sort()

@@ -6,6 +6,9 @@
 
 - Preserve waiting protected release and merge operations in a shared bounded queue, with strict workflow-policy validation and unchanged publication safeguards.
 - Retire automatic historical release repairs in favor of explicitly confirmed main-only maintenance; exclude retained drafts from public metadata reconciliation without deleting or publishing them.
+- Keep authenticated, non-required GitBook previews informational without bypassing required checks, code/security reviews, or protected exact-head merges.
+- Reserve distinct loopback ports for native multi-process audit tests and preserve bounded, redacted startup diagnostics; retain concurrent MySQL/PostgreSQL writers and fail on any child startup failure.
+
 
 ## 0.12.0 - 2026-09-17
 

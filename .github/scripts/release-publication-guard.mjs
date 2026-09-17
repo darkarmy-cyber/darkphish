@@ -56,7 +56,14 @@ async function assertTagState(repo, tag, expected, message) {
   if (!sameTagState(current, expected)) throw new Error(message)
   return current
 }
+class RecoveryExecutionError extends Error {
+  constructor(cause) {
+    super(cause.message, { cause })
+    this.name = "RecoveryExecutionError"
+  }
+}
 async function executionMain(repo, expectedSHA) {
+  try {
   if (!sha40(expectedSHA)) throw new Error("recovery execution SHA is invalid")
   const metadata = await api(`repos/${repo}`)
   const branch = await api(`repos/${repo}/branches/main`)
@@ -69,6 +76,10 @@ async function executionMain(repo, expectedSHA) {
   const closing = await api(`repos/${repo}/branches/main`)
   if (!closing?.protected || closing.commit?.sha !== expectedSHA) throw new Error("protected main moved during recovery execution verification")
   return expectedSHA
+  } catch (error) {
+    // Loss of authority to act is not evidence that a published artifact is bad.
+    throw new RecoveryExecutionError(error)
+  }
 }
 async function verifySourceAncestry(repo, source, main) {
   if (source === main) return
@@ -184,7 +195,10 @@ async function verifyRecoveryPublication(repo, release, version, main, tagState,
         await verifySourceAncestry(repo, run.head_sha, finalMain)
         await assertPublishedSnapshot(repo, release, version, tagState, common)
         return run
-      } catch (error) { console.warn(`Ignoring non-qualifying recovery publication run ${run.id}: ${error.message}`) }
+      } catch (error) {
+        if (error instanceof RecoveryExecutionError) throw error
+        console.warn(`Ignoring non-qualifying recovery publication run ${run.id}: ${error.message}`)
+      }
     }
     throw new Error("public release has no qualifying fully attested recovery publication run")
   } finally { rmSync(directory, { recursive: true, force: true }) }
@@ -217,7 +231,10 @@ async function verifyNativePublication(repo, release, version, main, tagState, c
         await verifySourceAncestry(repo, common.source, finalMain)
         await assertPublishedSnapshot(repo, release, version, tagState, common)
         return run
-      } catch (error) { console.warn(`Ignoring non-qualifying native publication run ${run.id}: ${error.message}`) }
+      } catch (error) {
+        if (error instanceof RecoveryExecutionError) throw error
+        console.warn(`Ignoring non-qualifying native publication run ${run.id}: ${error.message}`)
+      }
     }
     throw new Error("public release has no qualifying canonical fully attested Native release publication run")
   } finally { rmSync(directory, { recursive: true, force: true }) }
@@ -229,6 +246,10 @@ async function withdrawUnverified(repo, tag, expectedTagState, releases) {
     for (const release of listed) ids.add(release.id)
 
     for (const id of ids) {
+      // Revalidate on every target and retry, outside the ambiguous-PATCH catch.
+      // GitHub has no atomic branch-SHA condition on release PATCH; this narrows
+      // the remaining read/write race without claiming an atomic transaction.
+      await executionMain(repo, process.env.RECOVERY_EXECUTION_SHA)
       try { await api(`repos/${repo}/releases/${id}`, { method: "PATCH", body: { draft: true, prerelease: false, make_latest: "false" } }) }
       catch (error) { console.warn(`withdrawal PATCH attempt ${attempt} for ${id} was ambiguous: ${error.message}`) }
     }
@@ -310,12 +331,16 @@ async function preflight() {
         console.log(`Verified existing hardened recovery publication ${tag} from run ${run.id}; leaving it public.`)
         return
       } catch (recoveryError) {
+        if (recoveryError instanceof RecoveryExecutionError) throw recoveryError
         const run = await verifyNativePublication(repo, release, version, main, tagState, common)
         output("verified", "true"); output("kind", "native")
         console.log(`Verified existing canonical fully attested Native release publication ${tag} from run ${run.id}; leaving it public.`)
         return
       }
-    } catch (error) { console.warn(`Existing public ${tag} failed both trusted publication paths and will be withdrawn: ${error.message}`) }
+    } catch (error) {
+      if (error instanceof RecoveryExecutionError) throw error
+      console.warn(`Existing public ${tag} failed both trusted publication paths and will be withdrawn: ${error.message}`)
+    }
   }
 
   await withdrawUnverified(repo, tag, tagState, publicReleases)
@@ -338,10 +363,12 @@ async function holdPublication() {
       run = await verifyRecoveryPublication(repo, release, hold.version, main, tagState, common)
       kind = "recovery"
     } catch (recoveryError) {
+      if (recoveryError instanceof RecoveryExecutionError) throw recoveryError
       try {
         run = await verifyNativePublication(repo, release, hold.version, main, tagState, common)
         kind = "native"
       } catch (nativeError) {
+        if (nativeError instanceof RecoveryExecutionError) throw nativeError
         throw new Error(`normalization hold refused to withdraw an unverified publication: recovery=${recoveryError.message}; native=${nativeError.message}`)
       }
     }

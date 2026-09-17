@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import { ReviewGateError, verifyPullRequestReviews } from "./review-gate.mjs"
 import { verifyReleaseRepair } from "./release-repair-policy.mjs"
 import { ReleaseMaintainerReviewError, verifyReleaseMaintainerReview } from "./release-maintainer-review.mjs"
+import { mergeStateReady } from "./optional-docs-status.mjs"
 
 export const requiredChecks = JSON.parse(readFileSync(new URL("../.github/required-checks.json", import.meta.url), "utf8"))
 export const generatedPath = (path) => path === "VERSION" || path === "CHANGELOG.md" || /^changes\/[a-z0-9][a-z0-9-]*\.md$/.test(path)
@@ -239,7 +240,7 @@ export async function mergeReviewedPullRequest(repo, expected, { request = api, 
     await cancelQueued(["pr", "merge", String(pr.number), "--repo", repo, "--disable-auto"])
     return wait("revoked a concurrent native auto-merge queue")
   }
-  if (finalPR.number !== pr.number || finalPR.state !== "open" || finalPR.head?.sha !== pr.head.sha || finalPR.head.repo?.full_name !== repo || finalPR.base?.ref !== "main" || finalPR.base.sha !== pr.base.sha || finalBase.commit?.sha !== base.commit?.sha || finalBase.protected !== true || !optedIn(finalPR) || finalPR.mergeable !== true || finalPR.mergeable_state !== "clean") return wait("PR or protected base is not stably ready")
+  if (finalPR.number !== pr.number || finalPR.state !== "open" || finalPR.head?.sha !== pr.head.sha || finalPR.head.repo?.full_name !== repo || finalPR.base?.ref !== "main" || finalPR.base.sha !== pr.base.sha || finalBase.commit?.sha !== base.commit?.sha || finalBase.protected !== true || !optedIn(finalPR) || !await mergeStateReady(repo, finalPR, { request, pages })) return wait("PR or protected base is not stably ready")
   if (!await green()) return wait("checks changed during review verification")
   if (releaseRepair) {
     await verifyReleaseRepair(repo, finalPR, request)

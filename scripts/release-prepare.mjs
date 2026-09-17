@@ -18,11 +18,34 @@ function trustedGeneratedReleasePR(repo, branch, version, pr) {
 }
 
 function trustedReleaseDate(pr) {
-  const value = typeof pr?.created_at === "string" ? pr.created_at.slice(0, 10) : ""
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) {
+  const timestamp = pr?.created_at
+  const value = typeof timestamp === "string" ? timestamp.slice(0, 10) : ""
+  if (typeof timestamp !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(timestamp) ||
+    !Number.isFinite(Date.parse(timestamp)) || new Date(timestamp).toISOString().slice(0, 10) !== value) {
     throw new Error("existing release PR is missing a valid server creation date")
   }
   return value
+}
+
+function setGeneratedReleaseDate(root, version, releaseDate) {
+  const changelogPath = join(root, "CHANGELOG.md")
+  const generated = readFileSync(changelogPath, "utf8").replace(/\r\n/g, "\n")
+  const heading = `## ${version} - `
+  const lines = generated.split("\n")
+  const headings = lines.flatMap((line, index) => line.startsWith(heading) ? [index] : [])
+  if (headings.length !== 1) throw new Error("trusted generated release output is missing a unique expected changelog heading")
+  if (releaseDate !== null) {
+    lines[headings[0]] = `${heading}${releaseDate}`
+    writeFileSync(changelogPath, lines.join("\n"))
+  }
+}
+
+function generateReleaseChangelog(root, version, releaseDate) {
+  const heading = `## ${version} - `
+  const existingHeading = readFileSync(join(root, "CHANGELOG.md"), "utf8").split(/\r?\n/).some(line => line.startsWith(heading))
+  execFileSync(process.execPath, [join(root, "scripts/changelog.mjs"), "prepare"], { cwd: root, stdio: "pipe" })
+  setGeneratedReleaseDate(root, version, existingHeading ? null : releaseDate)
+  return !existingHeading
 }
 
 async function prepare() {
@@ -60,26 +83,20 @@ async function prepare() {
     console.log("GitHub does not expose the PR-creation setting to this token; PR creation will be attempted after all other preflight checks.")
   }
   const oldSHA = ref?.object.sha
+  // Capture once for a new PR; existing PRs use only trusted server metadata.
+  let releaseDate = new Date().toISOString().slice(0, 10)
   if (oldSHA) {
     git("fetch", "--no-tags", "origin", branch)
     const base = git("merge-base", sha, oldSHA)
     const commits = git("log", "--format=%an%x09%s", `${sha}..${oldSHA}`).split("\n").filter(Boolean).map((line) => { const [author, subject] = line.split("\t"); return { author, subject } })
     assertGeneratedCommits(commits, git("diff", "--name-only", `${base}..${oldSHA}`).split("\n").filter(Boolean), version)
     const existingPR = trustedGeneratedReleasePR(repo, branch, version, prs[0])
-    const releaseDate = trustedReleaseDate(existingPR)
+    releaseDate = trustedReleaseDate(existingPR)
     const temporary = mkdtempSync(join(tmpdir(), "darkphish-release-check-"))
     try {
       git("worktree", "add", "--detach", temporary, base)
       copyFileSync("scripts/changelog.mjs", join(temporary, "scripts/changelog.mjs"))
-      execFileSync(process.execPath, [join(temporary, "scripts/changelog.mjs"), "prepare"], { cwd: temporary, stdio: "pipe" })
-      const changelogPath = join(temporary, "CHANGELOG.md")
-      const generated = readFileSync(changelogPath, "utf8").replace(/\r\n/g, "\n")
-      const heading = `## ${version} - `
-      const lines = generated.split("\n")
-      const headingIndex = lines.findIndex((line) => line.startsWith(heading))
-      if (headingIndex < 0) throw new Error("trusted generated release output is missing the expected changelog heading")
-      lines[headingIndex] = `${heading}${releaseDate}`
-      writeFileSync(changelogPath, lines.join("\n"))
+      generateReleaseChangelog(temporary, version, releaseDate)
       const expected = execFileSync("git", ["diff", "--", "VERSION", "CHANGELOG.md", "changes"], { cwd: temporary, encoding: "utf8" }).replace(/\r\n/g, "\n")
       const actual = execFileSync("git", ["diff", base, oldSHA, "--", "VERSION", "CHANGELOG.md", "changes"], { encoding: "utf8" }).replace(/\r\n/g, "\n")
       if (expected !== actual) throw new Error("release branch differs from trusted generated output; refusing to overwrite it")
@@ -87,7 +104,7 @@ async function prepare() {
       try { git("worktree", "remove", "--force", temporary) } finally { rmSync(temporary, { recursive: true, force: true }) }
     }
   }
-  execFileSync(process.execPath, ["scripts/changelog.mjs", "prepare"], { stdio: "inherit" })
+  const createdHeading = generateReleaseChangelog(".", version, releaseDate)
   git("add", "--", "VERSION", "CHANGELOG.md", "changes")
   const tree = git("write-tree")
   let releaseSHA = oldSHA
@@ -106,6 +123,17 @@ async function prepare() {
       created = true
     } catch (error) {
       throw new Error(`${error.message}. Enable Settings > Actions > General > Workflow permissions > Allow GitHub Actions to create and approve pull requests. The generated branch is safe to reuse; no review approval is fabricated.`)
+    }
+  }
+  if (created) {
+    // GitHub may create the PR after UTC midnight. Align only the newly generated
+    // heading before requesting reviews/checks; never re-date existing history.
+    const serverDate = trustedReleaseDate(trustedGeneratedReleasePR(repo, branch, version, pr))
+    if (createdHeading && serverDate !== releaseDate) {
+      setGeneratedReleaseDate(".", version, serverDate)
+      git("add", "--", "CHANGELOG.md")
+      releaseSHA = git("commit-tree", git("write-tree"), "-p", releaseSHA, "-m", `release: Darkphish ${version}`)
+      git("push", "origin", `${releaseSHA}:refs/heads/${branch}`)
     }
   }
   if (created) await api(`repos/${repo}/issues/${pr.number}/labels`, { method: "POST", body: { labels: ["codex-automerge"] } })

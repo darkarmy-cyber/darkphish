@@ -37,6 +37,17 @@ test("every shared-lock workflow opts into the same bounded queue", () => {
   assert.deepEqual(members.sort(), [...protectedWorkflows].sort())
 })
 
+test("PR-target trust gate precedes job-level queue admission", () => {
+  const source = readFileSync(new URL("../.github/workflows/automerge.yml", import.meta.url), "utf8")
+  assert.doesNotMatch(source, /^concurrency:/m)
+  assert.match(source, /jobs:\n  enable:\n    if:/)
+  const queue = source.indexOf("    concurrency:")
+  for (const gate of ["github.ref == 'refs/heads/main'", "github.event.pull_request.base.ref == 'main'", "github.event.pull_request.head.repo.full_name == github.repository", "github.event.pull_request.author_association"])
+    assert.ok(source.indexOf(gate) >= 0 && source.indexOf(gate) < queue)
+  assert.equal(lintInput("automerge.yml", source), source.replace("      queue: max", ""))
+  assert.throws(() => lintInput("automerge.yml", fixture), /queue policy/)
+})
+
 // Run in required CI after installing the pinned, unmodified upstream binary.
 // Local Node-only test runs can omit it; CI explicitly requires these tests.
 test("real actionlint still rejects syntax, expressions and duplicate mappings", { skip: !process.env.WORKFLOW_LINT_INTEGRATION }, () => {

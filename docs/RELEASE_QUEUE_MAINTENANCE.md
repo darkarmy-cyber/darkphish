@@ -7,6 +7,11 @@ rejects additional arrivals; this is not an unlimited or guaranteed-delivery
 queue. Waiting order is determined when a run enters the queue, not dispatch
 time. See [GitHub concurrency documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
+The PR-target merger uses job-level concurrency: its same-repository and trusted
+author checks run before queue admission. Rejected fork PR events cannot consume
+the protected release queue. Other mutators have no untrusted PR event trigger
+and retain workflow-level serialization.
+
 Do not split publisher, recovery and merge locks. Queued operations retain their
 source/main, current checks, review, publication identity and asset checks.
 Stale work must fail closed or return a verified no-op; no run may replace an

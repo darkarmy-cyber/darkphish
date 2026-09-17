@@ -15,10 +15,12 @@ export const protectedWorkflows = Object.freeze([
 // fail closed; they must not silently acquire a different concurrency policy.
 export function lintInput(name, source) {
   if (!protectedWorkflows.includes(name)) return source
-  const policy = /^concurrency:\r?\n  group: protected-main-mutation\r?\n  cancel-in-progress: false\r?\n  queue: max\r?\n(?=\r?\n|[^\s#])/gm
+  // The PR-target merger admits only its authorized job to the shared queue.
+  const indent = name === "automerge.yml" ? "    " : ""
+  const policy = new RegExp(`^${indent}concurrency:\\r?\\n${indent}  group: protected-main-mutation\\r?\\n${indent}  cancel-in-progress: false\\r?\\n${indent}  queue: max\\r?\\n(?=\\r?\\n|${indent}[^\\s#])`, "gm")
   const matches = [...source.matchAll(policy)]
   if (matches.length !== 1) throw new Error(`${name}: expected exactly one literal protected mutation queue policy`)
-  return source.replace(policy, block => block.replace(/  queue: max(?=\r?\n)/, ""))
+  return source.replace(policy, block => block.replace(`${indent}  queue: max`, ""))
 }
 
 export function lintWorkflows(directory = ".github/workflows", executable = "actionlint") {

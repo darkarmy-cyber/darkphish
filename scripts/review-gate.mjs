@@ -90,8 +90,13 @@ export function reviewEvidence(repo, pr, comments, now = Date.now()) {
     code: completedRow(summary.body, "Code", pr.head.sha, latest),
     security: completedRow(summary.body, "Security", pr.head.sha, latest),
   }
+  const summaryUpdated = timestamp(summary.updated_at)
+  // GitHub's observed whole-second metadata cannot order fractional events
+  // within that second. Normalize only this summary self-consistency bound;
+  // do not round review/finding chronology or the pre-merge boundary below.
+  const summaryPrecision = summary.updated_at.includes(".") ? 1 : 1000
   requireReview(timestamp(summary.created_at) <= Math.min(...Object.values(completed)) &&
-    timestamp(summary.updated_at) >= Math.max(...Object.values(completed)), "Inconsistent review summary timestamps")
+    Math.floor(summaryUpdated / summaryPrecision) >= Math.floor(Math.max(...Object.values(completed)) / summaryPrecision), "Inconsistent review summary timestamps")
   const clean = {}
   for (const kind of Object.keys(cleanMessages)) {
     const candidates = trusted.filter(comment => cleanResult(comment.body, kind))

@@ -25,3 +25,13 @@ The owner separately approved restoring the existing v0.12 release only after
 fresh verification, without replacing its tag or artifact bytes. Restoration
 must record the new publication timestamp honestly, retaining the original
 native provenance and historical proof rather than claiming a new native build.
+
+## Review timestamp precision
+
+PR86 exposed an independent review-integration boundary: authentic completion
+was reported at18:47:07.039349Z, while the GitHub summary updated_at was
+18:47:07Z. Only the summary's self-consistency comparison now uses the precision
+actually present in that API timestamp. Explicit fractional API timestamps still
+use the existing exact millisecond comparison. Review/finding order, identities,
+full head SHA, content provenance and pre-merge completion remain unchanged and
+strict. A preceding-second summary or completion after merge still fails.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.0 - 2026-09-17
+
+### Fixed
+
+- Preserve the trusted release PR creation date in both validation and actual changelog generation, preventing date-only head changes across UTC midnight without relaxing review or publication checks.
+
 ## 0.11.0 - 2026-09-17
 
 ### Added

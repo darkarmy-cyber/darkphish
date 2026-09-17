@@ -29,4 +29,6 @@ not atomic with subsequent API mutations; final publication guards remain
 essential. Persistent upload failure still requires investigation, not an
 unbounded retry. The v0.13.0 tag/source stays immutable; this automation-only
 repair runs from reviewed protected main when recovering that historical
-source. It does not change VERSION or start a new application release.
+source. It does not change VERSION or start new application development. The
+required changelog fragment targets the next minor because the v0.13 source is
+already immutable; it records the automation repair without rewriting that tag.

@@ -27,16 +27,25 @@ function trustedReleaseDate(pr) {
   return value
 }
 
-function generateReleaseChangelog(root, version, releaseDate) {
-  execFileSync(process.execPath, [join(root, "scripts/changelog.mjs"), "prepare"], { cwd: root, stdio: "pipe" })
+function setGeneratedReleaseDate(root, version, releaseDate) {
   const changelogPath = join(root, "CHANGELOG.md")
   const generated = readFileSync(changelogPath, "utf8").replace(/\r\n/g, "\n")
   const heading = `## ${version} - `
   const lines = generated.split("\n")
   const headings = lines.flatMap((line, index) => line.startsWith(heading) ? [index] : [])
   if (headings.length !== 1) throw new Error("trusted generated release output is missing a unique expected changelog heading")
-  lines[headings[0]] = `${heading}${releaseDate}`
-  writeFileSync(changelogPath, lines.join("\n"))
+  if (releaseDate !== null) {
+    lines[headings[0]] = `${heading}${releaseDate}`
+    writeFileSync(changelogPath, lines.join("\n"))
+  }
+}
+
+function generateReleaseChangelog(root, version, releaseDate) {
+  const heading = `## ${version} - `
+  const existingHeading = readFileSync(join(root, "CHANGELOG.md"), "utf8").split(/\r?\n/).some(line => line.startsWith(heading))
+  execFileSync(process.execPath, [join(root, "scripts/changelog.mjs"), "prepare"], { cwd: root, stdio: "pipe" })
+  setGeneratedReleaseDate(root, version, existingHeading ? null : releaseDate)
+  return !existingHeading
 }
 
 async function prepare() {
@@ -95,7 +104,7 @@ async function prepare() {
       try { git("worktree", "remove", "--force", temporary) } finally { rmSync(temporary, { recursive: true, force: true }) }
     }
   }
-  generateReleaseChangelog(".", version, releaseDate)
+  const createdHeading = generateReleaseChangelog(".", version, releaseDate)
   git("add", "--", "VERSION", "CHANGELOG.md", "changes")
   const tree = git("write-tree")
   let releaseSHA = oldSHA
@@ -114,6 +123,17 @@ async function prepare() {
       created = true
     } catch (error) {
       throw new Error(`${error.message}. Enable Settings > Actions > General > Workflow permissions > Allow GitHub Actions to create and approve pull requests. The generated branch is safe to reuse; no review approval is fabricated.`)
+    }
+  }
+  if (created) {
+    // GitHub may create the PR after UTC midnight. Align only the newly generated
+    // heading before requesting reviews/checks; never re-date existing history.
+    const serverDate = trustedReleaseDate(trustedGeneratedReleasePR(repo, branch, version, pr))
+    if (createdHeading && serverDate !== releaseDate) {
+      setGeneratedReleaseDate(".", version, serverDate)
+      git("add", "--", "CHANGELOG.md")
+      releaseSHA = git("commit-tree", git("write-tree"), "-p", releaseSHA, "-m", `release: Darkphish ${version}`)
+      git("push", "origin", `${releaseSHA}:refs/heads/${branch}`)
     }
   }
   if (created) await api(`repos/${repo}/issues/${pr.number}/labels`, { method: "POST", body: { labels: ["codex-automerge"] } })

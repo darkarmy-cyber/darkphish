@@ -36,12 +36,18 @@ function generate(memory, command, now) {
 }
 
 async function runPreparation(options = {}) {
-  const now = options.now || "2026-09-19T00:00:01Z", creation = "2026-09-18T23:59:59Z"
-  const historical = fixture(), branch = new Map(historical), current = fixture()
+  const now = options.now || "2026-09-19T00:00:01Z", creation = options.creation || (options.fresh ? now : "2026-09-18T23:59:59Z")
+  const historical = fixture()
+  if (options.existingHeading) {
+    historical.set("VERSION", "0.12.0\n")
+    historical.set("CHANGELOG.md", historical.get("CHANGELOG.md").replace("# Changelog\n", "# Changelog\n\n## 0.12.0 - 2026-09-12\n\n### Fixed\n\n- Earlier unreleased history.\n"))
+  }
+  const branch = new Map(historical), current = new Map(historical)
   generate(branch, "prepare", creation)
   if (options.tamper) branch.set("CHANGELOG.md", branch.get("CHANGELOG.md") + "Untrusted change.\n")
   if (options.newFragment) current.set("changes/extra.md", "---\ncategory: Fixed\nversion: 0.12.0\n---\n- Additional fix.\n")
   let temporary, pushes = 0, commits = 0, merges = 0, refreshes = 0, branchValidations = 0
+  const operations = []
   const oldSHA = "b".repeat(40), sha = "a".repeat(40)
   const pr = { number: 99, state: "open", draft: false, base: { ref: "main" }, head: { ref: "release/v0.12.0", repo: { full_name: "owner/repo" } }, title: "release: Darkphish 0.12.0", user: { login: "github-actions[bot]", id: 41898282, type: "Bot" }, created_at: creation, ...options.pr }
   const select = path => path.startsWith("/temporary/") ? [temporary, path.slice(11)] : [current, path.replace(/^\.\//, "")]
@@ -63,7 +69,7 @@ async function runPreparation(options = {}) {
       if (path.endsWith("/labels")) return {}
       throw Error(`Unexpected API ${path}`)
     },
-    dispatchChecks: async () => { refreshes++; return { dispatched: true, sha: oldSHA } },
+    dispatchChecks: async () => { refreshes++; operations.push("checks"); return { dispatched: true, sha: oldSHA } },
     mergeReviewedPullRequest: async () => { merges++; throw Error("No merge while refreshed checks pending") },
     git: (...args) => {
       const [command, ...rest] = args
@@ -74,8 +80,8 @@ async function runPreparation(options = {}) {
       if (command === "diff") return "VERSION\nCHANGELOG.md\nchanges/fix.md"
       if (command === "worktree") { if (rest[0] === "add") temporary = new Map(historical); return "" }
       if (command === "write-tree") return serialize(current)
-      if (command === "commit-tree") { commits++; return "d".repeat(40) }
-      if (command === "push") { pushes++; return "" }
+      if (command === "commit-tree") { commits++; operations.push("commit"); return "d".repeat(40) }
+      if (command === "push") { pushes++; operations.push("push"); return "" }
       throw Error(`Unexpected git ${args.join(" ")}`)
     },
     execFileSync: (binary, args, settings = {}) => {
@@ -86,7 +92,7 @@ async function runPreparation(options = {}) {
   }
   vm.runInNewContext(prepareSource, context, { timeout: 5000 })
   await vm.runInNewContext("prepare()", context)
-  return { current, pushes, commits, merges, refreshes, branchValidations }
+  return { current, pushes, commits, merges, refreshes, branchValidations, operations }
 }
 
 test("existing release preparation preserves exact tree across UTC days without a push", async () => {
@@ -122,8 +128,34 @@ test("spoofed PR identity cannot supply the release date", async () => {
     await assert.rejects(runPreparation({ pr }), /not the trusted generated release/)
 })
 
-test("new release uses the captured UTC date and still waits for refreshed checks", async () => {
+test("new release agrees with same-day server date and still waits for refreshed checks", async () => {
   const result = await runPreparation({ fresh: true })
   assert.match(result.current.get("CHANGELOG.md"), /## 0\.12\.0 - 2026-09-19/)
   assert.equal(result.commits, 1); assert.equal(result.pushes, 1); assert.equal(result.merges, 0)
+})
+
+test("first creation crossing UTC midnight aligns to server date before checks", async () => {
+  const creation = "2026-09-19T00:00:01Z"
+  const first = await runPreparation({ fresh: true, now: "2026-09-18T23:59:59Z", creation })
+  const retry = await runPreparation({ now: "2026-09-20T12:00:00Z", creation })
+  assert.equal(serialize(first.current), serialize(retry.current))
+  assert.match(first.current.get("CHANGELOG.md"), /## 0\.12\.0 - 2026-09-19/)
+  assert.equal(first.commits, 2); assert.equal(first.pushes, 2); assert.equal(first.refreshes, 1)
+  assert.deepEqual(first.operations, ["commit", "push", "commit", "push", "checks"])
+  assert.equal(retry.commits, 0); assert.equal(retry.pushes, 0)
+})
+
+test("invalid creation response cannot trigger date correction or checks", async () => {
+  await assert.rejects(runPreparation({ fresh: true, pr: { created_at: "2026-02-30T00:00:00Z" } }), /valid server creation date/)
+  await assert.rejects(runPreparation({ fresh: true, pr: { user: { login: "github-actions[bot]", id: 1, type: "Bot" } } }), /not the trusted generated release/)
+})
+
+test("current-version aggregation retains its historical section date on creation and retry", async () => {
+  const first = await runPreparation({ fresh: true, existingHeading: true, now: "2026-09-18T23:59:59Z", creation: "2026-09-19T00:00:01Z" })
+  const retry = await runPreparation({ existingHeading: true, creation: "2026-09-19T00:00:01Z" })
+  assert.equal(serialize(first.current), serialize(retry.current))
+  assert.match(first.current.get("CHANGELOG.md"), /## 0\.12\.0 - 2026-09-12/)
+  assert.match(first.current.get("CHANGELOG.md"), /Earlier unreleased history/)
+  assert.equal(first.commits, 1); assert.equal(first.pushes, 1)
+  assert.equal(retry.commits, 0); assert.equal(retry.pushes, 0)
 })

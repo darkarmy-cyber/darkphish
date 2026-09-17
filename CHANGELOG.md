@@ -10,6 +10,8 @@
 - Reserve distinct loopback ports for native multi-process audit tests and preserve bounded, redacted startup diagnostics; retain concurrent MySQL/PostgreSQL writers and fail on any child startup failure.
 - Use the existing DarkPhish fish-and-hook artwork for sign-in, password reset, navigation and favicons, with responsive authentication layouts and accessible input labels.
 - Point User Guide and API Documentation to https://docs.darkphish.sk/.
+- Stop stale release-provenance checks without withdrawing published artifacts; revalidate protected-main execution before every publication-guard withdrawal target and retry.
+- Compare review-summary metadata at its reported timestamp precision without rounding finding chronology or pre-merge review boundaries.
 
 
 ## 0.12.0 - 2026-09-17

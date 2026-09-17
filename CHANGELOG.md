@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.0 - 2026-09-17
+
+### Fixed
+
+- Harden native and recovery release uploads with a bounded three-minute deadline and exact asset read-back after ambiguous transport or server errors, without replaying uploads or replacing existing artifacts.
+
 ## 0.13.0 - 2026-09-17
 
 ### Fixed

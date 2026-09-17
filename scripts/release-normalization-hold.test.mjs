@@ -34,10 +34,10 @@ test("publication workflows stop before mutation while normalization hold is act
   assert.match(recoveryWorkflow, /id: recovery\n\s+if: steps\.hold\.outputs\.active != 'true'/)
 })
 
-test("reconciliation withdraws trusted publication before repairing the historical draft", () => {
+test("manual reconciliation retains hold enforcement but never repairs draft tags", () => {
   const hold = reconcileWorkflow.indexOf("Enforce trusted normalization hold")
-  const repair = reconcileWorkflow.indexOf("Repair trusted detached draft tag")
   const reconcile = reconcileWorkflow.indexOf("Reconcile trusted release metadata")
-  assert.ok(hold > 0 && hold < repair && repair < reconcile)
+  assert.ok(hold > 0 && hold < reconcile)
+  assert.doesNotMatch(reconcileWorkflow, /run: node scripts\/release-draft-tag-repair\.mjs/)
   assert.match(reconcileWorkflow, /release-publication-guard\.mjs hold/)
 })

@@ -3,10 +3,9 @@
 import assert from 'node:assert/strict'
 import {spawn, spawnSync} from 'node:child_process'
 import {mkdtempSync, readFileSync, writeFileSync} from 'node:fs'
-import {createServer} from 'node:net'
 import {tmpdir} from 'node:os'
 import {dirname, join, resolve} from 'node:path'
-import {setTimeout as delay} from 'node:timers/promises'
+import {captureDiagnostic, reserveLoopbackPorts, waitForReady} from './audit-smoke-process.mjs'
 
 const [binaryArg, expectedSHA, assetRootArg] = process.argv.slice(2)
 assert.ok(binaryArg)
@@ -20,6 +19,10 @@ const directory = mkdtempSync(join(tmpdir(), 'darkphish-audit-binary-'))
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(?:DARKPHISH_|GOPHISH_)/.test(key)))
 env.DARKPHISH_INITIAL_ADMIN_PASSWORD = 'synthetic-audit-smoke-bootstrap-only-7931!'
 const children = []
+const diagnostics = new Map()
+const sensitive = [dsn, env.DARKPHISH_INITIAL_ADMIN_PASSWORD,
+  '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+  'abcdef0123456789abcdef0123456789', '0123456789abcdef0123456789abcdef']
 const invoke = args => {
   const result = spawnSync(binary, args, {cwd: root, env, encoding: 'utf8', timeout: 45000, windowsHide: true})
   assert.equal(result.error, undefined, 'binary command failed to finish')
@@ -27,47 +30,51 @@ const invoke = args => {
   return result.stdout
 }
 assert.ok(invoke(['version']).includes(`commit ${expectedSHA}`))
-async function port() {
-  const server = createServer()
-  await new Promise((ok, fail) => {server.once('error', fail); server.listen(0, '127.0.0.1', ok)})
-  const value = server.address().port
-  await new Promise(ok => server.close(ok))
-  return value
-}
 const configs = []
 for (let i = 0; i < 3; i++) {
-  const listenPort = await port()
   const path = join(directory, `config-${i}.json`)
-  writeFileSync(path, JSON.stringify({
-    admin_server: {listen_url: `127.0.0.1:${listenPort}`, use_tls: false},
+  const value = {
+    admin_server: {listen_url: '127.0.0.1:0', use_tls: false},
     phish_server: {listen_url: '127.0.0.1:0', use_tls: false},
     production_mode: false, db_name: backend, db_path: dsn,
     migrations_prefix: join(root, 'db', 'db_'), bootstrap_directory: directory,
     session: {auth_key: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', encryption_key: 'abcdef0123456789abcdef0123456789'},
     secrets: {provider: 'local', active_key_id: 'fixture', keys: {fixture: '0123456789abcdef0123456789abcdef'}},
     audit: {multi_instance: true, checkpoint_interval: 7, retention_days: 365, active_signing_key_id: 'fixture', signing_keys: {fixture: 'abcdef0123456789abcdef0123456789'}},
-  }), {mode: 0o600, flag: 'wx'})
-  configs.push({path, base: `http://127.0.0.1:${listenPort}`})
+  }
+  writeFileSync(path, JSON.stringify(value), {mode: 0o600, flag: 'wx'})
+  configs.push({path, value})
 }
 const configured = args => invoke(['--config', configs[0].path, ...args])
 // One migration/bootstrap runner before starting the other writers.
 assert.match(configured(['audit', 'verify']), /Verified \d+ audit events/)
-async function start(config) {
-  const child = spawn(binary, ['--config', config.path, '--mode', 'admin', '--disable-mailer'], {cwd: root, env, windowsHide: true, stdio: 'ignore'})
+async function start(config, reservation) {
+  config.base = `http://127.0.0.1:${reservation.port}`
+  config.value.admin_server.listen_url = `127.0.0.1:${reservation.port}`
+  writeFileSync(config.path, JSON.stringify(config.value), {mode: 0o600})
+  await reservation.release()
+  const child = spawn(binary, ['--config', config.path, '--mode', 'admin', '--disable-mailer'], {cwd: root, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe']})
   children.push(child)
-  let failed = false
-  child.once('error', () => {failed = true})
-  const deadline = Date.now() + 30000
-  while (Date.now() < deadline) {
-    assert.ok(!failed && child.exitCode === null, 'audit smoke server exited')
-    try {if ((await fetch(`${config.base}/readyz`, {signal: AbortSignal.timeout(1000)})).status === 200) return} catch {}
-    await delay(100)
-  }
-  throw new Error('audit smoke readiness timeout')
+  const diagnostic = captureDiagnostic(child, sensitive)
+  diagnostics.set(child, diagnostic)
+  await waitForReady(child, config.base, diagnostic)
+}
+async function startAll() {
+  const reservations = await reserveLoopbackPorts(configs.length)
+  try {
+    // Await every starter before cleanup, including when one fails early.
+    const results = await Promise.allSettled(configs.map((config, i) => start(config, reservations[i])))
+    const failures = results.filter(r => r.status === 'rejected')
+    if (failures.length) throw new AggregateError(failures.map(r => r.reason), 'native audit startup failed')
+    assertAlive()
+  } finally {await Promise.all(reservations.map(r => r.release()))}
+}
+function assertAlive() {
+  for (const child of children) assert.ok(child.exitCode === null && child.signalCode === null, `native audit process died: ${diagnostics.get(child)()}`)
 }
 async function stopAll() {
   await Promise.all(children.splice(0).map(async child => {
-    if (child.exitCode !== null || child.signalCode !== null) return
+    if (child.exitCode !== null || child.signalCode !== null || !child.pid) return
     const stopped = new Promise(ok => child.once('exit', ok))
     child.kill('SIGTERM')
     const timer = setTimeout(() => child.kill('SIGKILL'), 5000)
@@ -79,7 +86,7 @@ const expected = new Set()
 // executable, not just in tests compiled directly from the source tree.
 const requestsPerServer = 90
 try {
-  await Promise.all(configs.map(start))
+  await startAll()
   await Promise.all(configs.map(async config => {
     for (let i = 0; i < requestsPerServer; i++) {
       const response = await fetch(`${config.base}/api/campaigns/`, {signal: AbortSignal.timeout(30000)})
@@ -91,10 +98,11 @@ try {
       await response.text()
     }
   }))
+  assertAlive()
   // Verify with a fourth binary process while the three servers remain alive.
   assert.match(configured(['audit', 'verify']), /Verified \d+ audit events/)
   await stopAll()
-  await Promise.all(configs.map(start))
+  await startAll()
   assert.match(configured(['audit', 'verify']), /Verified \d+ audit events/)
   await stopAll()
   const output = join(directory, 'audit.json')

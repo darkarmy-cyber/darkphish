@@ -15,6 +15,72 @@
     float: left;
 }
 
+/* Reuse the original PNG and the fish from docs/assets/darkphish_banner.svg. */
+.navbar .navbar-brand.darkphish-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 60px;
+    padding: 10px 15px;
+    color: #38d6df;
+    font-weight: 700;
+}
+
+.navbar .navbar-brand.darkphish-brand:hover,
+.navbar .navbar-brand.darkphish-brand:focus {
+    color: #79f0d2;
+}
+
+.darkphish-brand img { border-radius: 8px; }
+.darkphish-brand .brand-light { color: #fff; }
+
+body.auth-page {
+    min-height: 100vh;
+    color: #e8f3f6;
+    background: #080f16;
+}
+
+.auth-page .navbar {
+    background: #0c1722;
+    border-bottom: 1px solid #263a49;
+}
+
+.auth-page .auth-container { padding-top: 30px; padding-bottom: 32px; }
+
+.auth-page .form-signin {
+    width: 100%;
+    max-width: 440px;
+    padding: 24px;
+    margin: 40px auto 0;
+    border: 1px solid #263a49;
+    border-radius: 16px;
+    background: #101c28;
+}
+
+.auth-page #logo {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+    margin-bottom: 24px;
+}
+
+.auth-page .form-signin-heading { font-size: 28px; margin: 0 0 24px; }
+.auth-page .form-control { color: #172b3b; background: #fff; }
+.auth-page .form-control::placeholder { color: #576779; opacity: 1; }
+.auth-page .btn-primary { color: #07131a; background: #38d6df; border-color: #38d6df; }
+.auth-page .btn-primary:hover { background: #79f0d2; border-color: #79f0d2; }
+.auth-page a:focus-visible,
+.auth-page button:focus-visible,
+.auth-page input:focus-visible { outline: 3px solid #79f0d2; outline-offset: 3px; }
+.auth-docs { margin: 20px auto 0; text-align: center; }
+.auth-page .auth-docs a { color: #79f0d2; text-decoration: underline; }
+
+@media (max-width: 480px) {
+    .auth-page .form-signin { padding: 20px; margin-top: 20px; }
+    .auth-page .auth-container { padding-left: 16px; padding-right: 16px; }
+}
+
 #navbar-login {
     padding-top: 8px;
     padding-bottom: 0px;

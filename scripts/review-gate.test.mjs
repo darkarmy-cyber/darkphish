@@ -71,6 +71,30 @@ test("observed trusted clean reviews certify a complete SHA and pre-merge chrono
   assert.equal(f.writes.length, 0)
 })
 
+test("whole-second summary metadata supports fractional completion without relaxing merge or finding chronology", async () => {
+  const candidate = () => {
+    const f = fixture()
+    f.comments[0].body = f.comments[0].body.replaceAll(at(9), at(9).replace('Z', '.039349Z'))
+    f.comments[0].updated_at = at(9)
+    return f
+  }
+  const f = candidate()
+  assert.equal((await f.verify()).head, sha)
+  for (const mutate of [
+    g => { g.comments[0].updated_at = at(8) },
+    g => { g.comments[0].updated_at = at(9).replace('Z', '.001Z') },
+    g => { g.pr.merged_at = at(9); g.pr.state = 'closed' },
+    g => { g.comments[0].user.id = 123 },
+    g => { g.comments[0].body = g.comments[0].body.replace(sha, 'b'.repeat(40)) },
+    g => { g.reviews = [{id:44, user:g.comments[1].user, state:'CHANGES_REQUESTED', submitted_at:at(8), commit_id:sha, body:'finding'}] },
+  ]) {
+    const g = candidate(); mutate(g)
+    await assert.rejects(g.verify(), ReviewGateError)
+  }
+  const precise = candidate(); precise.comments[0].updated_at = at(9).replace('Z', '.040Z')
+  assert.equal((await precise.verify()).head, sha)
+})
+
 test("observed security heading retains original body and all identity/head/chronology checks", async () => {
   const f = fixture()
   f.comments[2].body = "### 🛡️ Codex Security Review\n\n" + f.comments[2].body

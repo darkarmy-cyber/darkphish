@@ -5,6 +5,7 @@ import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "./release-maintainer-review.mjs"
 import { discoverRelease, assertStagingMetadata } from "./release-discovery.mjs"
 import { releaseBody } from "./release-notes.mjs"
+import { uploadReleaseAsset } from "./release-upload.mjs"
 
 const trustedActionsActor = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 
@@ -52,11 +53,7 @@ function verifyRetainedFragments(releaseVersion) {
   }
 }
 async function uploadAsset(release, name, content) {
-  const url = new URL(release.upload_url.split("{")[0])
-  if (url.origin !== "https://uploads.github.com") throw new Error("unexpected release upload host")
-  url.searchParams.set("name", name)
-  const response = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, "Content-Type": "application/octet-stream" }, body: content })
-  if (!response.ok) throw new Error(`asset upload failed with HTTP ${response.status}; draft release retained for protected retry`)
+  return uploadReleaseAsset(repository(), release, name, content)
 }
 
 async function source() {

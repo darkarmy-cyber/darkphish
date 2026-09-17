@@ -275,6 +275,22 @@ async function reconcile(repo, summary, main) {
   return true
 }
 
+export async function reconcilePublishedReleases(repo, releases, main, { reconcileOne = reconcile, log = console.log } = {}) {
+  if (!Array.isArray(releases)) throw new Error("release inventory is malformed")
+  let changed = 0
+  for (const release of [...releases].sort((a, b) => b.id - a.id)) {
+    if (![true, false].includes(release?.draft)) throw new Error("release inventory has an invalid draft state")
+    // Retained or in-progress drafts are owned by the publisher/recovery path,
+    // never by historical metadata maintenance. Do not even fetch their assets.
+    if (release.draft) {
+      log(`Retained draft ${release.id}: excluded from public metadata reconciliation.`)
+      continue
+    }
+    if (await reconcileOne(repo, release, main)) changed += 1
+  }
+  return changed
+}
+
 async function run() {
   const repo = process.env.GITHUB_REPOSITORY || process.env.GH_REPO
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo || "")) throw new Error("GITHUB_REPOSITORY is required")
@@ -286,8 +302,7 @@ async function run() {
     return
   }
   const releases = await pages(`repos/${repo}/releases`)
-  let changed = 0
-  for (const release of releases.sort((a, b) => b.id - a.id)) if (await reconcile(repo, release, main)) changed += 1
+  const changed = await reconcilePublishedReleases(repo, releases, main)
   const closingMain = await executionMain(repo, expectedSHA)
   if (closingMain !== main) throw new Error("protected main changed during release reconciliation")
   console.log(`Release reconciliation complete; ${changed} release(s) updated.`)

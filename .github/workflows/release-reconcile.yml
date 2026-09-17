@@ -1,10 +1,12 @@
 name: Reconcile release metadata
 
 on:
-  workflow_run:
-    workflows: [CI, CodeQL]
-    types: [completed]
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type reconcile-public-metadata to run historical maintenance'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -13,14 +15,14 @@ permissions:
 concurrency:
   group: protected-main-mutation
   cancel-in-progress: false
+  queue: max
 
 jobs:
   verify:
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.confirmation == 'reconcile-public-metadata'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -31,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v7
@@ -43,7 +45,7 @@ jobs:
         id: execution
         env:
           GH_TOKEN: ${{ github.token }}
-          RECONCILE_EXECUTION_SHA: ${{ github.event.workflow_run.head_sha }}
+          RECONCILE_EXECUTION_SHA: ${{ github.sha }}
         run: node scripts/release-reconcile.mjs verify-execution
 
   reconcile:
@@ -77,10 +79,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RECOVERY_EXECUTION_SHA: ${{ needs.verify.outputs.sha }}
         run: node .github/scripts/release-publication-guard.mjs hold
-      - name: Repair trusted detached draft tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/release-draft-tag-repair.mjs
       - name: Reconcile trusted release metadata
         env:
           GH_TOKEN: ${{ github.token }}

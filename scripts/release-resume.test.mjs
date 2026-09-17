@@ -147,19 +147,19 @@ test("invalid or stale publication transitions fail closed", async () => {
 
 test("resumption workflow runs immutable main code in the shared serialization group", () => {
   const workflow = readFileSync(new URL("../.github/workflows/release-resume.yml", import.meta.url), "utf8")
-  assert.match(workflow, /workflow_run:/)
-  assert.doesNotMatch(workflow, /workflow_dispatch:|pull_request_target:/)
-  const immutable = "${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}"
+  assert.match(workflow, /workflow_dispatch:/)
+  assert.doesNotMatch(workflow, /workflow_run:|schedule:|pull_request_target:/)
+  const immutable = "${{ github.sha }}"
   assert.ok(workflow.includes(`ref: ${immutable}`))
   assert.ok(workflow.includes(`RESUME_EXECUTION_SHA: ${immutable}`))
-  assert.match(workflow, /schedule:\n\s+- cron: '11,26,41,56 \* \* \* \*'/)
+  assert.match(workflow, /inputs\.confirmation == 'resume-original-071'/)
   assert.match(workflow, /github\.ref == 'refs\/heads\/main'/)
   assert.match(workflow, /group: protected-main-mutation\n\s+cancel-in-progress: false/)
   assert.match(workflow, /persist-credentials: false/)
   for (const file of ["release-resume.yml", "release-reconcile.yml"]) {
     const text = readFileSync(new URL(`../.github/workflows/${file}`, import.meta.url), "utf8")
-    assert.match(text, /github\.event\.workflow_run\.event == 'push'/)
-    assert.match(text, /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/)
-    assert.ok(text.indexOf("github.event.workflow_run.event == 'push'") < text.indexOf("uses: actions/checkout"))
+    assert.match(text, /github\.event_name == 'workflow_dispatch'/)
+    assert.match(text, /github\.ref == 'refs\/heads\/main'/)
+    assert.ok(text.indexOf("inputs.confirmation ==") < text.indexOf("uses: actions/checkout"))
   }
 })

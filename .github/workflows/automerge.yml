@@ -9,10 +9,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: protected-main-mutation
-  cancel-in-progress: false
-
 jobs:
   enable:
     if: >-
@@ -21,6 +17,12 @@ jobs:
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)))
+    # Job-level admission occurs after the trust gate, so fork PR events cannot
+    # consume protected publisher/recovery queue slots.
+    concurrency:
+      group: protected-main-mutation
+      cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-24.04
     permissions:
       contents: write

@@ -121,7 +121,8 @@ jobs:
       - name: Lint workflows
         run: |
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-          actionlint
+          WORKFLOW_LINT_INTEGRATION=1 node --test scripts/workflow-lint.test.mjs
+          node scripts/workflow-lint.mjs
 
   mysql-migrations:
     name: MySQL migrations up/down/up

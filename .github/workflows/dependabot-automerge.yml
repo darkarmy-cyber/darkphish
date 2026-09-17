@@ -13,6 +13,7 @@ permissions:
 concurrency:
   group: protected-main-mutation
   cancel-in-progress: false
+  queue: max
 
 jobs:
   inspect:

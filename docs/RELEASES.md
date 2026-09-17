@@ -58,6 +58,12 @@ tag/release absence, fragments, branch ancestry and existing PR state. The
 PR-creation policy is probed where possible; otherwise failure names the exact
 organization/repository setting. The generated branch remains reusable.
 
+Existing generated release PRs retain their trusted GitHub creation date in both
+validation and actual changelog generation. A new preparation captures its UTC
+date once. Crossing midnight must not create a date-only commit or invalidate
+exact-head reviews. Missing or invalid server dates and modified generated
+content are rejected; dates from unverified branch content are never adopted.
+
 Existing `release/v0.3.0` commit `7c613c7` is accepted only if its author, message,
 paths and exact output match trusted regeneration from its base. A refresh
 retains the old tip as a parent and uses a normal fast-forward push. No force

@@ -9,8 +9,11 @@ function fixture() {
     checks: [{status: 'completed', conclusion: 'success'}],
     statuses: [{id: 2, context: 'GitBook (./changes)', state: 'pending', creator: {login: 'gitbook-com[bot]', id: 92167642, type: 'Bot'}}],
   }
-  const request = async path => path.endsWith('/required_status_checks') ? f.protection : f.rules
-  const pages = async path => path.includes('/check-runs?') ? f.checks : f.statuses
+  const request = async path => {
+    assert.ok(path.endsWith('/branches/main'), 'no administrative permission needed')
+    return {protected: true, protection: {required_status_checks: f.protection}}
+  }
+  const pages = async path => path.includes('/check-runs?') ? f.checks : path.includes('/rules/') ? f.rules : f.statuses
   f.ready = () => mergeStateReady('owner/repo', f.pr, {request, pages})
   return f
 }

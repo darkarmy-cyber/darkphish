@@ -16,8 +16,12 @@ export async function mergeStateReady(repo, pr, {request, pages}) {
   if (!checks.length || checks.some(c => c.status !== 'completed' || !['success', 'skipped', 'neutral'].includes(c.conclusion))) return false
   if (pr.mergeable_state === 'clean') return true
   // Do not exempt a GitBook check that a maintainer explicitly made required.
-  const protection = await request(`${prefix}/branches/main/protection/required_status_checks`)
-  const rules = await request(`${prefix}/rules/branches/main`)
+  // The branch summary is available with contents:read; the administrative
+  // protection endpoint is not available to a normal Actions token.
+  const branch = await request(`${prefix}/branches/main`)
+  const protection = branch.protection?.required_status_checks
+  if (branch.protected !== true || !protection || !Array.isArray(protection.contexts) || !Array.isArray(protection.checks)) return false
+  const rules = await pages(`${prefix}/rules/branches/main`, undefined, request)
   const required = [
     ...(protection.contexts || []), ...(protection.checks || []).map(c => c.context),
     ...rules.filter(r => r.type === 'required_status_checks').flatMap(r => r.parameters.required_status_checks.map(c => c.context)),

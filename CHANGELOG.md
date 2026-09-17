@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.11.0 - 2026-09-17
+
+### Added
+
+- Add the Community licensing protocol, signed lease verification, activation persistence, entitlement checks, and administrative license API foundation.
+- Add an installable WordPress Community licensing service with verified registration, Ed25519 leases, transactional activation binding, administrative lifecycle controls, and integration tests.
+- Allow an HTTPS administrator to initialize a private signing file outside the web root without SSH, with permission/CSRF checks and exclusive creation that never replaces an existing key.
+- Support static HTML registration on an explicitly trusted HTTPS origin, with scoped credential-free CORS, hostname-bound Turnstile validation, public configuration and real HTTP/browser-flow tests.
+- Add the Darkphish Licenses dashboard below Zeus, edition-filtered management, editable plan defaults, manual Professional/Enterprise issuance, signed edition claims and additive upgrade tests.
+
+### Security
+
+- Enforce Community licensing at server startup, serialize entitlement checks across database writers, reject caller-supplied creation IDs, and recheck license validity before queued campaign delivery.
+- Reject licensing redirects and incomplete activation responses, preserve existing recipient identities in degraded mode, and add administrator activation controls with periodic signed-lease refresh.
+- Distribute the maintainer-provided fsociety.sk public verification key and API configuration with native archives, the source installer and Docker, retaining license state on persistent storage.
+- Accept authenticated Professional and Enterprise edition claims with the same installation, expiry and signed entitlement enforcement; reject unknown editions.
+- Harden the WordPress licensing service: invalidate sibling recovery links atomically, remove incomplete newly created signing files, reject signing keys beneath either public root, strip shortcode verification fragments before DOM readiness, require signing/storage readiness before public registration, and use an additive indexed canonical-email lookup that preserves legacy duplicate records.
+- Create Windows licensing state with a protected owner-only DACL before writing credentials, including every atomic replacement, so shared-directory permissions cannot expose refresh tokens. Unix file-mode protections remain unchanged.
+
+### Migration
+
+- Add the license coordination table without rewriting existing customer data; configure the approved licensing API, public verification keyring and persistent license state path before activating Community installations.
+
 ## 0.10.0 - 2026-09-15
 
 ### Added

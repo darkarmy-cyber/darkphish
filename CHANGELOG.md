@@ -12,6 +12,8 @@
 - Point User Guide and API Documentation to https://docs.darkphish.sk/.
 - Stop stale release-provenance checks without withdrawing published artifacts; revalidate protected-main execution before every publication-guard withdrawal target and retry.
 - Compare review-summary metadata at its reported timestamp precision without rounding finding chronology or pre-merge review boundaries.
+- Revalidate immutable recovery execution before every tagless-release withdrawal and retry, stopping stale operations without changing release visibility.
+- Preserve nanosecond review chronology and compare summary metadata at its actual reported decimal precision.
 
 
 ## 0.12.0 - 2026-09-17

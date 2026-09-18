@@ -15,7 +15,6 @@
       <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
-  <rect width="1600" height="873" fill="#000"/>
   <g transform="translate(585 165)" fill="none" stroke="url(#cyan)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
     <path d="M20 120 L86 84 L203 84 Q276 38 365 80 Q409 99 447 127 Q414 154 370 170 Q281 205 203 158 L86 158 Z"/>
     <path d="M86 84 L33 38 L13 108 L20 120 L14 137 L33 207 L86 158"/>

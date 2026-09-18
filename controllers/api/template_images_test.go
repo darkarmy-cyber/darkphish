@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -35,9 +36,9 @@ func TestImagePreviewURLPolicy(t *testing.T) {
 	if !validImagePreviewURL("https://ssl.gstatic.com/social/photosui/images/email/header/logo_photos_cs_color_165x32dp.png") {
 		t.Fatal("normal HTTPS image rejected")
 	}
-	client := newImagePreviewClient()
+	client := newPinnedImageClient("example.test", []netip.Addr{netip.MustParseAddr("8.8.8.8")})
 	transport := client.Transport.(*http.Transport)
-	if transport.Proxy != nil || transport.TLSClientConfig.InsecureSkipVerify || client.Jar != nil || client.Timeout == 0 {
+	if transport.Proxy != nil || transport.TLSClientConfig.InsecureSkipVerify || transport.TLSClientConfig.ServerName != "example.test" || client.Jar != nil || client.Timeout == 0 {
 		t.Fatal("unsafe preview client")
 	}
 	first := httptest.NewRequest("GET", "https://example.test/a", nil)
@@ -59,10 +60,10 @@ func TestImagePreviewDeniesInternalEvenWhenImportAllowsIt(t *testing.T) {
 	t.Cleanup(func() { _ = dialer.SetAllowedHosts(original) })
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Error("internal endpoint contacted") }))
 	defer server.Close()
-	client := newImagePreviewClient()
+	client := newPinnedImageClient("localhost", []netip.Addr{netip.MustParseAddr("127.0.0.1")})
 	defer client.CloseIdleConnections()
 	transport := client.Transport.(*http.Transport)
-	for _, address := range []string{server.Listener.Addr().String(), strings.Replace(server.Listener.Addr().String(), "127.0.0.1", "localhost", 1)} {
+	for _, address := range []string{"127.0.0.1:443", "localhost:443", server.Listener.Addr().String()} {
 		conn, err := transport.DialContext(context.Background(), "tcp", address)
 		if err == nil {
 			conn.Close()
@@ -106,8 +107,8 @@ func TestImagePreviewFetchIsBoundedAndCredentialFree(t *testing.T) {
 	for _, scenario := range []string{"ok", "status", "large", "unknown-size", "invalid"} {
 		t.Run(scenario, func(t *testing.T) {
 			client := &http.Client{Transport: previewTransport(func(r *http.Request) (*http.Response, error) {
-				if r.URL.String() != "https://example.test/image?token=private" || r.URL.Fragment != "" {
-					t.Fatal("request did not use the validated URL")
+				if r.URL.String() != "https://8.8.8.8:443/image?token=private" || r.Host != "example.test" || r.URL.Fragment != "" {
+					t.Fatal("request did not use the pinned address and original virtual host")
 				}
 				if len(r.Header) != 0 {
 					t.Fatal("forwarded request headers")
@@ -127,7 +128,10 @@ func TestImagePreviewFetchIsBoundedAndCredentialFree(t *testing.T) {
 				}
 				return &http.Response{StatusCode: status, ContentLength: length, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
 			})}
-			data, err := fetchImagePreview(context.Background(), client, "https://example.test/image?token=private#not-sent")
+			lookup := func(context.Context, string, string) ([]netip.Addr, error) {
+				return []netip.Addr{netip.MustParseAddr("8.8.8.8")}, nil
+			}
+			data, err := fetchPinnedImagePreview(context.Background(), "https://example.test/image?token=private#not-sent", lookup, func(string, []netip.Addr) *http.Client { return client })
 			if scenario == "ok" && (err != nil || !strings.HasPrefix(data, "data:image/png;base64,")) {
 				t.Fatal("valid preview failed")
 			}

@@ -97,6 +97,25 @@ var deniedRanges = []netip.Prefix{
 
 type dialControl = func(network, address string, c syscall.RawConn) error
 
+// IsPublicAddress applies the outbound public-network boundary without any
+// administrator-configured exceptions. Callers must still enforce this policy
+// at connection time and must not resolve an approved name a second time.
+func IsPublicAddress(ip netip.Addr) bool {
+	if !ip.IsValid() || ip.Zone() != "" {
+		return false
+	}
+	ip = ip.Unmap()
+	if !ip.IsGlobalUnicast() || ip.IsPrivate() {
+		return false
+	}
+	for _, prefix := range deniedRanges {
+		if prefix.Contains(ip) {
+			return false
+		}
+	}
+	return true
+}
+
 func restrictedControl(allowed []netip.Prefix) dialControl {
 	return func(network string, address string, _ syscall.RawConn) error {
 		if network != "tcp4" && network != "tcp6" {

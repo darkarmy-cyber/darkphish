@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/darkarmy-cyber/darkphish/dialer"
 	"github.com/darkarmy-cyber/darkphish/models"
 )
 
@@ -30,23 +29,6 @@ type imagePreviewResult struct {
 	URL   string `json:"url"`
 	Data  string `json:"data,omitempty"`
 	Error string `json:"error,omitempty"`
-}
-
-// Image previews are explicit, temporary and raster-only. They never relax the
-// admin CSP or change the email being saved. Unlike site import, previewing an
-// email must not inherit administrator-approved internal destination exceptions.
-func newImagePreviewClient() *http.Client {
-	client := newImportClient()
-	client.Timeout = 8 * time.Second
-	client.Transport.(*http.Transport).DialContext = (&dialer.RestrictedDialer{}).Dialer().DialContext
-	checkRedirect := client.CheckRedirect
-	client.CheckRedirect = func(r *http.Request, via []*http.Request) error {
-		if !validImagePreviewURL(r.URL.String()) {
-			return errImagePreview
-		}
-		return checkRedirect(r, via)
-	}
-	return client
 }
 
 func validImagePreviewURL(raw string) bool {
@@ -94,21 +76,7 @@ func rasterPreview(content []byte) (string, error) {
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(output.Bytes()), nil
 }
 
-func fetchImagePreview(ctx context.Context, client *http.Client, raw string) (string, error) {
-	target, err := parseImagePreviewURL(raw)
-	if err != nil {
-		return "", errImagePreview
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
-	if err != nil {
-		return "", errImagePreview
-	}
-	// Do not forward the admin's cookies, credentials, referrer or other headers.
-	response, err := client.Do(request)
-	if err != nil {
-		return "", errImagePreview
-	}
-	defer response.Body.Close()
+func readImagePreview(response *http.Response) (string, error) {
 	if response.StatusCode != http.StatusOK || response.ContentLength > maxPreviewImageBytes {
 		return "", errImagePreview
 	}
@@ -157,8 +125,6 @@ func (as *Server) PreviewEmailImages(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	client := newImagePreviewClient()
-	defer client.CloseIdleConnections()
 	results := make([]imagePreviewResult, 0, len(input.URLs))
 	seen := make(map[string]bool)
 	for _, raw := range input.URLs {
@@ -167,7 +133,7 @@ func (as *Server) PreviewEmailImages(w http.ResponseWriter, r *http.Request) {
 		}
 		seen[raw] = true
 		result := imagePreviewResult{URL: raw}
-		data, err := fetchImagePreview(ctx, client, raw)
+		data, err := fetchImagePreview(ctx, raw)
 		if err != nil {
 			result.Error = errImagePreview.Error()
 		} else {

@@ -23,9 +23,13 @@ another network request.
 
 ## Limits and failures
 
-- Public HTTPS destinations, port 443, with no URL credentials; every connection
-  is checked after DNS resolution, including redirects. Internal-host exceptions
-  configured for site imports do not apply to image previews.
+- Any public HTTPS image host, port 443, with no domain allowlist or URL
+  credentials. Each redirect is resolved and validated separately. Connections
+  are pinned to that hop's public numeric DNS answers (mixed public/private
+  answers are rejected), with the original hostname retained for HTTP virtual
+  hosting and TLS certificate validation. No second hostname lookup is used
+  when connecting. Internal-host exceptions configured for site imports do not
+  apply to image previews.
 - Valid PNG, JPEG or GIF input, at most 1 MiB and 1 million pixels per image.
   Animated GIF previews show the first frame. Re-encoded output is also bounded
   to 1 MiB. SVG, HTML and other formats are not accepted.

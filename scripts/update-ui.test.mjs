@@ -115,6 +115,30 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
     }
   })
 
+  test(`${path}: rejected or unconfirmed apply does not mistake a persisted result for a new outcome`, () => {
+    for (const status of [0, 401, 403, 409, 428, 500, 502, 503]) {
+      for (const previous of ['Update completed successfully.', 'Update failed and was rolled back.']) {
+        const p = page(path)
+        p.status({result: previous}); p.confirm(); p.requests.at(-1).resolve({})
+        p.requests.at(-1).reject({status, responseJSON: {message: 'Current request was not confirmed'}})
+        p.status({result: previous})
+        assert.equal(p.$('#updateStatus').value, 'Current request was not confirmed')
+        assert.equal(p.requests.filter(r => r.url === '/updates/apply').length, 1)
+        assert.equal(p.timers.length, 0)
+      }
+    }
+  })
+
+  test(`${path}: identical success text is fresh when the running version changed`, () => {
+    const p = page(path), result = 'Update completed successfully.'
+    p.status({result}); p.confirm(); p.requests.at(-1).resolve({})
+    p.requests.at(-1).reject({status: 0})
+    p.status({current_version: '0.15.0', available: false, result})
+    assert.equal(p.$('#updateStatus').value, result)
+    assert.equal(p.$('#updateApply').disabled, true)
+    assert.equal(p.requests.filter(r => r.url === '/updates/apply').length, 1)
+  })
+
   test(`${path}: ambiguous apply failure rechecks and watches without duplicate POST`, () => {
     const p = page(path)
     p.status({}); p.confirm(); p.requests.at(-1).resolve({})

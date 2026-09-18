@@ -26,11 +26,14 @@ $(function () {
     }
     function failed(xhr) { $("#updateStatus").text(xhr.responseJSON && xhr.responseJSON.message || "Unable to complete the update operation"); }
     function recover(xhr, mayHaveApplied) {
+        var previous = currentStatus || {};
         // A failed response can still mean apply reached the supervisor. Recheck
         // server state before allowing a retry, without repeating the POST.
         check(false).done(function (status) {
+            var freshOutcome = (status.result && (status.result !== previous.result || status.current_version !== previous.current_version)) ||
+                (status.error && status.error !== previous.error);
             if (status.applying) watchRestart(100);
-            else if (!mayHaveApplied || (!status.result && !status.error)) failed(xhr);
+            else if (!mayHaveApplied || !freshOutcome) failed(xhr);
         });
     }
     function watchRestart(remaining) {
@@ -71,7 +74,7 @@ $(function () {
                     controls();
                     $("#updateStatus").text(response.message);
                     watchRestart(100);
-                }).fail(function (xhr) { recover(xhr, true); });
+                }).fail(function (xhr) { recover(xhr, !(xhr.status >= 400 && xhr.status < 500)); });
             }).fail(function (xhr) { recover(xhr, false); });
         });
     });

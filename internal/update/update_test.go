@@ -141,7 +141,7 @@ func testSQLiteBackupAndRollback(t *testing.T, database string) {
 	if err := os.WriteFile(backupKeyring, []byte("tampered public keys"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyBackup(backup); err == nil {
+	if err := verifyBackup(backup, l); err == nil {
 		t.Fatal("tampered keyring backup passed verification")
 	}
 	if err := os.WriteFile(backupKeyring, []byte("old"), 0600); err != nil {

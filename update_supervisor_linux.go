@@ -798,10 +798,8 @@ func recoveryLayout(conf *config.Config, root string) (update.Layout, error) {
 	if err != nil || conf.DBName != "sqlite3" || filepath.Dir(configAbs) != root || filepath.Base(configAbs) != "config.json" || filepath.Dir(dbAbs) != root || filepath.Base(dbAbs) == "config.json" {
 		return update.Layout{}, errors.New("pending update requires its original local SQLite/config layout; refusing normal startup")
 	}
-	for _, entry := range []string{"darkphish", "VERSION", "LICENSE", "NOTICE.md", "README.md", "CHANGELOG.md", "db", "templates", "static", ".darkphish-updates"} {
-		if filepath.Base(dbAbs) == entry {
-			return update.Layout{}, errors.New("invalid recovery database path")
-		}
+	if update.IsRuntimeEntry(filepath.Base(dbAbs)) || filepath.Base(dbAbs) == ".darkphish-updates" {
+		return update.Layout{}, errors.New("invalid recovery database path")
 	}
 	return update.Layout{Root: root, Config: "config.json", Database: filepath.Base(dbAbs)}, nil
 }

@@ -30,7 +30,7 @@ func packagedRuntimeFixture(t *testing.T) map[string][]byte {
 }
 
 func TestLayoutAcceptsBundledLicenseKeyringOnlyAsRegularFile(t *testing.T) {
-	for _, kind := range []string{"file", "directory", "symlink", "unmanaged sibling"} {
+	for _, kind := range []string{"file", "missing", "directory", "symlink", "unmanaged sibling"} {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()
 			for name, data := range packagedRuntimeFixture(t) {

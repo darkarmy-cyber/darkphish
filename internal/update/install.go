@@ -35,10 +35,8 @@ func (l Layout) Validate() error {
 		if filepath.Base(excluded) != excluded || excluded == l.Config || excluded == l.Database {
 			return errors.New("invalid external-secret exclusion")
 		}
-		for _, entry := range runtimeEntries {
-			if excluded == entry {
-				return errors.New("external secret overlaps managed runtime")
-			}
+		if IsRuntimeEntry(excluded) {
+			return errors.New("external secret overlaps managed runtime")
 		}
 	}
 	for _, name := range []string{l.Database, l.Config} {
@@ -52,10 +50,11 @@ func (l Layout) Validate() error {
 	if l.Database == l.Config {
 		return errors.New("database and config overlap")
 	}
-	for _, entry := range runtimeEntries {
-		if entry == l.Database || entry == l.Config {
-			return errors.New("configuration overlaps runtime files")
-		}
+	if IsRuntimeEntry(l.Database) || IsRuntimeEntry(l.Config) {
+		return errors.New("configuration overlaps runtime files")
+	}
+	if info, err := os.Lstat(filepath.Join(l.Root, bundledLicenseKeyring)); err != nil || !info.Mode().IsRegular() {
+		return errors.New("one-click update requires the bundled license-public-keys.json regular file; use a verified manual upgrade")
 	}
 	return filepath.WalkDir(l.Root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -314,7 +313,7 @@ func (t Transaction) InstallContext(ctx context.Context, stage string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := verifyBackupContext(ctx, filepath.Join(t.Directory, "backup")); err != nil {
+	if err := verifyBackupContext(ctx, filepath.Join(t.Directory, "backup"), t.Layout); err != nil {
 		return errors.New("completed backup required before install")
 	}
 	if err := t.Layout.Validate(); err != nil {
@@ -381,7 +380,7 @@ func (t Transaction) InstallContext(ctx context.Context, stage string) error {
 // Rollback restores both the application and the pre-migration SQLite snapshot.
 // The caller must stop and reap the replacement process before invoking it.
 func (t Transaction) Rollback() error {
-	if err := verifyBackup(filepath.Join(t.Directory, "backup")); err != nil {
+	if err := verifyBackup(filepath.Join(t.Directory, "backup"), t.Layout); err != nil {
 		return err
 	}
 	// Reclaim only replaceable transaction data after verifying the backup.
@@ -441,11 +440,22 @@ func (t Transaction) Rollback() error {
 	return syncDir(t.Layout.Root)
 }
 
-func verifyBackup(directory string) error {
-	return verifyBackupContext(context.Background(), directory)
+func verifyBackup(directory string, layout Layout) error {
+	return verifyBackupContext(context.Background(), directory, layout)
 }
 
-func verifyBackupContext(ctx context.Context, directory string) error {
+func verifyBackupContext(ctx context.Context, directory string, layout Layout) error {
+	// Recovery cannot require a complete live layout, but the backup must bind
+	// the original local database/config and every runtime file it will restore.
+	if layout.Config != "config.json" || !filepath.IsLocal(layout.Database) || filepath.Base(layout.Database) != layout.Database || layout.Database == layout.Config || layout.Database == ".darkphish-updates" || IsRuntimeEntry(layout.Database) {
+		return errors.New("invalid backup layout")
+	}
+	if info, err := os.Lstat(directory); err != nil || !info.IsDir() {
+		return errors.New("invalid backup directory")
+	}
+	if info, err := os.Lstat(filepath.Join(directory, "backup-manifest.json")); err != nil || !info.Mode().IsRegular() {
+		return errors.New("invalid backup manifest file")
+	}
 	b, err := os.ReadFile(filepath.Join(directory, "backup-manifest.json"))
 	if err != nil {
 		return err
@@ -460,11 +470,61 @@ func verifyBackupContext(ctx context.Context, directory string) error {
 	if manifest.Schema != "darkphish-pre-update-backup/v1" || len(manifest.Files) == 0 {
 		return errors.New("invalid backup manifest")
 	}
+	required := append(append([]string{}, runtimeEntries...), layout.Config, layout.Database)
+	for _, name := range required {
+		info, err := os.Lstat(filepath.Join(directory, name))
+		if err != nil {
+			return errors.New("backup is missing a required entry")
+		}
+		if name == "db" || name == "static" || name == "templates" {
+			if !info.IsDir() {
+				return errors.New("invalid backup runtime directory")
+			}
+		} else if !info.Mode().IsRegular() || manifest.Files[name] == "" {
+			return errors.New("backup manifest is missing a required runtime/config/database file")
+		}
+	}
+	// Check the actual tree before opening any manifest paths: neither omitted
+	// hashes nor symlinked parents may smuggle unchecked bytes into rollback.
+	fileCount := 0
+	err = filepath.WalkDir(directory, func(p string, d os.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil {
+			return err
+		}
+		if d.Type()&os.ModeSymlink != 0 || (!d.IsDir() && !d.Type().IsRegular()) {
+			return errors.New("backup contains links or special files")
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(directory, p)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == "backup-manifest.json" {
+			return nil
+		}
+		if manifest.Files[rel] == "" {
+			return errors.New("backup contains a file omitted from its manifest")
+		}
+		fileCount++
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if fileCount != len(manifest.Files) {
+		return errors.New("backup manifest does not match its files")
+	}
 	for name, want := range manifest.Files {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if !filepath.IsLocal(name) || strings.Contains(name, "\\") {
+		if !filepath.IsLocal(name) || strings.Contains(name, "\\") || filepath.ToSlash(filepath.Clean(name)) != name {
 			return errors.New("unsafe backup manifest path")
 		}
 		p := filepath.Join(directory, filepath.FromSlash(name))

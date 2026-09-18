@@ -26,6 +26,12 @@ A separate read-only PR/main smoke workflow invokes the exact action on a
 dependency-only fixture and validates the resulting SPDX. It has contents-read
 permission, no privileged trigger, no persisted checkout credentials and all
 three upload paths disabled. It cannot publish a release or dependency snapshot.
+Both PR and main triggers include all four copied manifests/lockfiles. Validation
+requires the exact Go module version of `github.com/gorilla/mux` (also present in
+go.sum) and the transitive npm package `neo-async` version from the pnpm packages
+section, with ecosystem-specific package URLs. Losing either ecosystem fails
+even if other packages remain. Removal or changed syntax of these deliberate
+sentinels requires a reviewed smoke update; versions are read from the fixtures.
 
 This is automation-only maintenance: no VERSION change, changelog fragment,
 application feature, release-triggering version bump, tag/asset replacement or

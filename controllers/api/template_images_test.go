@@ -52,6 +52,22 @@ func TestImagePreviewURLPolicy(t *testing.T) {
 	}
 }
 
+func TestImagePreviewNumericHTTPSPorts(t *testing.T) {
+	for _, host := range []string{"example.test", "[2606:4700:4700::1111]"} {
+		for _, port := range []string{"443", "0443", "000443"} {
+			target, err := parseImagePreviewURL("https://" + host + ":" + port + "/image.png")
+			if err != nil || target.String() != "https://"+host+"/image.png" {
+				t.Fatalf("HTTPS port not canonicalized: %s:%s", host, port)
+			}
+		}
+	}
+	for _, port := range []string{"0444", "0080", "0", "65536", "+443", "443x"} {
+		if validImagePreviewURL("https://example.test:" + port + "/image.png") {
+			t.Fatalf("non-HTTPS port accepted: %s", port)
+		}
+	}
+}
+
 func TestImagePreviewDeniesInternalEvenWhenImportAllowsIt(t *testing.T) {
 	original := dialer.DefaultDialer.AllowedHosts()
 	if err := dialer.SetAllowedHosts([]string{"127.0.0.1/32"}); err != nil {

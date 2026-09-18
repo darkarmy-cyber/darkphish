@@ -2,6 +2,7 @@
 // requests bounded, raster-only previews. The email's original URLs are saved.
 var templateImagePreview = (function () {
     var cache = Object.create(null)
+    var attempted = Object.create(null)
     var generation = 0
 
     function images(editor) {
@@ -35,6 +36,7 @@ var templateImagePreview = (function () {
     function reset(editor) {
         generation++
         cache = Object.create(null)
+        attempted = Object.create(null)
         $('#templateImageStatus').text('External images are blocked until you load their previews.')
         $('#loadTemplateImages').prop('disabled', false)
         if (editor && !editor.darkphishImagePreviewReady) {
@@ -50,13 +52,20 @@ var templateImagePreview = (function () {
         var current = generation
         function request() {
             if (current !== generation) return
-            var urls = [], unsupported = 0
+            var pending = [], unsupported = 0
             images(editor).forEach(function (img) {
                 var src = source(img)
                 if (eligible(src) && !img.hasAttribute('srcset')) {
-                    if (urls.indexOf(src) === -1 && !cache[src]) urls.push(src)
+                    if (pending.indexOf(src) === -1 && !cache[src]) pending.push(src)
                 } else if (!/^data:/i.test(src) && !/^\//.test(src)) unsupported++
             })
+            // Try every new URL before retrying failed previews. A failed first
+            // batch must not prevent later images from ever being requested.
+            var urls = pending.filter(function (src) { return !attempted[src] })
+            if (!urls.length && pending.length) {
+                attempted = Object.create(null)
+                urls = pending
+            }
             var omitted = Math.max(0, urls.length - 12)
             urls = urls.slice(0, 12)
             if (!urls.length) {
@@ -71,6 +80,7 @@ var templateImagePreview = (function () {
             api.preview_email_images({urls: urls})
                 .done(function (results) {
                     if (current !== generation) return
+                    urls.forEach(function (src) { attempted[src] = true })
                     var loaded = 0
                     results.forEach(function (result) {
                         if (urls.indexOf(result.url) !== -1 && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(result.data || '')) {
@@ -79,9 +89,11 @@ var templateImagePreview = (function () {
                         }
                     })
                     apply(editor)
+                    var failed = pending.filter(function (src) { return attempted[src] && !cache[src] }).length
                     var message = loaded + ' of ' + urls.length + ' image previews loaded. Original email URLs are unchanged.'
-                    if (loaded < urls.length || unsupported) message += ' Unavailable, private, unsupported or oversized images remain blocked.'
+                    if (failed || unsupported) message += ' Unavailable, private, unsupported or oversized images remain blocked.'
                     if (omitted) message += ' Click again to load remaining images (12 per request).'
+                    else if (failed) message += ' Click again to retry unavailable images.'
                     $('#templateImageStatus').text(message)
                 })
                 .fail(function () {

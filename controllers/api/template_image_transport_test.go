@@ -93,6 +93,7 @@ func TestImageRedirectsResolveOriginalOriginAndRevalidate(t *testing.T) {
 	}{
 		{"relative", "../next%2Fimage.png?x=1#ignored", true, "arbitrary.test", 2},
 		{"other public host", "https://another-user-host.test/next.png", true, "another-user-host.test", 2},
+		{"numeric HTTPS port", "https://another-user-host.test:0443/next.png", true, "another-user-host.test", 2},
 		{"internal", "https://internal.test/a", false, "", 1},
 		{"rebind", "/again", false, "", 1},
 		{"downgrade", "http://arbitrary.test/a", false, "", 1},

@@ -90,6 +90,44 @@ for (const path of ['../static/js/src/app/template_images.js', '../static/js/dis
     assert.equal(p.nodes[0].attrs.src, url)
     assert.match(p.$('#templateImageStatus').value, /0 of 1/)
   })
+
+  test(`${path}: failed batches cannot starve later images and can be retried afterwards`, () => {
+    const urls = Array.from({length: 27}, (_, i) => `https://example.test/${i}.png`)
+    const p = page(path, urls)
+    p.helper.load()
+    assert.deepEqual([...p.requests[0].body.urls], urls.slice(0, 12))
+    p.requests[0].resolve(urls.slice(0, 12).map(url => ({url, error: 'unavailable'})))
+    assert.match(p.$('#templateImageStatus').value, /remaining images/)
+    p.helper.load()
+    assert.deepEqual([...p.requests[1].body.urls], urls.slice(12, 24))
+    p.requests[1].resolve([{url: urls[12], data: png}])
+    p.helper.load()
+    assert.deepEqual([...p.requests[2].body.urls], urls.slice(24))
+    p.requests[2].resolve(urls.slice(24).map(url => ({url, data: png})))
+    assert.match(p.$('#templateImageStatus').value, /retry unavailable images/)
+    p.helper.load()
+    assert.deepEqual([...p.requests[3].body.urls], urls.slice(0, 12))
+    p.requests[3].resolve([])
+    p.helper.load()
+    assert.deepEqual([...p.requests[4].body.urls], urls.slice(13, 24))
+    p.requests[4].resolve([])
+    p.helper.reset(p.editor)
+    p.helper.load()
+    assert.deepEqual([...p.requests[5].body.urls], urls.slice(0, 12))
+  })
+
+  test(`${path}: HTTP failures remain retryable and numeric HTTPS ports keep original URLs`, () => {
+    const urls = ['https://example.test:0443/logo.png', 'https://example.test/other.png']
+    const p = page(path, urls)
+    p.helper.load()
+    assert.deepEqual([...p.requests[0].body.urls], urls)
+    p.requests[0].reject()
+    p.helper.load()
+    assert.deepEqual([...p.requests[1].body.urls], urls)
+    p.requests[1].resolve(urls.map(url => ({url, data: png})))
+    assert.equal(p.nodes[0].attrs['data-cke-saved-src'], urls[0])
+    assert.equal(p.nodes[0].attrs.src, png)
+  })
 }
 
 test('image preview is wired to the template editor without relaxing admin CSP', () => {

@@ -35,7 +35,11 @@ another network request.
   to 1 MiB. SVG, HTML and other formats are not accepted.
 - At most 12 distinct URLs per request, an eight-second per-image timeout and
   a twenty-second total deadline. Two preview batches can run concurrently.
-  The authenticated sensitive-operation rate limit also applies.
+  The authenticated sensitive-operation rate limit also applies. Subsequent
+  clicks try remaining URLs before retrying failed images; a failed first batch
+  cannot prevent later images from being loaded. Once all URLs have been tried,
+  another click retries unavailable images. A failed API request can be retried
+  immediately. Closing/replacing the template resets this attempt history.
 - Unavailable, authenticated, expired or blocked remote URLs remain unavailable;
   DarkPhish does not bypass image-host access controls.
 - CID attachments, relative URLs, CSS background images and `srcset` are not

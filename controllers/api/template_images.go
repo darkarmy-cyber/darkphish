@@ -13,6 +13,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/darkarmy-cyber/darkphish/models"
@@ -40,8 +42,20 @@ func validImagePreviewURL(raw string) bool {
 // URL that passed policy, not from the original, independently reparsed input.
 func parseImagePreviewURL(raw string) (*url.URL, error) {
 	u, err := parseImportURL(raw)
-	if err != nil || u.Scheme != "https" || (u.Port() != "" && u.Port() != "443") {
+	if err != nil || u.Scheme != "https" {
 		return nil, errImagePreview
+	}
+	if port := u.Port(); port != "" {
+		number, err := strconv.Atoi(port)
+		if err != nil || number != 443 {
+			return nil, errImagePreview
+		}
+		// Match the browser's numeric default-port handling and use a normal
+		// HTTP Host value. Keep the original input URL only in the API result.
+		u.Host = u.Hostname()
+		if strings.Contains(u.Host, ":") {
+			u.Host = "[" + u.Host + "]"
+		}
 	}
 	return u, nil
 }

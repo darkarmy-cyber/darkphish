@@ -15,7 +15,7 @@ Generate the signing key in DarkPhish > Settings (version 0.1.1,
 no SSH required), or with tools/create-key.php on the hosting server.
 The destination must be outside its public document root, mode 0600, readable
 by the PHP user. Configure DARKPHISH_LICENSE_KEY_FILE in wp-config.php.
-Only the public verification keyring may be copied to Darkphish clients.
+Only the public verification keyring may be copied to DarkPhish clients.
 
 Configure DARKPHISH_TURNSTILE_SITE_KEY and DARKPHISH_TURNSTILE_SECRET in
 wp-config.php. Never send the secret key or private signing file through chat.

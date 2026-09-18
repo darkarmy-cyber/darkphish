@@ -36,7 +36,7 @@ import (
 // admin server
 type AdminServerOption func(*AdminServer)
 
-// AdminServer is an HTTP server that implements the administrative Darkphish
+// AdminServer is an HTTP server that implements the administrative DarkPhish
 // handlers, including the dashboard and REST API.
 type AdminServer struct {
 	updates *update.Service
@@ -386,7 +386,7 @@ func (as *AdminServer) Settings(w http.ResponseWriter, r *http.Request) {
 }
 
 // UserManagement is an admin-only handler that allows for the registration
-// and management of user accounts within Darkphish.
+// and management of user accounts within DarkPhish.
 func (as *AdminServer) UserManagement(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/settings?tab=users", http.StatusSeeOther)
 }
@@ -586,7 +586,7 @@ func (as *AdminServer) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 // ResetPassword handles the password reset flow when a password change is
-// required either by the Darkphish system or an administrator.
+// required either by the DarkPhish system or an administrator.
 //
 // This handler is meant to be used when a user is required to reset their
 // password, not just when they want to.

@@ -13,13 +13,13 @@
     port: "22"
     proto: tcp
 
-- name: Allow TCP 80 for Darkphish.
+- name: Allow TCP 80 for DarkPhish.
   ufw:
     rule: allow
     port: "80"
     proto: tcp
 
-- name: Allow TCP 443 for Darkphish.
+- name: Allow TCP 443 for DarkPhish.
   ufw:
     rule: allow
     port: "443"
@@ -115,7 +115,7 @@
     return_content: true
   register: latest_json_reponse
 
-- name: Download latest Darkphish .zip file.
+- name: Download latest DarkPhish .zip file.
   get_url:
     validate_certs: True
     url: "https://github.com/darkarmy-cyber/darkphish/releases/download/{{ latest_json_reponse.json.tag_name }}/darkphish-{{ latest_json_reponse.json.tag_name }}-linux-64bit.zip"
@@ -154,7 +154,7 @@
     owner: "{{ darkphish_user }}"
     group: "{{ darkphish_user }}"
 
-- name: Change ownership of Darkphish folder and files.
+- name: Change ownership of DarkPhish folder and files.
   file:
     path: /home/{{ darkphish_user }}/darkphish_deploy
     owner: "{{ darkphish_user }}"

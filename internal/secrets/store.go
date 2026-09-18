@@ -96,7 +96,7 @@ type envelope struct {
 	Ciphertext string `json:"ciphertext"`
 }
 
-// IsCiphertext reports whether a value uses a recognized Darkphish encrypted
+// IsCiphertext reports whether a value uses a recognized DarkPhish encrypted
 // envelope. It does not validate or decrypt the envelope.
 func IsCiphertext(value string) bool {
 	return strings.HasPrefix(value, providerPrefix) || strings.HasPrefix(value, encryptedPrefix) || strings.HasPrefix(value, legacyEncryptedPrefix)

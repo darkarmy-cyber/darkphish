@@ -54,7 +54,7 @@ vlastníka. Nenastavuj priečinok na 777 ako náhradu tejto opravy.
 
 V Cloudflare účte otvor **Turnstile → Add widget**:
 
-- názov: napríklad `fsociety Darkphish`;
+- názov: napríklad `fsociety DarkPhish`;
 - hostname: `darkphish.sk` pre HTML registráciu; existujúci `fsociety.sk` môže zostať;
 - režim: **Managed**.
 

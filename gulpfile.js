@@ -1,7 +1,7 @@
 /*
  * gulpfile.js
  *
- * Description: The Darkphish gulpfile
+ * Description: The DarkPhish gulpfile
  */
 
 var gulp = require('gulp'),
@@ -50,7 +50,7 @@ vendorjs = function () {
 }
 
 scripts = function () {
-    // Darkphish app files - non-ES6
+    // DarkPhish app files - non-ES6
     return gulp.src([
             app_directory + 'autocomplete.js',
             app_directory + 'audit.js',

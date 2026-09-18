@@ -16,10 +16,10 @@ import (
 )
 
 // MinPasswordLength is the minimum number of characters required in a password.
-// Darkphish intentionally favors length over composition rules.
+// DarkPhish intentionally favors length over composition rules.
 const MinPasswordLength = 12
 
-// APIKeyLength is the number of random bytes used for Darkphish API keys.
+// APIKeyLength is the number of random bytes used for DarkPhish API keys.
 const APIKeyLength = 32
 
 // ErrAccountLocked indicates that an authenticated account is disabled.

@@ -18,7 +18,7 @@ func TestDevelopmentVersionSummary(t *testing.T) {
 	if len(parts) >= 2 {
 		wantDisplay = strings.Join(parts[:2], ".") + "-dev"
 	}
-	wantSummary := "Darkphish " + wantDisplay + " (version " + semantic + ", commit "
+	wantSummary := "DarkPhish " + wantDisplay + " (version " + semantic + ", commit "
 	if !strings.Contains(versionSummary(), wantSummary) || !strings.Contains(versionSummary(), ", built ") {
 		t.Fatalf("unexpected development version: %q", versionSummary())
 	}

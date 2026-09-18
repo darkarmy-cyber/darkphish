@@ -1,6 +1,6 @@
 # Envelope key management
 
-Darkphish separates three key purposes: browser-session authentication/encryption,
+DarkPhish separates three key purposes: browser-session authentication/encryption,
 credential and integration-secret envelope encryption, and audit integrity. Never
 reuse one key for another purpose.
 

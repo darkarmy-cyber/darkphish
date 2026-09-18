@@ -1,6 +1,6 @@
-# Darkphish 0.7: bounded audit history reads
+# DarkPhish 0.7: bounded audit history reads
 
-Baseline: `c8ac718249d3f9a5796a2345759bd8879c99d4d1` (released Darkphish 0.6).
+Baseline: `c8ac718249d3f9a5796a2345759bd8879c99d4d1` (released DarkPhish 0.6).
 
 Audit verification and legacy initialization previously materialized all events
 and checkpoints. Verification runs during startup, explicit checkpoint creation,

@@ -1,6 +1,6 @@
 # Credential review controls
 
-Darkphish campaigns default to `disabled`: submitted password values are not
+DarkPhish campaigns default to `disabled`: submitted password values are not
 evaluated or retained. A landing page must also explicitly allow password fields
 to be submitted before either review mode can observe them.
 

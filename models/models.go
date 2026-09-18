@@ -66,7 +66,7 @@ func environmentValue(primary, legacy string) string {
 	value := os.Getenv(legacy)
 	if value != "" {
 		if _, loaded := legacyEnvironmentWarnings.LoadOrStore(legacy, struct{}{}); !loaded {
-			log.Warnf("Deprecated Gophish environment variable %s detected; use %s. Support will be removed in a future Darkphish release.", legacy, primary)
+			log.Warnf("Deprecated Gophish environment variable %s detected; use %s. Support will be removed in a future DarkPhish release.", legacy, primary)
 		}
 	}
 	return value

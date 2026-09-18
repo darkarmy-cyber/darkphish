@@ -323,6 +323,24 @@ func TestRecoveryLayoutDoesNotRequireNewUpdateEligibility(t *testing.T) {
 	}
 }
 
+func TestRecoveryDatabaseCannotOverlapManagedRuntime(t *testing.T) {
+	root := t.TempDir()
+	previous := *configPath
+	*configPath = filepath.Join(root, "config.json")
+	t.Cleanup(func() { *configPath = previous })
+	for _, name := range []string{"darkphish", "VERSION", "LICENSE", "NOTICE.md", "README.md", "CHANGELOG.md", "license-public-keys.json", "db", "templates", "static", ".darkphish-updates", "config.json"} {
+		t.Run(name, func(t *testing.T) {
+			active := t.TempDir()
+			if err := writeRecoveryLayout(active, update.Layout{Database: name}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := readRecoveryLayout(active, root); err == nil {
+				t.Fatalf("recovery accepted reserved runtime as database: %s", name)
+			}
+		})
+	}
+}
+
 func TestPendingRecoveryFailsClosedBeforeEligibility(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)

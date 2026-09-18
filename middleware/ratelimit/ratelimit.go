@@ -131,7 +131,7 @@ func (limiter *PostLimiter) AllowKey(key string) bool { return limiter.allow(key
 // Limit enforces the configured rate limit for POST requests.
 //
 // TODO: Change the return value to an http.Handler when we clean up the
-// way Darkphish routing is done.
+// way DarkPhish routing is done.
 func (limiter *PostLimiter) Limit(next http.Handler) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		clientIP, _, err := net.SplitHostPort(r.RemoteAddr)

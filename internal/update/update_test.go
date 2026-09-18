@@ -127,6 +127,26 @@ func testSQLiteBackupAndRollback(t *testing.T, database string) {
 	if err != nil || !bytes.Contains(manifest, []byte("authoritative secret store")) {
 		t.Fatal("missing external-secret recovery notice")
 	}
+	var backupManifest struct {
+		Files map[string]string `json:"files"`
+	}
+	if err := json.Unmarshal(manifest, &backupManifest); err != nil {
+		t.Fatal(err)
+	}
+	keyringHash := sha256.Sum256([]byte("old"))
+	if backupManifest.Files["license-public-keys.json"] != hex.EncodeToString(keyringHash[:]) {
+		t.Fatal("bundled license keyring missing from checksum-verified backup")
+	}
+	backupKeyring := filepath.Join(backup, "license-public-keys.json")
+	if err := os.WriteFile(backupKeyring, []byte("tampered public keys"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyBackup(backup, l); err == nil {
+		t.Fatal("tampered keyring backup passed verification")
+	}
+	if err := os.WriteFile(backupKeyring, []byte("old"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	stage := t.TempDir()
 	for _, entry := range runtimeEntries {
 		if err = copyTree(filepath.Join(root, entry), filepath.Join(stage, entry)); err != nil {
@@ -134,6 +154,9 @@ func testSQLiteBackupAndRollback(t *testing.T, database string) {
 		}
 	}
 	if err = os.WriteFile(filepath.Join(stage, "darkphish"), []byte("replacement"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(stage, "license-public-keys.json"), []byte("replacement public keys"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	tx := Transaction{Layout: l, Directory: dir}
@@ -156,12 +179,18 @@ func testSQLiteBackupAndRollback(t *testing.T, database string) {
 	if err = tx.Install(stage); err != nil {
 		t.Fatal("installation failed", err)
 	}
+	if data, err := os.ReadFile(filepath.Join(root, "license-public-keys.json")); err != nil || string(data) != "replacement public keys" {
+		t.Fatal("installation did not replace the bundled license keyring")
+	}
 	if err = tx.Rollback(); err != nil {
 		t.Fatal(err)
 	}
 	// Emulate another interruption losing a restored directory entry. Recovery
 	// must be repeatable without having consumed its backup source.
 	if err = os.RemoveAll(filepath.Join(root, "templates")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "license-public-keys.json"), []byte("interrupted restoration"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err = tx.Rollback(); err != nil {
@@ -173,6 +202,9 @@ func testSQLiteBackupAndRollback(t *testing.T, database string) {
 	b, err := os.ReadFile(filepath.Join(root, "darkphish"))
 	if err != nil || string(b) != "old" {
 		t.Fatal("binary was not rolled back")
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "license-public-keys.json")); err != nil || string(data) != "old" {
+		t.Fatal("repeated rollback did not restore the original bundled license keyring")
 	}
 	db, err = sql.Open("sqlite3", filepath.Join(root, l.Database))
 	if err != nil {

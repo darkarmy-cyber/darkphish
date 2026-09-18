@@ -63,8 +63,8 @@ var (
 	disableMailer = kingpin.Flag("disable-mailer", "Disable the mailer (for use with multi-system deployments)").Bool()
 	mode          = kingpin.Flag("mode", fmt.Sprintf("Run the binary in one of the modes (%s, %s or %s)", modeAll, modeAdmin, modePhish)).
 			Default("all").Enum(modeAll, modeAdmin, modePhish)
-	serveCommand             = kingpin.Command("serve", "Run the configured Darkphish servers.").Default()
-	versionCommand           = kingpin.Command("version", "Print Darkphish version and build information.")
+	serveCommand             = kingpin.Command("serve", "Run the configured DarkPhish servers.").Default()
+	versionCommand           = kingpin.Command("version", "Print DarkPhish version and build information.")
 	auditCommand             = kingpin.Command("audit", "Verify and export the tamper-evident audit trail.")
 	auditVerifyCommand       = auditCommand.Command("verify", "Verify the database audit chain and signed checkpoints.")
 	auditExportCommand       = auditCommand.Command("export", "Write an audit JSON export and signed companion manifest.")
@@ -104,7 +104,7 @@ func displayVersion() string {
 }
 
 func versionSummary() string {
-	return fmt.Sprintf("Darkphish %s (version %s, commit %s, built %s)", displayVersion(), semanticVersion(), commitSHA, builtAt)
+	return fmt.Sprintf("DarkPhish %s (version %s, commit %s, built %s)", displayVersion(), semanticVersion(), commitSHA, builtAt)
 }
 
 func writeExclusive(path string, value []byte) error {
@@ -193,7 +193,7 @@ func main() {
 		}
 		findings := migrationcheck.Inspect(*configPath, conf, legacyAPIKeys, plaintextSecrets)
 		if len(findings) == 0 {
-			fmt.Println("No known Darkphish compatibility hazards detected.")
+			fmt.Println("No known DarkPhish compatibility hazards detected.")
 			return
 		}
 		for _, finding := range findings {
@@ -298,7 +298,7 @@ func main() {
 	defer stopLicensing()
 
 	// Unlock any maillogs that may have been locked for processing
-	// when Darkphish was last shutdown.
+	// when DarkPhish was last shutdown.
 	err = models.UnlockAllMailLogs()
 	if err != nil {
 		log.Fatal(err)

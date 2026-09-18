@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: DarkPhish
- * Description: Community, Professional and Enterprise license management for Darkphish.
+ * Description: Community, Professional and Enterprise license management for DarkPhish.
  * Version: 0.2.5
  * Requires at least: 6.8
  * Requires PHP: 8.2
@@ -215,7 +215,7 @@ function adminSettings(): void {
     echo '<h2>Service settings</h2><p>Community registration: 100 managed users, 1 active campaign, 365 days.</p>';
     try {
         $keyring = signer()->keyring();
-        echo '<h2>Public verification keyring</h2><p>Copy this public JSON to Darkphish. No private key is displayed.</p><pre>' . esc_html(wp_json_encode($keyring, JSON_PRETTY_PRINT)) . '</pre>';
+        echo '<h2>Public verification keyring</h2><p>Copy this public JSON to DarkPhish. No private key is displayed.</p><pre>' . esc_html(wp_json_encode($keyring, JSON_PRETTY_PRINT)) . '</pre>';
         echo '<p>API: <code>' . esc_html(rest_url('darkphish-license/v1')) . '</code></p>';
     } catch (\Throwable $error) {
         echo '<h2>Vytvorenie podpisového kľúča bez SSH</h2><p>Vo wp-config.php nastavte DARKPHISH_LICENSE_KEY_FILE na absolútnu cestu k novému JSON súboru v existujúcom súkromnom priečinku mimo verejného webu. Priečinok musí byť zapisovateľný používateľom PHP.</p>';
@@ -254,5 +254,5 @@ add_shortcode('darkphish_license', function (): string {
     }
     // Token is carried in the fragment, never in a query string or referrer.
     wp_enqueue_script('darkphish-turnstile', 'https://challenges.cloudflare.com/turnstile/v0/api.js', [], null, true);
-    return '<section id="darkphish-license" data-api="' . esc_url(rest_url('darkphish-license/v1/')) . '" data-terms="' . esc_attr($settings['terms_version']) . '"><h2>Darkphish Community</h2><p>Free registration: 100 managed users and 1 active campaign.</p><p role="status" aria-live="polite" class="dp-status"></p><form class="dp-request"><label>Email <input type="email" name="email" maxlength="254" autocomplete="email" required></label><p class="dp-terms-row"><label><input type="checkbox" required> I accept the <a href="' . esc_url($settings['terms_url']) . '" target="_blank" rel="noopener noreferrer">Community terms</a>.</label></p><div class="cf-turnstile" data-action="darkphish-license" data-sitekey="' . esc_attr(DARKPHISH_TURNSTILE_SITE_KEY) . '"></div><button type="submit">Request license</button></form><button type="button" class="dp-verify" hidden>Confirm email and display my license key</button><pre class="dp-key" hidden></pre><p><a class="dp-recovery-link" href="' . esc_url($settings['registration_url'] . '?mode=recover') . '">Lost your license? Recover it</a></p></section>';
+    return '<section id="darkphish-license" data-api="' . esc_url(rest_url('darkphish-license/v1/')) . '" data-terms="' . esc_attr($settings['terms_version']) . '"><h2>DarkPhish Community</h2><p>Free registration: 100 managed users and 1 active campaign.</p><p role="status" aria-live="polite" class="dp-status"></p><form class="dp-request"><label>Email <input type="email" name="email" maxlength="254" autocomplete="email" required></label><p class="dp-terms-row"><label><input type="checkbox" required> I accept the <a href="' . esc_url($settings['terms_url']) . '" target="_blank" rel="noopener noreferrer">Community terms</a>.</label></p><div class="cf-turnstile" data-action="darkphish-license" data-sitekey="' . esc_attr(DARKPHISH_TURNSTILE_SITE_KEY) . '"></div><button type="submit">Request license</button></form><button type="button" class="dp-verify" hidden>Confirm email and display my license key</button><pre class="dp-key" hidden></pre><p><a class="dp-recovery-link" href="' . esc_url($settings['registration_url'] . '?mode=recover') . '">Lost your license? Recover it</a></p></section>';
 });

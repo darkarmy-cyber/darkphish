@@ -1,6 +1,6 @@
 # Architecture
 
-Darkphish remains a single deployable Go binary with two HTTP trust boundaries:
+DarkPhish remains a single deployable Go binary with two HTTP trust boundaries:
 
 1. The administrative server serves authenticated HTML and `/api/` routes. It
    owns sessions, CSRF enforcement, RBAC, explicit CORS, request limits, security
@@ -38,7 +38,7 @@ and hosted integration gates.
   Administrator may review across campaigns. A Security Reviewer needs both the
   narrow `credentials:view` permission and a live campaign assignment. Ownership
   alone does not grant reveal. Normal APIs, exports, webhooks, and
-  logs never receive the raw value. Darkphish does not provide credential replay.
+  logs never receive the raw value. DarkPhish does not provide credential replay.
 
 Authorization is centralized in account-state, role-permission, campaign-access,
 reviewer-assignment, PAT-scope, and privileged-session helpers. Controllers parse
@@ -104,5 +104,5 @@ Business logic should continue moving gradually from handlers and GORM models in
 focused services. PostgreSQL uses the safest incremental GORM v1/lib/pq path for
 0.3; replacing the inherited ORM is technical debt, not a release-time rewrite.
 Multi-instance audit serialization will need database-native coordination before
-horizontal write scaling. Darkphish should not be split into microservices without
+horizontal write scaling. DarkPhish should not be split into microservices without
 measured operational benefit.

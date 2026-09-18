@@ -36,7 +36,7 @@ var TEMPLATE_TAGS = [{
     {
         id: 8,
         name: 'URL',
-        description: 'The URL to your Darkphish listener.'
+        description: 'The URL to your DarkPhish listener.'
     },
     {
         id: 9,

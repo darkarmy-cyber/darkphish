@@ -1,9 +1,9 @@
-# Darkphish Licensing Protocol v1
+# DarkPhish Licensing Protocol v1
 
-Status: **development contract for Darkphish Community 0.11.x**
+Status: **development contract for DarkPhish Community 0.11.x**
 
-This document defines the wire and trust contract between an official Darkphish
-Community installation and the Darkphish licensing service. The first server
+This document defines the wire and trust contract between an official DarkPhish
+Community installation and the DarkPhish licensing service. The first server
 implementation is expected to be the fsociety WordPress licensing plugin; the
 protocol is intentionally independent of WordPress.
 
@@ -14,7 +14,7 @@ protocol is intentionally independent of WordPress.
   of truth.
 - An installation can continue through temporary licensing-service outages.
 - License signatures are verifiable locally without embedding a signing secret
-  in Darkphish.
+  in DarkPhish.
 - Expiration or revocation must never make customer data inaccessible.
 - The protocol must be reusable by later editions without changing the v1 trust
   model.
@@ -37,7 +37,7 @@ values from a valid signed lease.
 
 ## Trust model
 
-Darkphish contains trusted **public** signing keys only. The licensing service
+DarkPhish contains trusted **public** signing keys only. The licensing service
 holds the corresponding Ed25519 private online signing key outside the public
 web root and outside ordinary WordPress options/tables.
 
@@ -46,11 +46,11 @@ approves rotating online signing keys. v1 lease verification is keyed by
 `key_id`, allowing online key rotation without changing the lease schema.
 
 Private signing material MUST NOT be returned by any API, written to logs, or
-stored in the Darkphish application.
+stored in the DarkPhish application.
 
 ## Installation identity
 
-At first activation Darkphish generates a cryptographically random installation
+At first activation DarkPhish generates a cryptographically random installation
 identifier. Hardware identifiers, MAC addresses, CPU serial numbers, disk
 serials and similar fingerprints are not part of v1.
 
@@ -63,12 +63,12 @@ activation is a licensing-server administrative operation and is audit logged.
 ## Activation flow
 
 1. The user obtains a free Community license after e-mail verification.
-2. Darkphish generates and persists an `installation_id` locally.
-3. Darkphish sends an HTTPS activation request containing the license key,
-   installation ID and running Darkphish version.
+2. DarkPhish generates and persists an `installation_id` locally.
+3. DarkPhish sends an HTTPS activation request containing the license key,
+   installation ID and running DarkPhish version.
 4. The licensing server validates the license, policy and installation count.
 5. The server returns a signed activation lease.
-6. Darkphish verifies the Ed25519 signature locally before trusting any field.
+6. DarkPhish verifies the Ed25519 signature locally before trusting any field.
 7. The verified lease is persisted locally and becomes the entitlement source.
 
 Suggested endpoint:
@@ -170,7 +170,7 @@ also by the license's expiry. Installation resets have the same offline limit.
 
 ## Safe degraded mode
 
-When state is `expired`, `invalid` or `missing`, Darkphish must preserve access
+When state is `expired`, `invalid` or `missing`, DarkPhish must preserve access
 to customer data and allow risk-reducing operations.
 
 Allowed:
@@ -239,7 +239,7 @@ The public request flow must include server-side rate limiting, anti-automation
 protection, e-mail verification and acceptance of the Community license terms.
 Marketing consent, if offered, is separate and optional.
 
-CORS may restrict browser origins to official Darkphish sites, but CORS is not
+CORS may restrict browser origins to official DarkPhish sites, but CORS is not
 authentication and must not be treated as the security boundary.
 
 ## Data minimization
@@ -302,7 +302,7 @@ settings into their own config rather than overwrite unrelated settings.
 
 The public keyring uses `darkphish-license-keyring/v1` and maps key IDs to
 standard Base64 Ed25519 public keys. Never place the private signing key in
-Darkphish. Rotation requires distributing an expanded trusted keyring before
+DarkPhish. Rotation requires distributing an expanded trusted keyring before
 the server starts signing with a new key ID; retain old public keys until
 their signed leases and grace periods have expired.
 Relative configured paths resolve from the configuration file directory.

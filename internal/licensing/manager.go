@@ -9,7 +9,7 @@ import (
 )
 
 // Manager owns the locally persisted activation state and exposes a small,
-// concurrency-safe entitlement surface to the rest of Darkphish. Network
+// concurrency-safe entitlement surface to the rest of DarkPhish. Network
 // activation/refresh is deliberately kept outside this type.
 type Manager struct {
 	mu            sync.RWMutex

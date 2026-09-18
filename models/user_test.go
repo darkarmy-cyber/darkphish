@@ -78,7 +78,7 @@ func (s *ModelsSuite) TestDeleteLastAdmin(c *check.C) {
 	s.verifyRoleCount(c, role.ID, 1)
 
 	// Try to delete the last admin - this should fail since we always want at
-	// least one admin active in Darkphish.
+	// least one admin active in DarkPhish.
 	err = DeleteUser(1)
 	c.Assert(err, check.Equals, ErrModifyingOnlyAdmin)
 

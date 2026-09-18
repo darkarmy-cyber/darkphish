@@ -111,7 +111,7 @@ Turnstile, overenie e-mailu ani platné aktivačné/obnovovacie poverenia.
 Produkčná základná URL API je `https://fsociety.sk/wp-json/darkphish-license/v1`.
 Samotná konfigurácia nie je potvrdením živého testu pošty a aktivácie.
 
-## Prepojenie klienta Darkphish
+## Prepojenie klienta DarkPhish
 
 Verejný keyring z administrácie ulož na serveri aplikácie do
 `/etc/darkphish/license-public-keys.json`. Obsahuje schému
@@ -198,7 +198,7 @@ spoločnosť a IČO `XXXX`; nie sú určené na publikovanie ani zapnutie regist
 Postup pre plánovanú licenčnú schránku `license@darkphish.sk` u Websupportu je v
 [návode na SMTP](legal-drafts/MAIL_SETUP.sk.md).
 
-## Darkphish Licenses 0.2.0
+## DarkPhish Licenses 0.2.0
 
 Samostatné menu sa zaradí priamo pod Zeus, ak je prítomný. Záložky Dashboard, Community, Professional, Enterprise a Settings zobrazujú skutočné štatistiky a stránkované licencie. Správca môže ručne vydať Professional/Enterprise licenciu, upraviť jej limity a platnosť alebo použiť revoke/restore/reset/renew. Predvolené limity sa upravujú v Settings a nevynucujú sa spätne na už vydaných licenciách. Ručné vydanie neoveruje platbu ani neposiela kľúč poštou. Kľúč sa zobrazí iba v odpovedi na vydanie.
 

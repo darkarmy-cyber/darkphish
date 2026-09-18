@@ -1,4 +1,4 @@
-# Darkphish 0.5 persistence modernization
+# DarkPhish 0.5 persistence modernization
 
 ## Baseline and scope
 

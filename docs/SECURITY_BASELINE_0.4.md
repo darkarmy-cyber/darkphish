@@ -1,6 +1,6 @@
-# Darkphish 0.4 CodeQL remediation record
+# DarkPhish 0.4 CodeQL remediation record
 
-This is a static-analysis baseline record, not a claim that Darkphish has no
+This is a static-analysis baseline record, not a claim that DarkPhish has no
 vulnerabilities. Release verification and final dispositions are pending until
 the protected default-branch analyses and native publication complete.
 
@@ -90,7 +90,7 @@ Source: remote HTTPS certificate; sink: import transport configured with
 `InsecureSkipVerify: true`. Reachable through the same authorized administrative
 import path. An active network attacker or untrusted endpoint could supply import
 content without proving server identity in v0.3.0. There is no implicit forwarding
-of Darkphish credentials. The isolated untrusted-certificate regression failed
+of DarkPhish credentials. The isolated untrusted-certificate regression failed
 before the fix because the old importer accepted the response.
 
 Fix: normal certificate/hostname validation, TLS 1.2 minimum, no insecure

@@ -13,7 +13,22 @@ import (
 	"strings"
 )
 
-var runtimeEntries = []string{"darkphish", "VERSION", "LICENSE", "NOTICE.md", "README.md", "CHANGELOG.md", "db", "templates", "static"}
+// The bundled public license keyring is release-owned runtime, not an external
+// secret. Keep it in the same backup/install/rollback transaction as the binary.
+const bundledLicenseKeyring = "license-public-keys.json"
+
+var runtimeEntries = []string{"darkphish", "VERSION", "LICENSE", "NOTICE.md", "README.md", "CHANGELOG.md", bundledLicenseKeyring, "db", "templates", "static"}
+
+// IsRuntimeEntry identifies reserved release-owned roots, including during
+// recovery when the live installation may be incomplete.
+func IsRuntimeEntry(name string) bool {
+	for _, entry := range runtimeEntries {
+		if name == entry {
+			return true
+		}
+	}
+	return false
+}
 
 // Extract accepts only regular native release files. Symlinks, hardlinks,
 // devices, ambiguous names, duplicates and archive bombs are rejected.

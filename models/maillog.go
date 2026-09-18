@@ -300,7 +300,7 @@ func LockMailLogs(ms []*MailLog, lock bool) error {
 }
 
 // UnlockAllMailLogs removes the processing lock for all maillogs
-// in the database. This is intended to be called when Darkphish is started
+// in the database. This is intended to be called when DarkPhish is started
 // so that any previously locked maillogs can resume processing.
 func UnlockAllMailLogs() error {
 	return db.Model(&MailLog{}).Where("processing=?", true).Update("processing", false).Error

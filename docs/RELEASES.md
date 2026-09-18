@@ -1,11 +1,17 @@
 # Version and release policy
 
-`VERSION` is the authoritative Darkphish SemVer value. Release tags add `v`
+`VERSION` is the authoritative DarkPhish SemVer value. Release tags add `v`
 (for example, `0.3.0` becomes `v0.3.0`), while the product UI and CLI shorten
-normal releases to `Darkphish 0.3`. Unreleased binaries identify themselves as
+normal releases to `DarkPhish 0.3`. Unreleased binaries identify themselves as
 `0.3-dev`; release builds also contain the commit SHA and UTC build timestamp.
 
-Darkphish has an independent version history. Normal engineering batches
+The official display name is **DarkPhish**. Keep technical identifiers such as
+`darkphish`, environment variables, protocol headers and PHP namespaces stable.
+Historical release titles, signed metadata and the exact legacy automation
+markers are compatibility records, not application display copy; a branding
+change must not rewrite published releases, tags, assets or review evidence.
+
+DarkPhish has an independent version history. Normal engineering batches
 advance the minor component (`0.2.0` to `0.3.0`); patch releases are reserved
 for exceptional fixes to an already released minor. The project never derives
 its next number from historical Gophish versions.

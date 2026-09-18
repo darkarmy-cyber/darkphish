@@ -2,11 +2,19 @@
 <div class="col-sm-9 col-sm-offset-3 col-md-10 col-md-offset-2 main">
     <h1 class="page-header">Settings</h1>
     {{template "settings_tabs" .}}
-    <h2>Update Darkphish</h2>
+    <h2>Update DarkPhish</h2>
     <div id="updateStatus" role="status" aria-live="polite">Checking release information…</div>
+    <div id="updateBlocked" class="alert alert-warning" role="status" hidden>
+        <strong>One-click update is unavailable on this installation.</strong>
+        <p id="updateBlockedReason"></p>
+        <p id="updateVerifierHelp" hidden>An administrator must install GitHub CLI 2.100.0 or newer at <code>/usr/bin/gh</code>. The executable and its parent directories must be root-owned, not symbolic links, and not writable by group or others. No GitHub login or token is needed.</p>
+        <p>After correcting the prerequisite, restart the DarkPhish service and reload this page. Check now refreshes release information; it does not restart the update supervisor.</p>
+        <p>A release notification does not mean this installation supports one-click updates. See the <a href="https://docs.darkphish.sk/">DarkPhish documentation</a> for update requirements and manual upgrade guidance.</p>
+    </div>
     <dl><dt>Current version</dt><dd id="updateCurrent"></dd><dt>Latest stable version</dt><dd id="updateLatest"></dd><dt>Published</dt><dd id="updatePublished"></dd></dl>
     <button type="button" class="btn btn-default" id="updateCheck">Check now</button>
-    <button type="button" class="btn btn-primary" id="updateApply" disabled>Update now</button>
+    <button type="button" class="btn btn-primary" id="updateApply" aria-describedby="updateApplyHint" disabled>Update now</button>
+    <p id="updateApplyHint" role="status" aria-live="polite">Checking whether a verified update can be applied…</p>
     <p>A verified update stops the application, backs it up, and restarts it. External secrets must be restored from the authoritative secret store.</p>
     <h3>Release notes</h3><pre id="updateNotes"></pre>
 </div>

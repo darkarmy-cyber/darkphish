@@ -23,7 +23,7 @@ import (
 	"github.com/darkarmy-cyber/darkphish/models"
 )
 
-// Pattern for Darkphish emails e.g ?rid=AbC1234
+// Pattern for DarkPhish emails e.g ?rid=AbC1234
 // We include the optional quoted-printable 3D at the front, just in case decoding fails. e.g ?rid=3DAbC1234
 // We also include alternative URL encoded representations of '=' and '?' to handle Microsoft ATP URLs e.g %3Frid%3DAbC1234
 var resultIDRegex = regexp.MustCompile(`((\?|%3F)rid(=|%3D)(3D)?([A-Za-z0-9]{7}))`)
@@ -228,14 +228,14 @@ func checkForNewEmails(ctx context.Context, im models.IMAP, cursor *uint32) {
 				continue
 			}
 			if len(rids) < 1 {
-				// In the future this should be an alert in Darkphish
-				log.Infof("User '%s' reported email with subject '%s'. This is not a Darkphish campaign; you should investigate it.", m.Email.From, m.Email.Subject)
+				// In the future this should be an alert in DarkPhish
+				log.Infof("User '%s' reported email with subject '%s'. This is not a DarkPhish campaign; you should investigate it.", m.Email.From, m.Email.Subject)
 			}
 			err = processReportRIDs(ctx, rids, func(rid string) error {
 				log.Infof("User '%s' reported email with rid %s", m.Email.From, rid)
 				result, err := models.GetResult(rid)
 				if err != nil {
-					log.Error("Error reporting Darkphish email with rid ", rid, ": ", err.Error())
+					log.Error("Error reporting DarkPhish email with rid ", rid, ": ", err.Error())
 					return err
 				}
 				if ctx.Err() != nil {
@@ -245,7 +245,7 @@ func checkForNewEmails(ctx context.Context, im models.IMAP, cursor *uint32) {
 					err = result.HandleEmailReport(models.EventDetails{})
 				}
 				if err != nil {
-					log.Error("Error updating Darkphish email with rid ", rid, ": ", err.Error())
+					log.Error("Error updating DarkPhish email with rid ", rid, ": ", err.Error())
 					return err
 				}
 				return nil
@@ -265,10 +265,10 @@ func checkForNewEmails(ctx context.Context, im models.IMAP, cursor *uint32) {
 				log.Error("Unable to acknowledge processed emails: ", err.Error())
 			}
 		}
-		// If the DeleteReportedCampaignEmail flag is set, delete reported Darkphish campaign emails
+		// If the DeleteReportedCampaignEmail flag is set, delete reported DarkPhish campaign emails
 		if len(deleteEmails) > 0 {
 			log.Debugf("Deleting %d campaign emails", len(deleteEmails))
-			err := mailServer.DeleteEmails(deleteEmails) // Delete Darkphish campaign emails.
+			err := mailServer.DeleteEmails(deleteEmails) // Delete DarkPhish campaign emails.
 			if err != nil {
 				log.Error("Failed to delete emails: ", err.Error())
 			}

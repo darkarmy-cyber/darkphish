@@ -1,6 +1,6 @@
 # Audit integrity and exports
 
-Darkphish 0.3 makes persisted audit modification detectable. Every event belongs
+DarkPhish 0.3 makes persisted audit modification detectable. Every event belongs
 to the `instance` chain and has a monotonically increasing sequence, the previous
 event hash, and a SHA-256 hash over deterministic canonical JSON. Canonical input
 includes the event and durable-delivery IDs, UTC timestamp, bounded actor/action/target identifiers,
@@ -16,13 +16,13 @@ required for 0.3; database-native multi-instance sequencing is deferred.
 
 ## Checkpoints and retention
 
-At the configured interval (1,000 events by default), Darkphish signs a checkpoint
+At the configured interval (1,000 events by default), DarkPhish signs a checkpoint
 with the active Ed25519 audit key. It contains format version, chain and event
 ranges, final hash, creation time, and signing key ID. Key IDs make rotation
 explicit. Keep old verification keys configured while any checkpoint or export
 signed by them must verify.
 
-Retention deletes only a contiguous oldest prefix. Before deletion Darkphish signs
+Retention deletes only a contiguous oldest prefix. Before deletion DarkPhish signs
 an exact anchor for the removed final sequence. Verification of the retained first
 event requires that anchor, so deletion in the middle or an invented chain start
 is detected. Retention policy is not a substitute for exporting records required

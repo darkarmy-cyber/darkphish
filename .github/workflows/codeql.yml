@@ -75,6 +75,19 @@ jobs:
               const results = run?.results ?? []
               if (!Array.isArray(results)) throw new Error("CodeQL SARIF results are malformed")
               findings += results.length
+              // Log only bounded rule IDs and source coordinates, never messages,
+              // snippets, flows or URL values. Keep the zero-finding gate intact.
+              for (const result of results.slice(0, 20)) {
+                const physical = result?.locations?.[0]?.physicalLocation
+                const rule = String(result?.ruleId ?? "")
+                const file = String(physical?.artifactLocation?.uri ?? "")
+                const line = physical?.region?.startLine
+                console.log(JSON.stringify({
+                  rule: /^[a-zA-Z0-9/_.-]{1,160}$/.test(rule) ? rule : "unavailable",
+                  file: /^[a-zA-Z0-9_./-]{1,256}$/.test(file) && !file.startsWith("/") && !file.split("/").includes("..") ? file : "unavailable",
+                  line: Number.isSafeInteger(line) && line > 0 ? line : null,
+                }))
+              }
             }
           }
           if (findings !== 0) throw new Error(`CodeQL found ${findings} local result(s); PR remains blocked`)

@@ -12,6 +12,7 @@ import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
 import { assertNoUnstagedRelease } from "../../scripts/release-pending.mjs"
 import { uploadReleaseAsset } from "../../scripts/release-upload.mjs"
+import { successfulTrustedSBOMStep } from "./release-sbom-step.mjs"
 
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
@@ -104,7 +105,7 @@ async function verifyOriginalNativeRelease(repo, source) {
     const jobs = await pages(`repos/${repo}/actions/runs/${run.id}/jobs`, "jobs")
     const metadata = jobs.find((job) => job.name === "metadata"), verify = jobs.find((job) => job.name === "verify"), smoke = jobs.find((job) => job.name === "audit-smoke"), publish = jobs.find((job) => job.name === "publish"), binaries = jobs.filter((job) => job.name?.startsWith("binaries ("))
     if (metadata?.conclusion !== "success" || verify?.conclusion !== "success" || smoke?.conclusion !== "success" || publish?.conclusion !== "failure" || binaries.length !== 5 || binaries.some((job) => job.conclusion !== "success")) continue
-    if (!successfulStep(metadata, "Run node scripts/release-publish.mjs metadata") || !successfulStep(publish, "Run actions/download-artifact@v8") || !successfulStep(publish, "Run anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b") || !successfulStep(publish, "Generate checksums")) continue
+    if (!successfulStep(metadata, "Run node scripts/release-publish.mjs metadata") || !successfulStep(publish, "Run actions/download-artifact@v8") || !successfulTrustedSBOMStep(publish) || !successfulStep(publish, "Generate checksums")) continue
     const failedPublish = publish.steps?.find((step) => step.name === "Publish verified assets without overwriting an existing release")
     if (failedPublish?.status !== "completed" || failedPublish.conclusion !== "failure") continue
     if (ci.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at)) || codeql.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at))) continue

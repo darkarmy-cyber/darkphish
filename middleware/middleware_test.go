@@ -311,6 +311,7 @@ func TestRequiredPATScopesAreResourceSpecific(t *testing.T) {
 		{http.MethodPost, "/api/smtp/", "sending-profiles:write"},
 		{http.MethodGet, "/api/imap/", "integrations:read"},
 		{http.MethodPost, "/api/import/site", "landing-pages:write"},
+		{http.MethodPost, "/api/import/email/images", "templates:write"},
 		{http.MethodPost, "/api/campaigns/1/results/rid/credential/reveal", "credentials:view"},
 		{http.MethodGet, "/api/unknown", ""},
 	}

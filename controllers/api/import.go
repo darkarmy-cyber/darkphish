@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
-	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/darkarmy-cyber/darkphish/util"
 	"github.com/jordan-wright/email"
@@ -62,7 +61,8 @@ func (as *Server) ImportEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	e, err := email.NewEmailFromReader(strings.NewReader(ir.Content))
 	if err != nil {
-		log.Error(err)
+		JSONResponse(w, models.Response{Success: false, Message: "Unable to parse email; provide the complete raw email source"}, http.StatusBadRequest)
+		return
 	}
 	// If the user wants to convert links to point to
 	// the landing page, let's make it happen by changing up

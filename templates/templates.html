@@ -74,6 +74,11 @@
                         <textarea rows="10" id="text_editor" class="darkphish-editor form-control" placeholder="Plaintext"></textarea>
                     </div>
                     <div role="tabpanel" class="tab-pane" id="html">
+                        <div class="help-block">
+                            <button type="button" class="btn btn-default" id="loadTemplateImages" onclick="templateImagePreview.load()" aria-describedby="templateImagePrivacy">Load external images</button>
+                            <p id="templateImagePrivacy">Loading previews contacts image hosts from this server and may register an email open. Only public HTTPS PNG, JPEG and GIF images up to 1 MB / 1 megapixel are supported. Original email URLs are not changed.</p>
+                            <p id="templateImageStatus" role="status" aria-live="polite">External images are blocked until you load their previews.</p>
+                        </div>
                         <textarea id="html_editor"></textarea>
                     </div>
                 </div>
@@ -140,5 +145,6 @@
 <script src="/js/src/vendor/ckeditor/ckeditor.js"></script>
 <script src="/js/src/vendor/ckeditor/adapters/jquery.js"></script>
 <script src="/js/dist/app/autocomplete.min.js"></script>
+<script src="/js/dist/app/template_images.min.js"></script>
 <script src="/js/dist/app/templates.min.js"></script>
 {{end}}

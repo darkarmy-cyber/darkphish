@@ -70,6 +70,7 @@ function save(idx) {
 }
 
 function dismiss() {
+    templateImagePreview.reset()
     $("#modal\\.flashes").empty()
     $("#attachmentsTable").dataTable().DataTable().clear().draw()
     $("#name").val("")
@@ -168,6 +169,7 @@ function edit(idx) {
         this.value = null
     })
     $("#html_editor").ckeditor()
+    templateImagePreview.reset(CKEDITOR.instances["html_editor"])
     setupAutocomplete(CKEDITOR.instances["html_editor"])
     $("#attachmentsTable").show()
     attachmentsTable = $('#attachmentsTable').DataTable({
@@ -232,6 +234,7 @@ function copy(idx) {
         this.value = null
     })
     $("#html_editor").ckeditor()
+    templateImagePreview.reset(CKEDITOR.instances["html_editor"])
     $("#attachmentsTable").show()
     attachmentsTable = $('#attachmentsTable').DataTable({
         destroy: true,
@@ -290,6 +293,7 @@ function importEmail() {
                 convert_links: convert_links
             })
             .success(function (data) {
+                templateImagePreview.reset(CKEDITOR.instances["html_editor"])
                 $("#text_editor").val(data.text)
                 $("#html_editor").val(data.html)
                 $("#subject").val(data.subject)

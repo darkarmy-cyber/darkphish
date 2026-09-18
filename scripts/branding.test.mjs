@@ -47,8 +47,19 @@ test('brand derivatives preserve existing vector artwork without external resour
   for (const name of ['darkphish-mark.svg']) {
     const svg = read(`static/images/${name}`)
     assert.ok(svg.includes(fish), `${name}: preserve original fish artwork`)
+    assert.doesNotMatch(svg, /<rect\b/, 'no opaque background behind the fish')
     assert.doesNotMatch(svg, /<script|<foreignObject|(?:href|src)=|\son\w+=/i)
   }
+})
+
+test('authenticated navbar always exposes account actions instead of a hamburger', () => {
+  const html = read('templates/base.html')
+  assert.match(html, /darkphish-topbar/)
+  assert.doesNotMatch(html, /navbar-toggle|navbar-collapse|data-toggle="collapse"/)
+  assert.match(html, /href="\/settings" title="Account settings: {{\.User.Username}}"/)
+  assert.match(html, /href="\/logout" aria-label="Sign out"/)
+  assert.match(html, /aria-label="Admin notifications"/)
+  assert.match(read('static/css/main.css'), /text-overflow: ellipsis; white-space: nowrap/)
 })
 
 test('the main brand image is the unchanged original DarkPhish artwork', () => {

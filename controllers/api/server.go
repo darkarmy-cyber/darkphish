@@ -111,6 +111,7 @@ func (as *Server) registerRoutes() {
 	router.HandleFunc("/util/send_test_email", as.SendTestEmail)
 	router.HandleFunc("/import/group", as.ImportGroup)
 	router.HandleFunc("/import/email", as.ImportEmail)
+	router.HandleFunc("/import/email/images", as.limitSensitive(http.HandlerFunc(as.PreviewEmailImages))).Methods(http.MethodPost)
 	router.HandleFunc("/import/site", as.ImportSite)
 	router.HandleFunc("/webhooks/", mid.Use(as.Webhooks, mid.RequirePermission(models.PermissionModifySystem)))
 	router.HandleFunc("/webhooks/{id:[0-9]+}/validate", mid.Use(as.ValidateWebhook, mid.RequirePermission(models.PermissionModifySystem)))

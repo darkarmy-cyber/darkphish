@@ -34,6 +34,54 @@
 .darkphish-brand img { border-radius: 8px; }
 .darkphish-brand .brand-light { color: #fff; }
 
+/* Account actions stay visible at every width; no Bootstrap collapse. */
+.darkphish-topbar > .container-fluid {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.darkphish-topbar > .container-fluid::before,
+.darkphish-topbar > .container-fluid::after { display: none; }
+.darkphish-topbar .navbar-header { margin: 0 !important; flex: 0 0 auto; }
+.darkphish-topbar .darkphish-account { min-width: 0; }
+.darkphish-topbar .navbar-nav {
+    display: flex;
+    align-items: center;
+    margin: 0;
+    float: none !important;
+}
+.darkphish-topbar .navbar-nav > li { min-width: 0; }
+.darkphish-topbar #adminNotifications { flex: 0 0 auto; }
+.darkphish-topbar #navbar-dropdown { display: flex; margin: 0; }
+.darkphish-topbar .darkphish-account-name {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    max-width: 220px;
+}
+.darkphish-account-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.darkphish-account-name .fa { flex: 0 0 auto; }
+.darkphish-topbar #navbar-dropdown > a:last-child { flex: 0 0 auto; }
+.darkphish-topbar .navbar-nav .open .dropdown-menu {
+    position: absolute;
+    left: auto;
+    right: 0;
+    min-width: 220px;
+}
+@media (max-width: 600px) {
+    .darkphish-topbar > .container-fluid { padding: 0 8px; gap: 4px; }
+    .darkphish-topbar .navbar-brand.darkphish-brand { padding: 10px 0; gap: 4px; font-size: 18px; }
+    .darkphish-topbar .darkphish-brand img { width: 30px; height: 30px; }
+    .darkphish-topbar .navbar-nav > li > a { padding: 10px 8px; }
+    .darkphish-topbar #navbar-dropdown > a { padding: 10px 8px; }
+    .darkphish-topbar .darkphish-account-name { max-width: 100px; }
+    .darkphish-topbar #adminNotifications { position: static; }
+    .darkphish-topbar .navbar-nav .open .dropdown-menu { right: 8px; max-width: calc(100vw - 16px); }
+    .darkphish-topbar .dropdown-menu > li > a { white-space: normal; }
+}
+
 body.auth-page {
     min-height: 100vh;
     color: #e8f3f6;

@@ -31,6 +31,22 @@ test('real authentication is retained, without the redundant login link or black
   assert.match(read('templates/reset_password.html'), /minlength="12"/)
 })
 
+test('reduced-motion durations survive the shipped CSS minifier', () => {
+  const bundle = read('static/css/dist/darkphish.css')
+  const rule = bundle.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^}]+)\}/)?.[1]
+  assert.ok(rule, 'shipped bundle contains the reduced-motion rule')
+  assert.match(rule, /\.enterprise-ui\s*\*/)
+  assert.match(rule, /\.auth-page\s*\*/)
+  for (const property of ['animation-duration', 'transition-duration']) {
+    const value = rule.match(new RegExp(`(?:[;{])\\s*${property}:\\s*([\\d.]+)(ms|s)\\s*!important(?:;|$)`))
+    assert.ok(value, `${property} must be a valid important CSS time`)
+    const milliseconds = Number(value[1]) * (value[2] === 's' ? 1000 : 1)
+    assert.ok(milliseconds > 0 && milliseconds <= 1, `${property} is bounded to 1ms`)
+  }
+  assert.match(rule, /animation-iteration-count:1!important/)
+  assert.match(rule, /scroll-behavior:auto!important/)
+})
+
 test('wide editors retain modal integration, import IDs and external image consent', () => {
   for (const name of ['templates','landing_pages']) {
     const html = read(`templates/${name}.html`)

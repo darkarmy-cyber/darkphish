@@ -30,7 +30,7 @@ $(function () {
         // server state before allowing a retry, without repeating the POST.
         check(false).done(function (status) {
             if (status.applying) watchRestart(100);
-            else failed(xhr);
+            else if (!status.result && !status.error) failed(xhr);
         });
     }
     function watchRestart(remaining) {

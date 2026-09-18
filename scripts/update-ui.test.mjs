@@ -118,6 +118,25 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
     assert.equal(p.requests.filter(r => r.url === '/updates/apply').length, 1)
   })
 
+  test(`${path}: ambiguous apply failure preserves the authoritative completed outcome`, () => {
+    for (const outcome of [
+      {result: 'Update completed successfully.', available: false},
+      {result: 'Update failed and was rolled back.', available: true},
+      {error: 'Recovery requires administrator intervention.', available: true}
+    ]) {
+      const p = page(path)
+      p.status({}); p.confirm(); p.requests.at(-1).resolve({})
+      p.requests.at(-1).reject({responseJSON: {message: 'Stale transport error'}})
+      assert.equal(p.requests.at(-1).url, '/updates')
+      p.status({applying: false, ...outcome})
+      assert.equal(p.$('#updateStatus').value, outcome.error || outcome.result)
+      assert.equal(p.$('#updateCheck').disabled, false)
+      assert.equal(p.$('#updateApply').disabled, !!outcome.error || !outcome.available)
+      assert.equal(p.timers.length, 0)
+      assert.equal(p.requests.filter(r => r.url === '/updates/apply').length, 1)
+    }
+  })
+
   test(`${path}: rejected apply can be retried only after fresh status; failed status stays closed`, () => {
     const p = page(path)
     p.status({}); p.confirm(); p.requests.at(-1).resolve({})

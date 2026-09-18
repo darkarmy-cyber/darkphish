@@ -25,12 +25,12 @@ $(function () {
         renderAdminNotification(status);
     }
     function failed(xhr) { $("#updateStatus").text(xhr.responseJSON && xhr.responseJSON.message || "Unable to complete the update operation"); }
-    function recover(xhr) {
+    function recover(xhr, mayHaveApplied) {
         // A failed response can still mean apply reached the supervisor. Recheck
         // server state before allowing a retry, without repeating the POST.
         check(false).done(function (status) {
             if (status.applying) watchRestart(100);
-            else if (!status.result && !status.error) failed(xhr);
+            else if (!mayHaveApplied || (!status.result && !status.error)) failed(xhr);
         });
     }
     function watchRestart(remaining) {
@@ -71,8 +71,8 @@ $(function () {
                     controls();
                     $("#updateStatus").text(response.message);
                     watchRestart(100);
-                }).fail(recover);
-            }).fail(recover);
+                }).fail(function (xhr) { recover(xhr, true); });
+            }).fail(function (xhr) { recover(xhr, false); });
         });
     });
     check(false).done(function (status) {

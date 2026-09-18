@@ -101,6 +101,20 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
     assert.equal(p.requests.filter(r => r.url === '/updates/apply').length, 0)
   })
 
+  test(`${path}: a persisted previous result cannot hide a new authentication failure`, () => {
+    for (const previous of ['Update completed successfully.', 'Update failed and was rolled back.']) {
+      const p = page(path)
+      p.status({result: previous}); p.confirm()
+      p.requests.at(-1).reject({responseJSON: {message: 'Incorrect password'}})
+      assert.equal(p.requests.at(-1).url, '/updates')
+      p.status({result: previous})
+      assert.equal(p.$('#updateStatus').value, 'Incorrect password')
+      assert.equal(p.$('#updateApply').disabled, false)
+      assert.equal(p.requests.filter(r => r.url === '/updates/apply').length, 0)
+      assert.equal(p.timers.length, 0)
+    }
+  })
+
   test(`${path}: ambiguous apply failure rechecks and watches without duplicate POST`, () => {
     const p = page(path)
     p.status({}); p.confirm(); p.requests.at(-1).resolve({})

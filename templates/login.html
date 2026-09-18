@@ -15,39 +15,34 @@
 </head>
 
 <body class="auth-page">
-    <div class="navbar navbar-inverse navbar-fixed-top" role="navigation">
-        <div class="container-fluid">
-            <div class="navbar-header">
-                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
-                    <span class="sr-only">Toggle navigation</span>
-                    <span class="icon-bar"></span>
-                    <span class="icon-bar"></span>
-                    <span class="icon-bar"></span>
-                </button>
-                <a class="navbar-brand darkphish-brand" href="/" aria-label="DarkPhish home"><img src="/images/darkphish-mark.svg" alt="" width="40" height="40"><span>Dark<span class="brand-light">Phish</span></span></a>
-            </div>
-            <div class="navbar-collapse collapse">
-                <ul class="nav navbar-nav navbar-right">
-                    <li>
-                        <a id="login-button" href="/login">
-                            <button type="button" class="btn btn-primary">Login</button>
-                        </a>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </div>
-    <main class="container auth-container">
+    <header class="auth-header">
+        <a class="navbar-brand darkphish-brand" href="/" aria-label="DarkPhish home"><img src="/images/darkphish-mark.svg" alt="" width="40" height="40"><span>Dark<span class="brand-light">Phish</span></span></a>
+        <a href="https://docs.darkphish.sk/">Documentation <span aria-hidden="true">↗</span></a>
+    </header>
+    <main class="auth-container">
+        <section class="auth-introduction" aria-labelledby="welcome-heading">
+            <p class="auth-eyebrow">Human risk management</p>
+            <h1 id="welcome-heading">Build a more<br>security-aware<br>organisation.</h1>
+            <p>A considered workspace for authorised simulations, clear insights and continuous improvement.</p>
+            <p class="auth-signature">Clarity for your team.<br>Confidence in your next step.</p>
+        </section>
         <form class="form-signin" action="" method="POST">
-            <img id="logo" src="/images/darkphish-brand.png" alt="DarkPhish — Platform for phishing simulations" width="1600" height="873" />
-            <h2 class="form-signin-heading">Please sign in</h2>
+            <h2 class="form-signin-heading">Welcome back.</h2>
+            <p class="auth-subtitle">Sign in to your DarkPhish workspace.</p>
             {{template "flashes" .Flashes}}
-            <input type="text" name="username" class="form-control top-input" placeholder="Username" aria-label="Username" autocomplete="username" required autofocus>
-            <input type="password" name="password" class="form-control bottom-input" placeholder="Password" aria-label="Password" autocomplete="current-password" required>
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input id="username" type="text" name="username" class="form-control" placeholder="Your username" autocomplete="username" required autofocus>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input id="password" type="password" name="password" class="form-control" placeholder="Enter your password" autocomplete="current-password" required>
+            </div>
             <button class="btn btn-lg btn-primary btn-block" type="submit">Sign in</button>
+            <p class="auth-help">Having trouble? Contact your administrator.</p>
         </form>
-        <p class="auth-docs"><a href="https://docs.darkphish.sk/">DarkPhish documentation</a></p>
     </main>
+    <footer class="auth-footer"><span>DarkPhish · Authorised use only</span><a href="https://docs.darkphish.sk/">DarkPhish documentation</a></footer>
     <!-- Placed at the end of the document so the pages load faster -->
     <script src="/js/dist/vendor.min.js"></script>
 </body>

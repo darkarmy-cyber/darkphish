@@ -93,6 +93,7 @@ styles = function () {
             css_directory + 'sweetalert2.min.css',
             css_directory + 'select2.min.css',
             css_directory + 'select2-bootstrap.min.css',
+            css_directory + 'enterprise.css',
         ])
         .pipe(cleanCSS({
             compatibilty: 'ie9'

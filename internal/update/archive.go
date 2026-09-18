@@ -13,7 +13,11 @@ import (
 	"strings"
 )
 
-var runtimeEntries = []string{"darkphish", "VERSION", "LICENSE", "NOTICE.md", "README.md", "CHANGELOG.md", "db", "templates", "static"}
+// The bundled public license keyring is release-owned runtime, not an external
+// secret. Keep it in the same backup/install/rollback transaction as the binary.
+const bundledLicenseKeyring = "license-public-keys.json"
+
+var runtimeEntries = []string{"darkphish", "VERSION", "LICENSE", "NOTICE.md", "README.md", "CHANGELOG.md", bundledLicenseKeyring, "db", "templates", "static"}
 
 // Extract accepts only regular native release files. Symlinks, hardlinks,
 // devices, ambiguous names, duplicates and archive bombs are rejected.

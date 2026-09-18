@@ -95,6 +95,9 @@ func (l Layout) Validate() error {
 			}
 		}
 		root := strings.Split(rel, string(filepath.Separator))[0]
+		if root == bundledLicenseKeyring && (rel != bundledLicenseKeyring || d.IsDir()) {
+			return errors.New("bundled license keyring must be a regular file")
+		}
 		allowed := root == l.Config || root == l.Database || root == l.Database+"-wal" || root == l.Database+"-shm" || root == "config.json"
 		for _, entry := range runtimeEntries {
 			allowed = allowed || root == entry

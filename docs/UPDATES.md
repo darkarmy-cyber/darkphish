@@ -65,6 +65,20 @@ automatically repeat the apply request.
 
 ### Apply flow
 
+The official `license-public-keys.json` is release-owned public runtime data,
+not an operator secret. It is required in incoming native packages and travels
+with the binary through checksum-verified backup, replacement and rollback.
+Arbitrary neighboring files, symbolic links and a directory in place of the
+keyring remain unsupported. Custom operator-managed trust files should live
+outside the managed release directory and be referenced by configuration.
+
+Affected older updaters omit this bundled file from their allowlist and report
+`unmanaged runtime files` on an otherwise valid official installation. Moving
+or deleting the public keyring is not a remedy: it can break licensing, and the
+old extractor also rejects it in the incoming official archive. Use a verified
+manual upgrade to a release containing this fix once; installing GitHub CLI
+alone cannot repair the already-running updater. Do not weaken package checks.
+
 Update now requests a fresh password reauthentication through the existing
 privileged-session mechanism and consumes that grant. PATs cannot apply
 updates. No browser-supplied download URL, shell command or filesystem path is

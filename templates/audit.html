@@ -16,10 +16,12 @@
         <a id="audit_csv" class="btn btn-default">Export CSV</a>
         <a id="audit_json" class="btn btn-default">Export JSON</a>
     </form>
+    <div class="table-responsive">
     <table class="table table-striped" id="auditTable">
         <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Result</th><th>Request ID</th><th>Source</th></tr></thead>
         <tbody></tbody>
     </table>
+    </div>
     <button id="audit_prev" class="btn btn-default">Previous</button>
     <span id="audit_page"></span>
     <button id="audit_next" class="btn btn-default">Next</button>

@@ -13,6 +13,7 @@ var campaign = {}
 
 // Launch attempts to POST to /campaigns/
 function launch() {
+    if ($("#launchButton").prop("disabled")) return
     Swal.fire({
         title: "Are you sure?",
         text: "This will schedule the campaign to be launched.",
@@ -93,6 +94,7 @@ function launch() {
 
 // Attempts to send a test email by POSTing to /campaigns/
 function sendTestEmail() {
+    if ($("#sendTestModalSubmit").prop("disabled")) return
     var test_email_request = {
         template: {
             name: $("#template").select2("data")[0].text

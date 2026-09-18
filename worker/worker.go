@@ -76,7 +76,7 @@ func (w *DefaultWorker) Shutdown() {
 
 // New creates a new worker object to handle the creation of campaigns
 func New(options ...func(Worker) error) (Worker, error) {
-	defaultMailer := mailer.NewMailWorker()
+	defaultMailer := mailer.NewAuthorizedMailWorker(models.CheckSendingLicense)
 	w := &DefaultWorker{
 		mailer: defaultMailer,
 	}
@@ -100,6 +100,9 @@ func WithMailer(m mailer.Mailer) func(*DefaultWorker) error {
 // processCampaigns loads maillogs scheduled to be sent before the provided
 // time and sends them to the mailer.
 func (w *DefaultWorker) processCampaigns(t time.Time) error {
+	if err := models.CheckSendingLicense(); err != nil {
+		return err
+	}
 	if err := models.CheckCampaignLicense(); err != nil {
 		return err
 	}
@@ -210,6 +213,10 @@ func (w *DefaultWorker) Start() {
 
 // LaunchCampaign starts a campaign
 func (w *DefaultWorker) LaunchCampaign(c models.Campaign) {
+	if err := models.CheckSendingLicense(); err != nil {
+		log.Warn("Campaign launch blocked: activate a valid DarkPhish license")
+		return
+	}
 	if err := models.CheckCampaignLicense(); err != nil {
 		log.Warn("Campaign launch blocked by Community license state")
 		return
@@ -255,6 +262,9 @@ func (w *DefaultWorker) LaunchCampaign(c models.Campaign) {
 
 // SendTestEmail sends a test email
 func (w *DefaultWorker) SendTestEmail(s *models.EmailRequest) error {
+	if err := models.CheckSendingLicense(); err != nil {
+		return err
+	}
 	if !w.begin() {
 		return errors.New("mailer is shutting down")
 	}

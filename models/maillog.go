@@ -92,6 +92,12 @@ func (m *MailLog) Unlock() error {
 	return db.Save(&m).Error
 }
 
+// PauseDelivery retains a licensed campaign's unsent recipients for a future
+// retry after activation/renewal, without marking them sent or deleting them.
+func (m *MailLog) PauseDelivery(_ error) error {
+	return m.Unlock()
+}
+
 // Lock sets the processing flag so that other processes cannot modify the maillog
 func (m *MailLog) Lock() error {
 	m.Processing = true

@@ -23,6 +23,10 @@ func (as *Server) SendTestEmail(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, models.Response{Success: false, Message: "Method not allowed"}, http.StatusBadRequest)
 		return
 	}
+	if err := models.CheckSendingLicense(); err != nil {
+		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusForbidden)
+		return
+	}
 	err := json.NewDecoder(r.Body).Decode(s)
 	if err != nil {
 		JSONResponse(w, models.Response{Success: false, Message: "Error decoding JSON Request"}, http.StatusBadRequest)
@@ -126,6 +130,10 @@ func (as *Server) SendTestEmail(w http.ResponseWriter, r *http.Request) {
 	// Send the test email
 	err = as.worker.SendTestEmail(s)
 	if err != nil {
+		if errors.Is(err, models.ErrSendingLicenseRequired) {
+			JSONResponse(w, models.Response{Success: false, Message: models.ErrSendingLicenseRequired.Error()}, http.StatusForbidden)
+			return
+		}
 		log.Error(err)
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusInternalServerError)
 		return

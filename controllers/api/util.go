@@ -41,7 +41,7 @@ func (as *Server) SendTestEmail(w http.ResponseWriter, r *http.Request) {
 			"{{if .Position}} Position: {{.Position}}\n{{end}}" +
 			"\nNow go send some phish!"
 		t := models.Template{
-			Subject: "Default Email from Darkphish",
+			Subject: "Default Email from DarkPhish",
 			Text:    text,
 		}
 		s.Template = t

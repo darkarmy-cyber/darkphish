@@ -13,7 +13,7 @@ test("badge counts a stable update and renders release text without HTML",()=>{
  const context=vm.createContext({$});vm.runInContext(readFileSync(new URL("../static/js/src/app/notifications.js",import.meta.url),"utf8"),context);
  context.renderAdminNotification({available:true,badge:1,latest_version:"<img onerror=alert(1)>"});
  assert.equal(elements.get("#adminNotificationBadge").value,1);assert.equal(elements.get("#adminNotificationBadge").hidden,false);
- assert.equal(elements.get("#adminReleaseNotification").value,"Darkphish <img onerror=alert(1)> is available");
+ assert.equal(elements.get("#adminReleaseNotification").value,"DarkPhish <img onerror=alert(1)> is available");
  context.renderAdminNotification({available:false,badge:1});assert.equal(elements.get("#adminNotificationBadge").hidden,true);
  context.renderAdminNotification({available:true,badge:99});assert.equal(elements.get("#adminNotificationBadge").hidden,true);
  context.renderAdminNotification({available:true,badge:1,error:"GitHub unavailable"});

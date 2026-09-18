@@ -24,7 +24,7 @@ live copy of a MySQL or PostgreSQL database.
 An administrator must separately install GitHub CLI 2.100.0 or newer as
 `/usr/bin/gh`. The executable and its parent directories must be root-owned,
 not symlinks, and not group/world writable. Missing or outdated verifiers make
-apply unavailable. Darkphish never downloads its own verifier. No GitHub login
+apply unavailable. DarkPhish never downloads its own verifier. No GitHub login
 or token is required: public attestation bundles are fetched without credentials
 and verified offline against the embedded Sigstore Public Good trust root.
 
@@ -37,6 +37,33 @@ service after changing the temporary administrator password to enable the
 supervisor when the bootstrap password file has been removed.
 
 ## Verification, backup and restart
+
+### When Update now is disabled
+
+The bell reports that a newer release exists, independently of whether this
+installation can apply it. The Update tab shows the blocked prerequisite
+separately from release information and previous update results.
+
+If the reason mentions `/usr/bin/gh`, ask the server administrator to install
+GitHub CLI **2.100.0 or newer** using the official GitHub CLI distribution
+instructions. Check `/usr/bin/gh version` on the server. Do not use a symlink,
+an executable from a user's home directory, or a group/world-writable path.
+Neither `gh auth login` nor a GitHub token is required for the updater.
+DarkPhish does not install this prerequisite or weaken signature verification.
+
+After fixing a startup prerequisite, restart the DarkPhish service (for the
+standard systemd unit: `sudo systemctl restart darkphish.service`) and reload
+the Update tab. Eligibility and the supervisor are initialized at startup;
+**Check now** only refreshes release metadata. A different unmet prerequisite
+may then be reported. Use a verified manual upgrade when this installation is
+unsupported; do not simply enable the disabled button in the browser.
+
+Cancelling password confirmation leaves Update now available. After a failed
+reauthentication or apply request, the UI rechecks server state before offering
+a retry. A lost response may still mean an update started, so it must never
+automatically repeat the apply request.
+
+### Apply flow
 
 Update now requests a fresh password reauthentication through the existing
 privileged-session mechanism and consumes that grant. PATs cannot apply

@@ -18,7 +18,7 @@ func (s *ModelsSuite) TestCredentialPolicyOnlyNeverStoresValue(c *check.C) {
 	}
 	c.Assert(PostCampaign(&campaign, 1), check.IsNil)
 	result := campaign.Results[0]
-	credential := "Darkphish-example-9"
+	credential := "DarkPhish-example-9"
 	c.Assert(RecordCredentialSubmission(campaign, result, credential), check.IsNil)
 
 	var finding CredentialPolicyResult

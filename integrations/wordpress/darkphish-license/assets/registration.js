@@ -60,7 +60,7 @@
             key.textContent = result.license_key;
             key.hidden = false;
             verify.hidden = true;
-            status.textContent = 'Save this key securely and enter it in Darkphish → Settings → Licensing. It is displayed only once. Request a new verification link if you lose it.';
+            status.textContent = 'Save this key securely and enter it in DarkPhish → Settings → Licensing. It is displayed only once. Request a new verification link if you lose it.';
             if (result.outcome === 'recovered') status.textContent = 'Recovered. Original expiry: ' + new Date(result.expires_at * 1000).toISOString().slice(0, 10) + ' UTC. Limits and installation are unchanged. ' + (result.email_accepted ? 'A copy has been submitted for email delivery.' : 'The email copy could not be sent. Save this key securely.');
         } catch (error) { status.textContent = error.message; verify.disabled = false; }
     });

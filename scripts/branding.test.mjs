@@ -1,11 +1,25 @@
 import assert from 'node:assert/strict'
-import {readFileSync, existsSync} from 'node:fs'
+import {readFileSync, existsSync, readdirSync} from 'node:fs'
 import {resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import test from 'node:test'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const read = path => readFileSync(resolve(root, path), 'utf8')
+
+test('application templates and shipped application scripts consistently say DarkPhish', () => {
+  for (const directory of ['templates', 'static/js/src/app', 'static/js/dist/app']) {
+    for (const file of readdirSync(resolve(root, directory), {recursive: true})) {
+      if (!/\.(?:html|js)$/.test(file)) continue
+      assert.doesNotMatch(read(`${directory}/${file}`), /\b(?:Darkphish|darkPhish)\b/, `${directory}/${file}`)
+    }
+  }
+  for (const name of ['base', 'login', 'reset_password']) {
+    assert.match(read(`templates/${name}.html`), /<title>[^<]*DarkPhish[^<]*<\/title>/)
+  }
+  assert.match(read('templates/update.html'), /<h2>Update DarkPhish<\/h2>/)
+  assert.match(read('darkphish.go'), /"DarkPhish %s \(version %s, commit %s, built %s\)"/)
+})
 
 test('all administrative shells use local DarkPhish brand assets', () => {
   for (const name of ['login', 'reset_password', 'base']) {

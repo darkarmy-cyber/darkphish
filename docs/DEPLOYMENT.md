@@ -1,6 +1,6 @@
 # Production deployment
 
-Native binaries are the supported Darkphish 0.3 release artifacts. Each release
+Native binaries are the supported DarkPhish 0.3 release artifacts. Each release
 contains SHA-256 checksums and an SPDX SBOM; attestations are included when the
 private-repository plan supports them. Historical Docker files
 remain optional and receive no required CI or publishing guarantee.
@@ -62,7 +62,7 @@ checkpoints and manifests. Run `darkphish audit verify` after rotation.
 
 Set `secrets.provider` to `vault` and configure `secrets.vault.address`, `mount`,
 `key_name`, optional `namespace`/`ca_cert`, and a narrowly scoped token through
-`DARKPHISH_VAULT_TOKEN` or `token_file`. Production requires HTTPS. Darkphish
+`DARKPHISH_VAULT_TOKEN` or `token_file`. Production requires HTTPS. DarkPhish
 generates a fresh local data key for each value and asks Transit to encrypt only
 that key; Vault never receives the credential plaintext. Do not configure an
 implicit fallback. During a local-to-Vault migration keep the local read keys and
@@ -110,7 +110,7 @@ A database backup containing encrypted values cannot be restored usefully withou
 the local envelope keys or access to the same external-provider key references.
 Back up configuration and key material through the organization's secret-management
 system, never inside a database dump. Preserve audit signing/verification keys
-separately. A restore drill must start Darkphish, run `secrets status`, decrypt a
+separately. A restore drill must start DarkPhish, run `secrets status`, decrypt a
 non-production integration secret, run `audit verify`, and verify the latest signed
 export before the restored instance is trusted.
 

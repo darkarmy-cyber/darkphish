@@ -7,7 +7,7 @@ scope list, and RFC 3339 expiry. The response shows a value in this form once:
 darkphish_pat_<prefix>_<secret>
 ```
 
-Darkphish stores the prefix and a SHA-256 digest of the 256-bit random secret,
+DarkPhish stores the prefix and a SHA-256 digest of the 256-bit random secret,
 never the raw value. Authentication performs a constant-time digest comparison,
 checks expiry and revocation, applies token scopes, then applies the user's
 current account state and role permissions. Last-use updates are throttled.

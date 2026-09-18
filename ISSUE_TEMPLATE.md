@@ -2,9 +2,9 @@
 
 **Please use this template when creating a new issue. If you do not follow this template format, your issue may be closed without comment.**
 
-Before filing a new issue, please use the search bar at the top of the browser to search for similar issues. Also, please make sure you have read our [documentation](https://getdarkphish.com/documentation/), which covers how to use Darkphish.
+Before filing a new issue, please use the search bar at the top of the browser to search for similar issues. Also, please make sure you have read our [documentation](https://getdarkphish.com/documentation/), which covers how to use DarkPhish.
 
-What version of Darkphish are you using?:
+What version of DarkPhish are you using?:
 
 Brief description of the issue:
 

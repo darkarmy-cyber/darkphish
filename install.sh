@@ -51,14 +51,14 @@ die() {
 
 usage() {
     cat <<'USAGE_EOF'
-Darkphish Linux installer
+DarkPhish Linux installer
 
 Usage:
   sudo ./install.sh
   ./install.sh --help
 
 The installer performs a fresh production installation only. It refuses to
-replace an existing Darkphish installation. Supported hosts are Linux amd64 or
+replace an existing DarkPhish installation. Supported hosts are Linux amd64 or
 arm64 systems using systemd 245 or newer and an apt, dnf, or yum package family.
 
 Default layout:
@@ -91,7 +91,7 @@ openssl_safe() {
 
 rollback_install() {
     set +e
-    warn "installation did not complete; removing installer-created Darkphish artifacts"
+    warn "installation did not complete; removing installer-created DarkPhish artifacts"
 
     if [[ ${SERVICE_FILE_CREATED} -eq 1 ]]; then
         systemctl disable --now "${SERVICE_NAME}" >/dev/null 2>&1 || true
@@ -162,7 +162,7 @@ prepare_build_root() {
 }
 
 verify_source_tree() {
-    [[ -f "${SOURCE_DIR}/go.mod" && -f "${SOURCE_DIR}/go.sum" && -f "${SOURCE_DIR}/VERSION" && -f "${SOURCE_DIR}/config.json" ]] || die "run install.sh from the Darkphish repository root"
+    [[ -f "${SOURCE_DIR}/go.mod" && -f "${SOURCE_DIR}/go.sum" && -f "${SOURCE_DIR}/VERSION" && -f "${SOURCE_DIR}/config.json" ]] || die "run install.sh from the DarkPhish repository root"
     [[ -d "${SOURCE_DIR}/db" && -d "${SOURCE_DIR}/templates" && -d "${SOURCE_DIR}/static/js/dist" && -d "${SOURCE_DIR}/static/css/dist" ]] || die "required runtime assets are missing from the repository"
     command -v git >/dev/null 2>&1 || die "git is required to verify the source tree"
     command -v tar >/dev/null 2>&1 || die "tar is required to prepare the verified source snapshot before host mutation"
@@ -268,7 +268,7 @@ refuse_existing_install() {
         "/usr/lib/systemd/system/${SERVICE_NAME}" \
         "/lib/systemd/system/${SERVICE_NAME}"; do
         if path_entry_exists "${managed_path}"; then
-            die "existing Darkphish service/runtime path found: ${managed_path}; refusing to overwrite it"
+            die "existing DarkPhish service/runtime path found: ${managed_path}; refusing to overwrite it"
         fi
     done
 
@@ -348,7 +348,7 @@ build_darkphish() {
     fi
     ldflags="-s -w -X main.commitSHA=${SOURCE_SHA} -X main.builtAt=${SOURCE_BUILT_AT}${release_ldflag}"
 
-    log "Building Darkphish ${SOURCE_VERSION} from ${SOURCE_SHA}"
+    log "Building DarkPhish ${SOURCE_VERSION} from ${SOURCE_SHA}"
     mkdir -p -- "${BUILD_ROOT}/home" "${BUILD_ROOT}/gomodcache" "${BUILD_ROOT}/gocache"
 
     (
@@ -374,8 +374,8 @@ build_darkphish() {
             "${GO_BIN}" build -trimpath -ldflags "${ldflags}" -o "${BUILD_ROOT}/darkphish" ./
     )
 
-    [[ -x "${BUILD_ROOT}/darkphish" ]] || die "Darkphish build did not produce an executable"
-    env -i PATH="${PATH}" "${BUILD_ROOT}/darkphish" version >/dev/null || die "built Darkphish executable failed its version smoke check"
+    [[ -x "${BUILD_ROOT}/darkphish" ]] || die "DarkPhish build did not produce an executable"
+    env -i PATH="${PATH}" "${BUILD_ROOT}/darkphish" version >/dev/null || die "built DarkPhish executable failed its version smoke check"
 }
 
 create_service_account() {
@@ -566,7 +566,7 @@ create_systemd_unit() {
     SERVICE_FILE_CREATED=1
     cat > "${SERVICE_FILE}" <<EOF_SERVICE
 [Unit]
-Description=Darkphish authorized phishing simulation platform
+Description=DarkPhish authorized phishing simulation platform
 Documentation=https://github.com/darkarmy-cyber/darkphish
 Wants=network-online.target
 After=network-online.target
@@ -620,18 +620,18 @@ verify_loaded_systemd_unit() {
 
     local fragment dropins effective_user effective_group
     fragment="$(systemctl show "${SERVICE_NAME}" -p FragmentPath --value)" || die "cannot inspect loaded systemd unit"
-    [[ "${fragment}" == "${SERVICE_FILE}" ]] || die "systemd loaded Darkphish from an unexpected unit path: ${fragment:-unknown}"
+    [[ "${fragment}" == "${SERVICE_FILE}" ]] || die "systemd loaded DarkPhish from an unexpected unit path: ${fragment:-unknown}"
 
     dropins="$(systemctl show "${SERVICE_NAME}" -p DropInPaths --value)" || die "cannot inspect systemd drop-ins"
     [[ -z "${dropins}" ]] || die "unexpected systemd drop-ins affect ${SERVICE_NAME}: ${dropins}"
 
     effective_user="$(systemctl show "${SERVICE_NAME}" -p User --value)" || die "cannot inspect systemd service user"
     effective_group="$(systemctl show "${SERVICE_NAME}" -p Group --value)" || die "cannot inspect systemd service group"
-    [[ "${effective_user}" == "${APP_USER}" && "${effective_group}" == "${APP_GROUP}" ]] || die "systemd service identity differs from the dedicated Darkphish account"
+    [[ "${effective_user}" == "${APP_USER}" && "${effective_group}" == "${APP_GROUP}" ]] || die "systemd service identity differs from the dedicated DarkPhish account"
 }
 
 start_service() {
-    log "Enabling and starting Darkphish"
+    log "Enabling and starting DarkPhish"
     verify_loaded_systemd_unit
     systemctl enable --now "${SERVICE_NAME}" >/dev/null
 
@@ -665,7 +665,7 @@ start_service() {
 
     systemctl --no-pager --full status "${SERVICE_NAME}" || true
     journalctl --no-pager -u "${SERVICE_NAME}" -n 50 || true
-    die "Darkphish did not become application-ready on both admin and simulation listeners; inspect: journalctl -u ${SERVICE_NAME}"
+    die "DarkPhish did not become application-ready on both admin and simulation listeners; inspect: journalctl -u ${SERVICE_NAME}"
 }
 
 print_completion() {

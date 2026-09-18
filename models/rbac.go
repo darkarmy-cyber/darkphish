@@ -3,10 +3,10 @@ package models
 /*
 Design:
 
-Darkphish implements simple Role-Based-Access-Control (RBAC) to control access to
+DarkPhish implements simple Role-Based-Access-Control (RBAC) to control access to
 certain resources.
 
-By default, Darkphish has two separate roles, with each user being assigned to
+By default, DarkPhish has two separate roles, with each user being assigned to
 a single role:
 
 * Admin  - Can modify all objects as well as system-level configuration
@@ -26,22 +26,22 @@ requested permission.
 */
 
 const (
-	// RoleAdmin is used for Darkphish system administrators. Users with this
-	// role have the ability to manage all objects within Darkphish, as well as
+	// RoleAdmin is used for DarkPhish system administrators. Users with this
+	// role have the ability to manage all objects within DarkPhish, as well as
 	// system-level configuration, such as users and URLs.
 	RoleAdmin = "admin"
-	// RoleUser is used for standard Darkphish users. Users with this role can
-	// create, manage, and view Darkphish objects and campaigns.
+	// RoleUser is used for standard DarkPhish users. Users with this role can
+	// create, manage, and view DarkPhish objects and campaigns.
 	RoleUser = "user"
 	// RoleSecurityReviewer is intentionally narrower than an administrator and
 	// only gains sensitive campaign access through an explicit assignment.
 	RoleSecurityReviewer = "security_reviewer"
 
-	// PermissionViewObjects determines if a role can view standard Darkphish
+	// PermissionViewObjects determines if a role can view standard DarkPhish
 	// objects such as campaigns, groups, landing pages, etc.
 	PermissionViewObjects = "view_objects"
 	// PermissionModifyObjects determines if a role can create and modify
-	// standard Darkphish objects.
+	// standard DarkPhish objects.
 	PermissionModifyObjects = "modify_objects"
 	// PermissionModifySystem determines if a role can manage system-level
 	// configuration.
@@ -54,7 +54,7 @@ const (
 	PermissionAuditSelfSensitiveRead = "audit:self-sensitive-read"
 )
 
-// Role represents a user role within Darkphish. Each user has a single role
+// Role represents a user role within DarkPhish. Each user has a single role
 // which maps to a set of permissions.
 type Role struct {
 	ID          int64        `json:"-"`

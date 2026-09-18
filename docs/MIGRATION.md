@@ -1,9 +1,9 @@
-# Migration to Darkphish 0.3
+# Migration to DarkPhish 0.3
 
 Back up the database, configuration, certificates, and runtime data before
-starting. Darkphish applies database-specific Goose migrations in place for
+starting. DarkPhish applies database-specific Goose migrations in place for
 SQLite and MySQL. PostgreSQL is supported for new 0.3 installations through a
-consolidated upstream baseline followed by the Darkphish 0.1, 0.2, and 0.3
+consolidated upstream baseline followed by the DarkPhish 0.1, 0.2, and 0.3
 migrations. Cross-engine conversion is not automatic; use a validated ETL and
 restore plan if changing database engines.
 
@@ -53,12 +53,12 @@ Existing installations with an administrator account do not bootstrap again.
 9. Verify `/healthz`, `/readyz`, PAT scope enforcement, audit paging/export, and
    an authorized non-production campaign.
 
-Historical credential values discarded by prior Darkphish versions remain lost.
+Historical credential values discarded by prior DarkPhish versions remain lost.
 The migration does not and cannot recover them. Historical integration secrets
 remain readable only when their original key is retained; losing a key makes its
 ciphertexts unrecoverable.
 
-SQLite, MySQL, and PostgreSQL migrations represent the same Darkphish security
+SQLite, MySQL, and PostgreSQL migrations represent the same DarkPhish security
 model with backend-appropriate auto-increment, boolean, timestamp, index, and
 text/blob syntax. Each backend is exercised fresh-to-latest and latest-down/up;
 MySQL and PostgreSQL additionally run the core security model in CI.

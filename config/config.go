@@ -342,7 +342,7 @@ func warnLegacyEnvironment(legacy, replacement string) {
 	if _, loaded := legacyWarnings.LoadOrStore(legacy, struct{}{}); loaded {
 		return
 	}
-	log.Warnf("Deprecated Gophish environment variable %s detected; use %s. Support will be removed in a future Darkphish release.", legacy, replacement)
+	log.Warnf("Deprecated Gophish environment variable %s detected; use %s. Support will be removed in a future DarkPhish release.", legacy, replacement)
 }
 
 func resolveSecret(configured, configuredFile, baseDir, primaryEnv, legacyEnv string) (string, error) {

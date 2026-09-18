@@ -1,7 +1,7 @@
 $schema: https://api.gitbook.com/gitbook-docs.yaml
 version: 1
 site:
-  title: Darkphish
+  title: DarkPhish
   structure:
     - type: space
       key: space-docs

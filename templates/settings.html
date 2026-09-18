@@ -12,7 +12,7 @@
             <br />
             {{if .ModifySystem }}
             <div class="row">
-                <label class="col-sm-2 control-label form-label">Darkphish version</label>
+                <label class="col-sm-2 control-label form-label">DarkPhish version</label>
                 <div class="col-md-6">
                     <label class="form-label">{{.Version}}</label>
                 </div>
@@ -222,7 +222,7 @@
         <!-- Reporting Settings End -->
         <div role="tabpanel" class="tab-pane {{if eq .SettingsTab "api"}}active{{end}}" id="apiSettings">
             <h3>Personal access tokens</h3>
-            <p>Tokens are scoped and expiring. The secret is shown once and is never stored by Darkphish.</p>
+            <p>Tokens are scoped and expiring. The secret is shown once and is never stored by DarkPhish.</p>
             <form id="patCreateForm" class="form-inline">
                 <input id="pat_name" class="form-control" maxlength="128" placeholder="Token name" required>
                 <select id="pat_expiry" class="form-control">

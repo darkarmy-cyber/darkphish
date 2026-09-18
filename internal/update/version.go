@@ -1,4 +1,4 @@
-// Package update implements the fixed Darkphish release trust boundary.
+// Package update implements the fixed DarkPhish release trust boundary.
 package update
 
 import (

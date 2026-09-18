@@ -4,7 +4,7 @@ Thank you for your interest in contributing to darkphish! It is our goal to make
 
 This guide details how to contribute to darkphish in a way that is efficient for everyone involved.
 
-Darkphish currently only comes in one flavor, darkphish Community Edition (CE), which is our free and open source edition. In the future, we reserve the right to create an Enterprise Edition, though we're currently pouring our effort into create a rock-solid open source platform. This document will be updated if an EE edition is created.
+DarkPhish currently only comes in one flavor, darkphish Community Edition (CE), which is our free and open source edition. In the future, we reserve the right to create an Enterprise Edition, though we're currently pouring our effort into create a rock-solid open source platform. This document will be updated if an EE edition is created.
 
 ## Contributor license agreement
 

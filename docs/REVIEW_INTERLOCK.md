@@ -1,6 +1,6 @@
 # Reviewed merge and release interlock
 
-Darkphish automation performs a single protected squash merge only after all required checks succeed, CodeQL gates pass, and both trusted review passes certify the current PR head. It never treats a queued merge permission as durable approval for later code.
+DarkPhish automation performs a single protected squash merge only after all required checks succeed, CodeQL gates pass, and both trusted review passes certify the current PR head. It never treats a queued merge permission as durable approval for later code.
 
 ## Evidence and trust boundary
 

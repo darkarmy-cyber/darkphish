@@ -2,7 +2,7 @@
 function renderAdminNotification(status) {
     var count = !status.error && status.available === true && status.badge === 1 ? 1 : 0;
     $("#adminNotificationBadge").text(count || "").prop("hidden", count === 0);
-    $("#adminReleaseNotification").text(status.error ? "Release check unavailable" : (count ? "Darkphish " + status.latest_version + " is available" : "No new stable release"));
+    $("#adminReleaseNotification").text(status.error ? "Release check unavailable" : (count ? "DarkPhish " + status.latest_version + " is available" : "No new stable release"));
 }
 $(function () {
     if (!$("#adminNotifications").length) return;

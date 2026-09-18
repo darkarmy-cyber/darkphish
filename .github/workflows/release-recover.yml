@@ -275,13 +275,14 @@ jobs:
           pattern: recovery-${{ needs.metadata.outputs.tag }}-*
           path: dist
           merge-multiple: true
-      - uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b
+      - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2, Node24
         with:
           path: .cache/source
           format: spdx-json
           output-file: dist/darkphish-${{ needs.metadata.outputs.tag }}.spdx.json
           upload-artifact: false
           upload-release-assets: false
+          dependency-snapshot: false
       - name: Generate recovery checksums
         working-directory: dist
         run: sha256sum -- *.zip *.tar.gz *.spdx.json > SHA256SUMS

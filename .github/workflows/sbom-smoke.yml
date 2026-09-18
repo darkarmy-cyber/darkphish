@@ -1,0 +1,60 @@
+name: SBOM compatibility
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release*.yml'
+      - '.github/workflows/sbom-smoke.yml'
+      - '.github/scripts/release-sbom-step*'
+      - '.github/scripts/release-recover.mjs'
+      - '.github/scripts/sbom-smoke*'
+      - 'go.mod'
+      - 'go.sum'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release*.yml'
+      - '.github/workflows/sbom-smoke.yml'
+      - '.github/scripts/release-sbom-step*'
+      - '.github/scripts/release-recover.mjs'
+      - '.github/scripts/sbom-smoke*'
+      - 'go.mod'
+      - 'go.sum'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+permissions:
+  contents: read
+concurrency:
+  group: sbom-compatibility-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  smoke:
+    name: SBOM action compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.19.0
+      - name: Prepare dependency-only scan input
+        run: |
+          mkdir "$RUNNER_TEMP/sbom-input"
+          cp go.mod go.sum package.json pnpm-lock.yaml "$RUNNER_TEMP/sbom-input/"
+      - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2, Node24
+        with:
+          path: ${{ runner.temp }}/sbom-input
+          format: spdx-json
+          output-file: ${{ runner.temp }}/sbom-compatibility.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
+      - name: Validate generated SPDX and historical step compatibility
+        env:
+          SBOM_FILE: ${{ runner.temp }}/sbom-compatibility.spdx.json
+        run: |
+          node .github/scripts/sbom-smoke.mjs
+          node --test .github/scripts/release-sbom-step.test.mjs .github/scripts/sbom-smoke.test.mjs

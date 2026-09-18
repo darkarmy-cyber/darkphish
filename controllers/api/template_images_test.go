@@ -23,6 +23,10 @@ type previewTransport func(*http.Request) (*http.Response, error)
 func (f previewTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestImagePreviewURLPolicy(t *testing.T) {
+	target, err := parseImagePreviewURL("https://example.test/image.png#not-sent")
+	if err != nil || target.String() != "https://example.test/image.png" {
+		t.Fatal("request must use the validated, fragment-free URL")
+	}
 	for _, raw := range []string{"http://example.test/a.png", "//example.test/a", "file:///private", "https://u:p@example.test/a", "https://example.test:8443/a", "https://example.test\\a", "https://example.test/\nsecret", "", "https://example.test/" + strings.Repeat("a", 4096)} {
 		if validImagePreviewURL(raw) {
 			t.Errorf("accepted %q", raw)
@@ -102,6 +106,9 @@ func TestImagePreviewFetchIsBoundedAndCredentialFree(t *testing.T) {
 	for _, scenario := range []string{"ok", "status", "large", "unknown-size", "invalid"} {
 		t.Run(scenario, func(t *testing.T) {
 			client := &http.Client{Transport: previewTransport(func(r *http.Request) (*http.Response, error) {
+				if r.URL.String() != "https://example.test/image?token=private" || r.URL.Fragment != "" {
+					t.Fatal("request did not use the validated URL")
+				}
 				if len(r.Header) != 0 {
 					t.Fatal("forwarded request headers")
 				}
@@ -120,7 +127,7 @@ func TestImagePreviewFetchIsBoundedAndCredentialFree(t *testing.T) {
 				}
 				return &http.Response{StatusCode: status, ContentLength: length, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
 			})}
-			data, err := fetchImagePreview(context.Background(), client, "https://example.test/image?token=private")
+			data, err := fetchImagePreview(context.Background(), client, "https://example.test/image?token=private#not-sent")
 			if scenario == "ok" && (err != nil || !strings.HasPrefix(data, "data:image/png;base64,")) {
 				t.Fatal("valid preview failed")
 			}

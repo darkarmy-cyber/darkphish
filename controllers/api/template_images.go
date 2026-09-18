@@ -12,6 +12,7 @@ import (
 	"image/png"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/darkarmy-cyber/darkphish/dialer"
@@ -49,8 +50,18 @@ func newImagePreviewClient() *http.Client {
 }
 
 func validImagePreviewURL(raw string) bool {
+	_, err := parseImagePreviewURL(raw)
+	return err == nil
+}
+
+// Return the validated representation so the request is built from exactly the
+// URL that passed policy, not from the original, independently reparsed input.
+func parseImagePreviewURL(raw string) (*url.URL, error) {
 	u, err := parseImportURL(raw)
-	return err == nil && u.Scheme == "https" && (u.Port() == "" || u.Port() == "443")
+	if err != nil || u.Scheme != "https" || (u.Port() != "" && u.Port() != "443") {
+		return nil, errImagePreview
+	}
+	return u, nil
 }
 
 // A bounded writer prevents re-encoding a small compressed input into a large
@@ -84,10 +95,11 @@ func rasterPreview(content []byte) (string, error) {
 }
 
 func fetchImagePreview(ctx context.Context, client *http.Client, raw string) (string, error) {
-	if !validImagePreviewURL(raw) {
+	target, err := parseImagePreviewURL(raw)
+	if err != nil {
 		return "", errImagePreview
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
 		return "", errImagePreview
 	}

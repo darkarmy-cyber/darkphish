@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.19.0 - 2026-09-19
+
+### Fixed
+
+- Restore the approved classic administrative appearance: dark header, proportional grey sidebar, white canvas and large headings, while retaining the current login, licensing protections, update progress and navigation links.
+
 ## 0.18.0 - 2026-09-19
 
 ### Fixed

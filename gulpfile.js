@@ -94,6 +94,7 @@ styles = function () {
             css_directory + 'select2.min.css',
             css_directory + 'select2-bootstrap.min.css',
             css_directory + 'enterprise.css',
+            css_directory + 'auth-update.css',
         ])
         .pipe(cleanCSS({
             compatibilty: 'ie9'

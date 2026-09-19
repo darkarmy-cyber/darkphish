@@ -59,7 +59,7 @@ func TestUpdateOutcomeSurvivesReleaseChecks(t *testing.T) {
 		s := NewService("0.7.1", "", func(Release) error { return nil })
 		s.SetResult(result)
 		message := s.Status().Result
-		if message == "" {
+		if message == "" || s.Status().ResultCode != result {
 			t.Fatal("missing transaction outcome")
 		}
 		s.client.http.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
@@ -69,7 +69,7 @@ func TestUpdateOutcomeSurvivesReleaseChecks(t *testing.T) {
 		if err != nil || status.Result != message {
 			t.Fatal("release check erased transaction outcome")
 		}
-		if err = s.Apply(); err != nil || s.Status().Result != "" {
+		if err = s.Apply(); err != nil || s.Status().Result != "" || s.Status().ResultCode != "" {
 			t.Fatal("new accepted update retained previous outcome")
 		}
 	}

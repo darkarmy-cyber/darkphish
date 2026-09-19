@@ -18,6 +18,8 @@ func (s *Service) Fail() {
 	defer s.mu.Unlock()
 	s.status.Applying = false
 	s.status.Error = "Update verification failed; no application files were changed"
+	s.status.Result = s.status.Error
+	s.status.ResultCode = "verification_failed"
 }
 
 type Status struct {
@@ -32,6 +34,7 @@ type Status struct {
 	Error       string    `json:"error,omitempty"`
 	Applying    bool      `json:"applying"`
 	Result      string    `json:"result,omitempty"`
+	ResultCode  string    `json:"result_code,omitempty"`
 }
 
 type Service struct {
@@ -62,7 +65,10 @@ func (s *Service) SetResult(result string) {
 		s.status.Result = "Pre-update backup failed; no application files were changed"
 	case "apply_failed":
 		s.status.Result = "Update could not start; the backup completed and no application files were changed"
+	default:
+		return
 	}
+	s.status.ResultCode = result
 }
 
 func (s *Service) Check(ctx context.Context, force bool) (Status, error) {
@@ -118,5 +124,6 @@ func (s *Service) Apply() error {
 	}
 	s.status.Applying = true
 	s.status.Result = ""
+	s.status.ResultCode = ""
 	return nil
 }

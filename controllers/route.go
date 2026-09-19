@@ -447,8 +447,9 @@ func (as *AdminServer) handleInvalidLogin(w http.ResponseWriter, r *http.Request
 	params := struct {
 		User    models.User
 		Title   string
+		Version string
 		Flashes []interface{}
-	}{Title: "Login"}
+	}{Title: "Login", Version: config.Version}
 	params.Flashes = session.Flashes()
 	session.Save(r, w)
 	templates := template.New("template")
@@ -510,8 +511,9 @@ func (as *AdminServer) Login(w http.ResponseWriter, r *http.Request) {
 	params := struct {
 		User    models.User
 		Title   string
+		Version string
 		Flashes []interface{}
-	}{Title: "Login"}
+	}{Title: "Login", Version: config.Version}
 	session := ctx.Get(r, "session").(*sessions.Session)
 	switch {
 	case r.Method == "GET":

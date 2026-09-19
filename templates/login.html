@@ -11,20 +11,17 @@
 
     <title>DarkPhish - {{ .Title }}</title>
 
-    <link href="/css/dist/darkphish.css" rel="stylesheet">
+    <link href="/css/dist/darkphish.css?v={{.Version}}" rel="stylesheet">
 </head>
 
-<body class="auth-page">
+<body class="auth-page auth-login">
     <header class="auth-header">
         <a class="navbar-brand darkphish-brand" href="/" aria-label="DarkPhish home"><img src="/images/darkphish-mark.svg" alt="" width="40" height="40"><span>Dark<span class="brand-light">Phish</span></span></a>
-        <a href="https://docs.darkphish.sk/">Documentation <span aria-hidden="true">↗</span></a>
+        <a href="https://docs.darkphish.sk/" target="_blank" rel="noopener noreferrer">Documentation <span aria-hidden="true">↗</span></a>
     </header>
     <main class="auth-container">
         <section class="auth-introduction" aria-labelledby="welcome-heading">
-            <p class="auth-eyebrow">Human risk management</p>
-            <h1 id="welcome-heading">Build a more<br>security-aware<br>organisation.</h1>
-            <p>A considered workspace for authorised simulations, clear insights and continuous improvement.</p>
-            <p class="auth-signature">Clarity for your team.<br>Confidence in your next step.</p>
+            <h1 id="welcome-heading">Phishing<br>simulations.<br><span>Built for<br>defenders.</span></h1>
         </section>
         <form class="form-signin" action="" method="POST">
             <h2 class="form-signin-heading">Welcome back.</h2>
@@ -42,7 +39,6 @@
             <p class="auth-help">Having trouble? Contact your administrator.</p>
         </form>
     </main>
-    <footer class="auth-footer"><span>DarkPhish · Authorised use only</span><a href="https://docs.darkphish.sk/">DarkPhish documentation</a></footer>
     <!-- Placed at the end of the document so the pages load faster -->
     <script src="/js/dist/vendor.min.js"></script>
 </body>

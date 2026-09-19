@@ -1,0 +1,53 @@
+/* Authentication and update feedback. All artwork and styling stay local. */
+body.auth-login {
+    --dp-ink: #f5f8f8;
+    --dp-muted: #b5c6c9;
+    --dp-accent: #81dbd4;
+    --dp-accent-hover: #a2ece0;
+    --dp-line: #2c4043;
+    --dp-paper: #101b20;
+    --dp-canvas: #080d0f;
+    background: radial-gradient(ellipse at 85% 40%, #15282b 0, #080d0f 65%);
+}
+.auth-login .auth-header { width: 100%; max-width: 1440px; margin: 0 auto; padding: 28px 48px; }
+.auth-login .auth-header .darkphish-brand { color: #81dbd4; }
+.auth-login .auth-header .brand-light { color: #f5f8f8; }
+.auth-login .auth-container { max-width: 1280px; padding: 48px; gap: 80px; grid-template-columns: 1.2fr 1fr; }
+.auth-login .auth-introduction { max-width: none; }
+.auth-login .auth-introduction h1 { font-size: clamp(48px, 6.2vw, 88px); font-weight: 750; letter-spacing: -3px; line-height: 1.04; margin: 0; }
+.auth-login .auth-introduction h1 span { color: #81dbd4; }
+.auth-login .form-signin { max-width: 460px; justify-self: end; box-shadow: 0 24px 80px #0004; border-radius: 20px; }
+.auth-login .btn-primary { color: #0a2225; }
+.auth-login .btn-primary:hover, .auth-login .btn-primary:focus { color: #0a2225; }
+/* Flat UI and browser autofill must not turn typed credentials dark-on-dark. */
+.auth-page .form-signin input.form-control,
+.auth-page .form-signin input.form-control:focus {
+    background: #fff !important; color: #111 !important; caret-color: #111;
+    -webkit-text-fill-color: #111; color-scheme: light;
+}
+.auth-page .form-signin input.form-control:autofill { box-shadow: 0 0 0 1000px #fff inset !important; color: #111 !important; }
+.auth-page .form-signin input.form-control:-webkit-autofill { -webkit-box-shadow: 0 0 0 1000px #fff inset !important; -webkit-text-fill-color: #111 !important; }
+.auth-page .form-signin input.form-control::placeholder { color: #576779; -webkit-text-fill-color: #576779; }
+.enterprise-ui .sidebar { display: flex; flex-direction: column; }
+.enterprise-ui .sidebar > * { flex-shrink: 0; }
+.enterprise-ui .sidebar .sidebar-credit { margin: auto 0 0; padding: 28px 12px 0; font-size: 12px; color: var(--dp-muted); }
+.enterprise-ui .sidebar-credit a { color: var(--dp-accent); font-weight: 600; white-space: nowrap; }
+.update-progress-dialog .swal2-content { width: 100%; }
+.update-progress-dialog .swal2-input { color: #111; background: #fff; }
+.update-progress-track { height: 10px; overflow: hidden; border-radius: 10px; background: #e0e7e3; margin: 22px 0; }
+.update-progress-track::after { content: ""; display: block; width: 35%; height: 100%; background: #245d4e; border-radius: inherit; animation: update-progress 1.6s ease-in-out infinite alternate; }
+.update-progress-message { margin: 0; }
+.update-progress-diagnostics { text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow-y: auto; font-size: 13px; }
+@keyframes update-progress { from { transform: translateX(0); } to { transform: translateX(186%); } }
+@media (max-width: 900px) {
+    .auth-login .auth-container { gap: 40px; padding: 36px 28px; }
+    .auth-login .auth-introduction h1 { font-size: 58px; letter-spacing: -2px; }
+}
+@media (max-width: 767px) {
+    .auth-login .auth-header { padding: 22px 24px; }
+    .auth-login .auth-container { grid-template-columns: 1fr; max-width: 540px; gap: 32px; padding: 24px 24px 44px; }
+    .auth-login .auth-introduction h1 { font-size: 46px; letter-spacing: -1.5px; }
+    .auth-login .form-signin { justify-self: stretch; }
+    .enterprise-ui .sidebar .sidebar-credit { padding: 18px 10px 0; margin-top: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .update-progress-track::after { animation: none; width: 100%; opacity: .65; } }

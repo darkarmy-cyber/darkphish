@@ -36,7 +36,7 @@ test('all administrative shells use local DarkPhish brand assets', () => {
 test('both documentation menu destinations are the official site', () => {
   const nav = read('templates/nav.html')
   for (const label of ['User Guide', 'API Documentation']) {
-    assert.ok(nav.includes(`<a href="https://docs.darkphish.sk/">${label}</a>`))
+    assert.ok(nav.includes(`<a href="https://docs.darkphish.sk/" target="_blank" rel="noopener noreferrer">${label}</a>`))
   }
   assert.doesNotMatch(nav, /getdarkphish\.com/)
 })
@@ -73,7 +73,7 @@ test('authentication forms preserve POST and password fields', () => {
     assert.match(html, /<form class="form-signin" action="" method="POST">/)
     assert.match(html, /type="password"[^>]*name="password"/)
     assert.match(html, /template "flashes"/)
-    assert.match(html, /body class="auth-page"/)
+    assert.match(html, /body class="auth-page(?: auth-login)?"/)
     assert.match(html, /src="\/images\/darkphish-mark\.svg"/)
     assert.doesNotMatch(html, /id="logo"|darkphish-brand\.png/, 'auth no longer displays an opaque logo panel')
   }

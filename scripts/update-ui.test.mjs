@@ -22,7 +22,8 @@ function deferred() {
 }
 
 function page(path) {
-  const elements = new Map(), requests = [], timers = [], prompts = [], notifications = []
+  const elements = new Map(), requests = [], timers = [], prompts = [], notifications = [], dialogs = []
+  const input = {value: '', style: {}}
   const $ = selector => {
     if (typeof selector === 'function') return selector()
     if (!elements.has(selector)) elements.set(selector, {
@@ -32,19 +33,24 @@ function page(path) {
     })
     return elements.get(selector)
   }
+  $.ajax = options => {
+    assert.equal(options.timeout, ['/api/updates','/api/updates/check'].includes(options.url) ? 60000 : 15000)
+    assert.ok(options.url.startsWith('/api/'))
+    const request = Object.assign(deferred(), {url: options.url.slice(4), method: options.method,
+      body: options.data && JSON.parse(options.data), session: true})
+    requests.push(request); return request
+  }
   const context = vm.createContext({$, renderAdminNotification: status => notifications.push(status),
     setTimeout: fn => timers.push(fn),
-    Swal: {fire: options => ({then: fn => prompts.push({options, answer: fn})})},
-    query: (url, method, body, session) => {
-      const request = Object.assign(deferred(), {url, method, body: body && {...body}, session})
-      requests.push(request); return request
-    }
+    Swal: {fire: options => { const prompt = {options}; prompts.push(prompt); return {then: fn => { prompt.answer = fn }} },
+      update: options => dialogs.push(options), getInput: () => input,
+      getActions: () => ({style: {}}), enableButtons: () => {}}
   })
   vm.runInContext(readFileSync(new URL(path, import.meta.url), 'utf8'), context)
-  return {$, requests, timers, prompts, notifications,
+  return {$, requests, timers, prompts, notifications, dialogs, input,
     status: extra => requests.at(-1).resolve({current_version: '0.14.0', latest_version: '0.15.0', available: true, ...extra}),
     click: id => $(id).click(),
-    confirm: () => { $('#updateApply').click(); prompts.at(-1).answer({value: 'test-password'}) }
+    confirm: () => { $('#updateApply').click(); prompts.at(-1).options.preConfirm('test-password') }
   }
 }
 
@@ -122,7 +128,12 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
         p.status({result: previous}); p.confirm(); p.requests.at(-1).resolve({})
         p.requests.at(-1).reject({status, responseJSON: {message: 'Current request was not confirmed'}})
         p.status({result: previous})
-        assert.equal(p.$('#updateStatus').value, 'Current request was not confirmed')
+        if (status >= 400 && status < 500) assert.equal(p.$('#updateStatus').value, 'Current request was not confirmed')
+        else {
+          assert.match(p.$('#updateStatus').value, /outcome could not be confirmed/)
+          assert.equal(p.dialogs.at(-1).title, 'Update not confirmed')
+          assert.equal(p.$('#updateApply').disabled, true)
+        }
         assert.equal(p.requests.filter(r => r.url === '/updates/apply').length, 1)
         assert.equal(p.timers.length, 0)
       }
@@ -134,7 +145,7 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
     p.status({result}); p.confirm(); p.requests.at(-1).resolve({})
     p.requests.at(-1).reject({status: 0})
     p.status({current_version: '0.15.0', available: false, result})
-    assert.equal(p.$('#updateStatus').value, result)
+    assert.equal(p.$('#updateStatus').value, 'DarkPhish 0.15.0 is running. ' + result)
     assert.equal(p.$('#updateApply').disabled, true)
     assert.equal(p.requests.filter(r => r.url === '/updates/apply').length, 1)
   })
@@ -150,15 +161,15 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
     p.click('#updateApply')
     assert.equal(p.timers.length, 1)
     p.timers.shift()()
-    p.requests.at(-1).resolve({current_version: '0.15.0', available: false, applying: false, result: 'Update completed'})
-    assert.equal(p.$('#updateStatus').value, 'Update completed')
+    p.requests.at(-1).resolve({current_version: '0.15.0', available: false, applying: false, result_code: 'applied', result: 'Update completed successfully'})
+    assert.equal(p.dialogs.at(-1).title, 'Update successful')
     assert.equal(p.$('#updateCheck').disabled, false)
     assert.equal(p.requests.filter(r => r.url === '/updates/apply').length, 1)
   })
 
   test(`${path}: ambiguous apply failure preserves the authoritative completed outcome`, () => {
     for (const outcome of [
-      {result: 'Update completed successfully.', available: false},
+      {result: 'Update completed successfully.', current_version: '0.15.0', available: false},
       {result: 'Update failed and was rolled back.', available: true},
       {error: 'Recovery requires administrator intervention.', available: true}
     ]) {
@@ -167,7 +178,7 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
       p.requests.at(-1).reject({responseJSON: {message: 'Stale transport error'}})
       assert.equal(p.requests.at(-1).url, '/updates')
       p.status({applying: false, ...outcome})
-      assert.equal(p.$('#updateStatus').value, outcome.error || outcome.result)
+      assert.equal(p.$('#updateStatus').value, outcome.error || (outcome.current_version ? 'DarkPhish 0.15.0 is running. ' : '') + outcome.result)
       assert.equal(p.$('#updateCheck').disabled, false)
       assert.equal(p.$('#updateApply').disabled, !!outcome.error || !outcome.available)
       assert.equal(p.timers.length, 0)
@@ -175,10 +186,41 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
     }
   })
 
+  test(`${path}: the accepted transaction target overrides a stale tab and later feed changes`, () => {
+    for (const transport of ['accepted','concurrent','interrupted']) {
+      const p = page(path)
+      p.status({latest_version:'0.15.0'}); p.confirm(); p.requests.at(-1).resolve({})
+      if (transport==='accepted') p.requests.at(-1).resolve({target_version:'0.16.0'})
+      else {
+        p.requests.at(-1).reject({status:transport==='concurrent'?409:0})
+        p.status({applying:true,target_version:'0.16.0',latest_version:'0.17.0'})
+      }
+      p.timers.shift()()
+      p.status({applying:false,current_version:'0.16.0',latest_version:'0.17.0',result_code:'applied',result:'Update completed successfully'})
+      assert.equal(p.dialogs.at(-1).title,'Update successful')
+      assert.equal(p.requests.filter(r=>r.url==='/updates/apply').length,1)
+    }
+  })
+
+  test(`${path}: a rejected concurrent apply still monitors the authoritative operation`, () => {
+    for (const result_code of ['applied','rollback']) {
+      const p = page(path)
+      p.status({}); p.confirm(); p.requests.at(-1).resolve({})
+      p.requests.at(-1).reject({status:409,responseJSON:{message:'An update is already in progress'}})
+      p.status({applying:true})
+      assert.equal(p.$('#updateApply').disabled,true)
+      assert.equal(p.timers.length,1)
+      p.timers.shift()()
+      p.status({applying:false,current_version:result_code==='applied'?'0.15.0':'0.14.0',result_code,result:result_code==='applied'?'Update completed successfully':'Update failed; previous application restored'})
+      assert.equal(p.dialogs.at(-1).title,result_code==='applied'?'Update successful':'Update failed')
+      assert.equal(p.requests.filter(r=>r.url==='/updates/apply').length,1)
+    }
+  })
+
   test(`${path}: rejected apply can be retried only after fresh status; failed status stays closed`, () => {
     const p = page(path)
     p.status({}); p.confirm(); p.requests.at(-1).resolve({})
-    p.requests.at(-1).reject({responseJSON: {message: 'Check again before applying'}})
+    p.requests.at(-1).reject({status: 409, responseJSON: {message: 'Check again before applying'}})
     p.status({})
     assert.equal(p.$('#updateApply').disabled, false)
     assert.equal(p.$('#updateStatus').value, 'Check again before applying')
@@ -208,9 +250,63 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
     assert.equal(p.$('#updateApply').disabled, true)
     assert.equal(p.timers.length, 1)
     p.timers.shift()()
-    p.status({applying: false, available: false, result: 'Update completed'})
+    p.status({current_version: '0.15.0', applying: false, available: false, result_code: 'applied', result: 'Update completed successfully'})
     assert.equal(p.$('#updateCheck').disabled, false)
     assert.equal(p.requests.filter(r => r.method === 'POST').length, 0)
+  })
+}
+
+for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/update.min.js']) {
+  test(`${path}: the same dialog stays open and credentials are cleared`, () => {
+    const p = page(path); p.status({}); p.confirm()
+    assert.equal(p.prompts.length, 1)
+    assert.equal(p.input.value, '')
+    assert.equal(p.input.hidden, true)
+    assert.equal(p.prompts[0].options.allowEscapeKey(), false)
+    assert.equal(p.prompts[0].options.allowOutsideClick(), false)
+    p.requests.at(-1).resolve({}); p.requests.at(-1).resolve({})
+    assert.equal(p.dialogs.at(-1).showConfirmButton, false)
+    assert.match(p.dialogs.at(-1).html, /role="progressbar"/)
+    assert.doesNotMatch(p.dialogs.at(-1).html, /aria-valuenow|test-password/)
+    p.timers.shift()(); p.status({current_version: '0.15.0', result_code: 'applied', result: 'Update completed successfully', available: false})
+    assert.equal(p.dialogs.at(-1).title, 'Update successful')
+    assert.equal(p.prompts.length, 1)
+    assert.equal(p.prompts[0].options.preConfirm(''), true)
+    assert.equal(p.requests.filter(r => r.url === '/updates/apply').length, 1)
+  })
+  test(`${path}: every safe failure code shows diagnostics even when the feed is offline`, () => {
+    for (const code of ['verification_failed','backup_failed','apply_failed','rollback']) {
+      const p = page(path), text = '<img src=x onerror=alert(1)> Failure'
+      p.status({result: text, result_code: code}); p.confirm(); p.requests.at(-1).resolve({}); p.requests.at(-1).resolve({})
+      p.timers.shift()(); p.status({result: text, result_code: code, error: 'Release feed unavailable'})
+      assert.equal(p.dialogs.at(-1).title, 'Update failed')
+      assert.equal(p.$('#updateDialogMessage').value, text)
+      assert.match(p.$('#updateDialogDiagnostics').value, new RegExp(code))
+      assert.doesNotMatch(p.dialogs.at(-1).html, /onerror/)
+      assert.equal(p.$('#updateApply').disabled, true)
+    }
+  })
+  test(`${path}: stale success and a version change without a completion receipt cannot claim success`, () => {
+    for (const status of [
+      {result_code: 'applied', result: 'Update completed successfully', current_version: '0.14.0'},
+      {current_version: '0.15.0'},
+      {result_code: 'applied', result: 'Update completed successfully', current_version: '0.16.0'}
+    ]) {
+      const p = page(path); p.status({}); p.confirm(); p.requests.at(-1).resolve({}); p.requests.at(-1).resolve({})
+      p.timers.shift()(); p.status(status)
+      assert.equal(p.dialogs.at(-1).title, 'Updating DarkPhish')
+      p.timers.shift()(); p.requests.at(-1).reject({status: 401})
+      assert.equal(p.dialogs.at(-1).title, 'Update not confirmed')
+      assert.equal(p.$('#updateApply').disabled, true)
+    }
+  })
+  test(`${path}: monitoring is bounded and cannot retry the apply POST`, () => {
+    const p = page(path); p.status({}); p.confirm(); p.requests.at(-1).resolve({}); p.requests.at(-1).resolve({})
+    for (let i = 0; i < 240; i++) { assert.equal(p.timers.length, 1); p.timers.shift()(); p.requests.at(-1).reject({status: 0}) }
+    assert.equal(p.timers.length, 0)
+    assert.equal(p.dialogs.at(-1).title, 'Update not confirmed')
+    assert.equal(p.$('#updateApply').disabled, true)
+    assert.equal(p.requests.filter(r => r.url === '/updates/apply').length, 1)
   })
 }
 

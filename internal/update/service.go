@@ -18,6 +18,8 @@ func (s *Service) Fail() {
 	defer s.mu.Unlock()
 	s.status.Applying = false
 	s.status.Error = "Update verification failed; no application files were changed"
+	s.status.Result = s.status.Error
+	s.status.ResultCode = "verification_failed"
 }
 
 type Status struct {
@@ -31,7 +33,9 @@ type Status struct {
 	Unsupported string    `json:"unsupported_reason"`
 	Error       string    `json:"error,omitempty"`
 	Applying    bool      `json:"applying"`
+	Target      string    `json:"target_version,omitempty"`
 	Result      string    `json:"result,omitempty"`
+	ResultCode  string    `json:"result_code,omitempty"`
 }
 
 type Service struct {
@@ -62,7 +66,10 @@ func (s *Service) SetResult(result string) {
 		s.status.Result = "Pre-update backup failed; no application files were changed"
 	case "apply_failed":
 		s.status.Result = "Update could not start; the backup completed and no application files were changed"
+	default:
+		return
 	}
+	s.status.ResultCode = result
 }
 
 func (s *Service) Check(ctx context.Context, force bool) (Status, error) {
@@ -102,21 +109,30 @@ func (s *Service) Check(ctx context.Context, force bool) (Status, error) {
 }
 
 func (s *Service) Apply() error {
+	_, err := s.ApplyVersion()
+	return err
+}
+
+// ApplyVersion returns the version accepted by the supervisor under the same
+// lock as submission. A browser's earlier release check may already be stale.
+func (s *Service) ApplyVersion() (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.status.Unsupported != "" || s.request == nil {
-		return errors.New("one-click update is unsupported for this installation")
+		return "", errors.New("one-click update is unsupported for this installation")
 	}
 	if s.status.Applying {
-		return errors.New("an update is already in progress")
+		return "", errors.New("an update is already in progress")
 	}
 	if !s.status.Available || s.status.Error != "" || time.Since(s.status.Checked) > 5*time.Minute {
-		return errors.New("check for updates again before applying")
+		return "", errors.New("check for updates again before applying")
 	}
 	if err := s.request(s.release); err != nil {
-		return err
+		return "", err
 	}
 	s.status.Applying = true
+	s.status.Target = s.release.Version()
 	s.status.Result = ""
-	return nil
+	s.status.ResultCode = ""
+	return s.status.Target, nil
 }

@@ -181,7 +181,7 @@
 /* Authentication: the same product identity, no duplicated Login action. */
 body.auth-page { padding: 0; min-height: 100vh; display: flex; flex-direction: column; color: var(--dp-ink); background: var(--dp-canvas); }
 .auth-page .auth-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 28px 5%; }
-.auth-page .auth-header > a:last-child { font-size: 13px; }
+.auth-page .auth-header > a:not(.darkphish-brand) { font-size: 13px; }
 .auth-page a:focus-visible, .auth-page button:focus-visible, .auth-page input:focus-visible { outline-color: var(--dp-accent); }
 .auth-page .auth-container { display: grid; grid-template-columns: 1.05fr 1fr; align-items: center; gap: 64px; width: 100%; max-width: 1180px; margin: auto; padding: 64px 40px; flex: 1; }
 .auth-page .auth-introduction { max-width: 470px; }

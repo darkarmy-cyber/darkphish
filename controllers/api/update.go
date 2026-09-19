@@ -61,7 +61,7 @@ func (as *Server) UpdateApply(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, models.Response{Message: "Unable to consume privileged session"}, http.StatusInternalServerError)
 		return
 	}
-	err = as.updates.Apply()
+	target, err := as.updates.ApplyVersion()
 	result := "requested"
 	if err != nil {
 		result = "failure"
@@ -71,5 +71,8 @@ func (as *Server) UpdateApply(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, models.Response{Message: err.Error()}, http.StatusConflict)
 		return
 	}
-	JSONResponse(w, models.Response{Success: true, Message: "Update requested; the application will restart after verification and backup"}, http.StatusAccepted)
+	JSONResponse(w, struct {
+		models.Response
+		Target string `json:"target_version"`
+	}{models.Response{Success: true, Message: "Update requested; the application will restart after verification and backup"}, target}, http.StatusAccepted)
 }

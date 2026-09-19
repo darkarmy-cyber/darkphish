@@ -235,5 +235,5 @@ body.auth-page { padding: 0; min-height: 100vh; display: flex; flex-direction: c
 }
 @media (prefers-reduced-motion: reduce) {
     /* Whole milliseconds survive the release minifier; retain completion events. */
-    .enterprise-ui *, .auth-page * { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
+    .classic-ui *, .enterprise-ui *, .auth-page * { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
 }

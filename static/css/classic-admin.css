@@ -1,0 +1,45 @@
+/* Approved classic administration: retain the Bootstrap/Flat UI palette,
+ * typography and proportional columns shown in the user's 0.16 screenshots.
+ * Do not opt this shell into enterprise-ui. Authentication is independent.
+ * These additions retain responsive navigation, accessibility and new features. */
+body.classic-ui { padding-top: 60px; background: #fff; color: #34495e; }
+.classic-ui .darkphish-topbar { min-height: 60px; }
+.classic-ui .darkphish-brand img { border-radius: 0; }
+.classic-ui .sidebar { top: 60px; display: flex; flex-direction: column; }
+.classic-ui .sidebar > * { flex-shrink: 0; }
+.classic-ui .sidebar-label { font-size: 16px; }
+.classic-ui .sidebar-credit { margin: auto 0 0; padding: 24px 0 0; font-size: 12px; }
+.classic-ui .sidebar-credit a { font-weight: 600; white-space: nowrap; text-decoration: underline; }
+.classic-ui :focus-visible { outline: 3px solid #168475; outline-offset: 3px; }
+.classic-ui .nav-sidebar > .active > a:focus-visible { outline-offset: -3px; }
+.classic-ui .main { min-width: 0; }
+.classic-ui .main > .row:has(> table), .classic-ui .dataTables_wrapper { overflow-x: auto; }
+.classic-ui .nav-tabs { display: flex; flex-wrap: wrap; }
+.classic-ui .nav-tabs > li { float: none; }
+.classic-ui .main > dl dd, .classic-ui pre { overflow-wrap: anywhere; }
+.classic-ui #auditFilters { display: flex; flex-wrap: wrap; gap: 12px; }
+.classic-ui #auditFilters .form-control { min-width: 0; flex: 1 1 170px; max-width: 100%; }
+.classic-ui .select2-container { max-width: 100%; }
+.classic-ui #licenseActivation { max-width: 640px; }
+/* Preserve the current wide editors and all existing Bootstrap modal hooks. */
+.classic-ui .editor-workspace .modal-dialog { width: calc(100% - 48px); max-width: 1240px; margin: 24px auto; }
+.classic-ui .editor-workspace .modal-body { max-width: 1040px; margin: auto; }
+.classic-ui .editor-workspace .modal-content { min-height: calc(100vh - 48px); }
+@media (max-width: 767px) {
+    body.classic-ui { padding-top: 0; }
+    .classic-ui .darkphish-topbar { position: relative; margin-bottom: 0; }
+    .classic-ui .darkphish-topbar > .container-fluid { flex-wrap: wrap; }
+    .classic-ui .darkphish-account { margin-left: auto; }
+    .classic-ui .sidebar { position: static; width: 100%; padding: 14px 20px; background: #f5f5f5; border-bottom: 1px solid #eee; }
+    .classic-ui .sidebar-label { display: none; }
+    .classic-ui .nav-sidebar { display: flex; flex-wrap: wrap; margin: 0; }
+    .classic-ui .nav-sidebar > li > a { padding: 12px; min-height: 44px; }
+    .classic-ui .nav-sidebar > li:has(hr) { display: none; }
+    .classic-ui .sidebar-credit { padding-top: 16px; }
+    .classic-ui .main { width: 100%; margin-left: 0; }
+    .classic-ui .page-header { font-size: 36px; overflow-wrap: anywhere; }
+    .classic-ui .main h2 { font-size: 30px; }
+    .classic-ui .btn { min-height: 44px; }
+    .classic-ui .editor-workspace .modal-dialog { width: calc(100% - 16px); margin: 8px auto; }
+    .classic-ui .editor-workspace .modal-content { min-height: calc(100vh - 16px); }
+}

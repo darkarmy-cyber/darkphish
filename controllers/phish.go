@@ -269,8 +269,8 @@ func (ps *PhishingServer) PhishHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if p.TrainingStatic && r.Method != http.MethodGet {
-		w.Header().Set("Allow", "GET")
+	if p.TrainingStatic && r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "Static training pages do not accept submitted data", http.StatusMethodNotAllowed)
 		return
 	}
@@ -310,8 +310,8 @@ func renderPhishResponse(w http.ResponseWriter, r *http.Request, ptx models.Phis
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src data:; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'; sandbox")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", "GET")
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
 			http.Error(w, "Static training pages do not accept submitted data", http.StatusMethodNotAllowed)
 			return
 		}
@@ -321,6 +321,9 @@ func renderPhishResponse(w http.ResponseWriter, r *http.Request, ptx models.Phis
 			return
 		}
 		// Literal text, including {{ and backslashes, must not enter Go templates.
+		if r.Method == http.MethodHead {
+			return
+		}
 		_, _ = w.Write([]byte(clean))
 		return
 	}

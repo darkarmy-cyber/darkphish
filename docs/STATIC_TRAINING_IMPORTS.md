@@ -29,6 +29,9 @@ Verified images are re-encoded as PNG and embedded into this static page. They
 survive Source/WYSIWYG editing and save/reopen without remote browser requests.
 Failed images do not starve later batches and can be retried. Review the status
 message for unavailable or unsupported resources.
+Embedding also enforces a conservative cumulative UTF-8 size budget, including
+repeated occurrences of an image, so successful previews do not exceed the
+server's 8 MiB static-page limit. Use fewer or smaller images when it is reached.
 
 Existing **Email Templates** retain their separate **Load external images**
 preview workflow and original email URLs. This change does not add MIME/CID
@@ -50,8 +53,10 @@ unavailable in this mode.
 
 Participant responses use a restrictive sandboxed CSP: no scripts, external
 resources, forms or navigation targets, with embedded raster images and inline
-styles only. Non-GET submissions are rejected before submission/credential event
-handling. Ordinary page visits may still be measured by the existing campaign
+styles only. GET and bodyless HEAD retrievals are permitted; submission methods
+are rejected before submission/credential event handling. The training notice
+has its own trusted foreground layer and negative imported margins are removed.
+Ordinary page visits may still be measured by the existing campaign
 click event; this is not a form-submission or credential-collection exercise.
 
 Existing legacy/manual pages are not automatically converted or deleted.

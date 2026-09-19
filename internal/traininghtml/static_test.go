@@ -18,7 +18,7 @@ func TestStaticTrainingRemovesActiveContent(t *testing.T) {
 	if !IsStatic(got) {
 		t.Fatal("training mode missing")
 	}
-	for _, blocked := range []string{"SECRET", "<form", "<input", "<textarea", "<select", "<button", "<script", "<iframe", "<svg", "<style", "onclick", "contenteditable", "background-image", "position:", "javascript:"} {
+	for _, blocked := range []string{"SECRET", "<form", "<input", "<textarea", "<select", "<button", "<script", "<iframe", "<svg", "<style", "onclick", "contenteditable", "background-image", "position:fixed", "javascript:"} {
 		if strings.Contains(got, blocked) {
 			t.Fatalf("active content survived: %s", blocked)
 		}
@@ -37,6 +37,25 @@ func TestStaticTrainingRemovesActiveContent(t *testing.T) {
 	}
 	if strings.Contains(again, "<input") {
 		t.Fatal("round trip restored input")
+	}
+}
+
+func TestTrainingNoticeCannotBeCoveredByImportedStyle(t *testing.T) {
+	got, err := Sanitize(`<div style="margin-top:-10000px;margin:0 -2px;height:10000px;background-color:white;position:relative;z-index:2147483647;opacity:0.99">Example</div>`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"margin-top:-", "margin:0 -"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatal("overlap-capable margin survived")
+		}
+	}
+	if strings.Count(got, "z-index:2147483647") != 1 || strings.Count(got, "position:relative") != 1 {
+		t.Fatal("only the trusted notice may own the protected layer")
+	}
+	again, err := Sanitize(got, nil)
+	if err != nil || again != got {
+		t.Fatal("trusted notice layer did not survive sanitization round trip")
 	}
 }
 

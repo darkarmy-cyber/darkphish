@@ -71,6 +71,9 @@ func safeStyle(raw string) string {
 		if strings.Contains(lower, "url") || strings.Contains(lower, "expression") || strings.Contains(lower, "var(") || strings.Contains(lower, "attr(") {
 			continue
 		}
+		if strings.HasPrefix(key, "margin") && strings.Contains(val, "-") {
+			continue
+		}
 		// Background images, imports, custom properties and positioning are
 		// deliberately unavailable; imported CSS cannot fetch or cover the notice.
 		declarations = append(declarations, key+":"+val)
@@ -200,7 +203,9 @@ func Sanitize(source string, base *url.URL) (string, error) {
 	}
 	find(doc)
 	body := &html.Node{Type: html.ElementNode, Data: "body", Attr: []html.Attribute{{Key: Marker, Val: Mode}}}
-	notice := &html.Node{Type: html.ElementNode, Data: "p", Attr: []html.Attribute{{Key: "data-training-notice", Val: "true"}}}
+	// This trusted layer is regenerated on every save/render. Imported content
+	// cannot acquire positioning or a z-index, even via nested stacking contexts.
+	notice := &html.Node{Type: html.ElementNode, Data: "p", Attr: []html.Attribute{{Key: "data-training-notice", Val: "true"}, {Key: "style", Val: "position:relative;z-index:2147483647;display:block;padding:12px;margin:0;background-color:#fff;color:#243746;font-size:16px;line-height:1.5;opacity:1"}}}
 	notice.AppendChild(&html.Node{Type: html.TextNode, Data: Notice})
 	body.AppendChild(notice)
 	if sourceBody != nil {

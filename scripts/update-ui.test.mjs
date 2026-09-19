@@ -186,6 +186,22 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
     }
   })
 
+  test(`${path}: the accepted transaction target overrides a stale tab and later feed changes`, () => {
+    for (const transport of ['accepted','concurrent','interrupted']) {
+      const p = page(path)
+      p.status({latest_version:'0.15.0'}); p.confirm(); p.requests.at(-1).resolve({})
+      if (transport==='accepted') p.requests.at(-1).resolve({target_version:'0.16.0'})
+      else {
+        p.requests.at(-1).reject({status:transport==='concurrent'?409:0})
+        p.status({applying:true,target_version:'0.16.0',latest_version:'0.17.0'})
+      }
+      p.timers.shift()()
+      p.status({applying:false,current_version:'0.16.0',latest_version:'0.17.0',result_code:'applied',result:'Update completed successfully'})
+      assert.equal(p.dialogs.at(-1).title,'Update successful')
+      assert.equal(p.requests.filter(r=>r.url==='/updates/apply').length,1)
+    }
+  })
+
   test(`${path}: a rejected concurrent apply still monitors the authoritative operation`, () => {
     for (const result_code of ['applied','rollback']) {
       const p = page(path)

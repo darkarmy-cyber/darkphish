@@ -75,7 +75,7 @@ $(function () {
         finish("info", message, "The result is not known. Do not repeat the update blindly. Reconnect or sign in again, then open Settings > Update. If the service is unavailable, an administrator can inspect the DarkPhish service log (for systemd: journalctl -u darkphish.service -n 100 --no-pager). Remove secrets before sharing logs.");
     }
     function outcome(status) {
-        if (status.applying) { observedApplying = true; return false; }
+        if (status.applying) { observedApplying = true; targetVersion = status.target_version || targetVersion; return false; }
         var fresh = accepted || observedApplying || status.result !== previous.result || status.current_version !== previous.current_version;
         if (!fresh) return false;
         // An accepted request or a stale previous success is not a completed update.
@@ -117,7 +117,7 @@ $(function () {
             render(status);
             // Another tab/admin may have won the apply race. Its authoritative
             // in-progress state still needs monitoring, even after our 409.
-            if (status.applying) { observedApplying = true; targetVersion = status.latest_version; progress("An update is already running. Monitoring its result…"); watchRestart(240); return; }
+            if (status.applying) { observedApplying = true; targetVersion = status.target_version || status.latest_version; progress("An update is already running. Monitoring its result…"); watchRestart(240); return; }
             if (mayHaveApplied) {
                 if (outcome(status)) return;
                 unknown(status.error || "The update request was interrupted. Its outcome could not be confirmed.");
@@ -142,7 +142,8 @@ $(function () {
         proof.password = "";
         auth.done(function () {
             progress("Requesting a verified update…");
-            request("/updates/apply", "POST", {}).done(function () {
+            request("/updates/apply", "POST", {}).done(function (response) {
+                targetVersion = response.target_version || targetVersion;
                 accepted = true; currentStatus.applying = true;
                 progress("Verifying the release and preparing the update…");
                 watchRestart(240);
@@ -152,7 +153,7 @@ $(function () {
     $("#updateCheck").on("click", function () {
         if (busy || watching || (currentStatus && currentStatus.applying)) return;
         check(true).done(function (status) {
-            if (status.applying) { previous = {}; targetVersion = status.latest_version; progress("Resuming update monitoring…"); watchRestart(240); }
+            if (status.applying) { previous = {}; targetVersion = status.target_version || status.latest_version; progress("Resuming update monitoring…"); watchRestart(240); }
         });
     });
     $("#updateApply").on("click", function () {
@@ -173,6 +174,6 @@ $(function () {
         }).then(function () { if (!watching && dialogStage !== "progress") { busy = false; controls(); } });
     });
     check(false).done(function (status) {
-        if (status.applying) { previous = Object.assign({}, status); targetVersion = status.latest_version; progress("Resuming update monitoring…"); watchRestart(240); }
+        if (status.applying) { previous = Object.assign({}, status); targetVersion = status.target_version || status.latest_version; progress("Resuming update monitoring…"); watchRestart(240); }
     });
 });

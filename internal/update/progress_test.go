@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 )
 
 func TestSafeOutcomeCodesSurviveReleaseCheckErrors(t *testing.T) {
@@ -30,5 +31,35 @@ func TestSafeOutcomeCodesSurviveReleaseCheckErrors(t *testing.T) {
 		if s.Status().ResultCode != code {
 			t.Fatal("unknown outcome replaced allowlisted diagnostic")
 		}
+	}
+}
+
+func TestAcceptedUpdateTargetIsIndependentOfReleaseFeed(t *testing.T) {
+	var submitted string
+	s := NewService("0.17.0", "", func(r Release) error { submitted = r.Version(); return nil })
+	s.release = Release{Tag: "v0.19.0"}
+	s.status.Available, s.status.Checked, s.status.Latest = true, time.Now(), "0.19.0"
+	target, err := s.ApplyVersion()
+	if err != nil || target != "0.19.0" || submitted != target || s.Status().Target != target {
+		t.Fatalf("accepted target mismatch: %q %q %+v %v", target, submitted, s.Status(), err)
+	}
+	// Subsequent feed refreshes must not retarget an in-flight operation.
+	s.mu.Lock()
+	s.status.Latest, s.release = "0.20.0", Release{Tag: "v0.20.0"}
+	s.mu.Unlock()
+	if s.Status().Target != "0.19.0" {
+		t.Fatal("release feed replaced accepted transaction target")
+	}
+	if target, err = s.ApplyVersion(); err == nil || target != "" || submitted != "0.19.0" {
+		t.Fatal("concurrent apply replaced accepted transaction")
+	}
+}
+
+func TestRejectedUpdateHasNoAcceptedTarget(t *testing.T) {
+	s := NewService("0.17.0", "", func(Release) error { return errors.New("not accepted") })
+	s.release = Release{Tag: "v0.19.0"}
+	s.status.Available, s.status.Checked = true, time.Now()
+	if target, err := s.ApplyVersion(); err == nil || target != "" || s.Status().Target != "" || s.Status().Applying {
+		t.Fatal("rejected submission claimed an accepted target")
 	}
 }

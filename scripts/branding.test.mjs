@@ -74,7 +74,8 @@ test('authentication forms preserve POST and password fields', () => {
     assert.match(html, /type="password"[^>]*name="password"/)
     assert.match(html, /template "flashes"/)
     assert.match(html, /body class="auth-page"/)
-    assert.match(html, /id="logo"[^>]*width="1600" height="873"/)
+    assert.match(html, /src="\/images\/darkphish-mark\.svg"/)
+    assert.doesNotMatch(html, /id="logo"|darkphish-brand\.png/, 'auth no longer displays an opaque logo panel')
   }
   assert.match(read('templates/reset_password.html'), /name="confirm_password"/)
   assert.match(read('templates/reset_password.html'), /minlength="12"/)

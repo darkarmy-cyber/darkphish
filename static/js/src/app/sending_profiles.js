@@ -2,6 +2,7 @@ var profiles = []
 
 // Attempts to send a test email by POSTing to /campaigns/
 function sendTestEmail() {
+    if ($("#sendTestModalSubmit").prop("disabled")) return
     var headers = [];
     $.each($("#headersTable").DataTable().rows().data(), function (i, header) {
         headers.push({

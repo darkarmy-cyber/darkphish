@@ -248,6 +248,7 @@ func (as *AdminServer) Ready(w http.ResponseWriter, _ *http.Request) {
 }
 
 type templateParams struct {
+	SendingAllowed  bool
 	SettingsTab     string
 	Title           string
 	Flashes         []interface{}
@@ -266,6 +267,7 @@ func newTemplateParams(r *http.Request) templateParams {
 	modifySystem, _ := user.HasPermission(models.PermissionModifySystem)
 	viewCredentials, _ := user.HasPermission(models.PermissionViewCredentials)
 	return templateParams{
+		SendingAllowed:  models.CheckSendingLicense() == nil,
 		User:            user,
 		ModifySystem:    modifySystem,
 		ViewCredentials: viewCredentials,
@@ -655,7 +657,7 @@ func (as *AdminServer) ResetPassword(w http.ResponseWriter, r *http.Request) {
 // TODO: Make this execute the template, too
 func getTemplate(w http.ResponseWriter, tmpl string) *template.Template {
 	templates := template.New("template")
-	_, err := templates.ParseFiles("templates/base.html", "templates/nav.html", "templates/settings_tabs.html", "templates/"+tmpl+".html", "templates/flashes.html")
+	_, err := templates.ParseFiles("templates/base.html", "templates/nav.html", "templates/settings_tabs.html", "templates/"+tmpl+".html", "templates/flashes.html", "templates/license_warning.html")
 	if err != nil {
 		log.Error(err)
 	}

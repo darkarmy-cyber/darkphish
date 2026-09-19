@@ -2,6 +2,7 @@ package mailer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/textproto"
@@ -63,8 +64,36 @@ type Mail interface {
 // on a channel to send. It's assumed that every slice of emails received is meant
 // to be sent to the same server.
 type MailWorker struct {
-	queue chan []Mail
-	done  chan struct{}
+	queue     chan []Mail
+	done      chan struct{}
+	authorize func() error
+}
+
+// NewAuthorizedMailWorker rechecks authorization before connecting, reconnecting
+// and sending each message. A missing callback is denied, not silently bypassed.
+func NewAuthorizedMailWorker(authorize func() error) *MailWorker {
+	mw := NewMailWorker()
+	if authorize == nil {
+		authorize = func() error { return errors.New("email sending authorization is unavailable") }
+	}
+	mw.authorize = authorize
+	return mw
+}
+
+type authorizationError struct{ error }
+
+func (e *authorizationError) Unwrap() error { return e.error }
+
+// Campaign mail remains retryable after license restoration. Synchronous test
+// emails receive an error rather than being silently deferred or auto-retried.
+func pauseUnauthorizedMail(err error, ms []Mail) {
+	for _, m := range ms {
+		if paused, ok := m.(interface{ PauseDelivery(error) error }); ok {
+			paused.PauseDelivery(err)
+		} else {
+			m.Error(err)
+		}
+	}
 }
 
 // NewMailWorker returns an instance of MailWorker with the mail queue
@@ -100,7 +129,7 @@ func (mw *MailWorker) Start(ctx context.Context) {
 					errorMail(err, ms)
 					return
 				}
-				sendMail(ctx, dialer, ms)
+				sendMail(ctx, dialer, ms, mw.authorize)
 			}(ctx, ms)
 		}
 	}
@@ -125,13 +154,20 @@ func errorMail(err error, ms []Mail) {
 // dialHost attempts to make a connection to the host specified by the Dialer.
 // It returns MaxReconnectAttempts if the number of connection attempts has been
 // exceeded.
-func dialHost(ctx context.Context, dialer Dialer) (Sender, error) {
+func dialHost(ctx context.Context, dialer Dialer, checks ...func() error) (Sender, error) {
 	sendAttempt := 0
 	var sender Sender
 	var err error
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		for _, check := range checks {
+			if check != nil {
+				if err := check(); err != nil {
+					return nil, &authorizationError{err}
+				}
+			}
 		}
 		sender, err = dialer.Dial()
 		if err == nil {
@@ -151,9 +187,14 @@ func dialHost(ctx context.Context, dialer Dialer) (Sender, error) {
 // sendMail attempts to send the provided Mail instances.
 // If the context is cancelled before all of the mail are sent,
 // sendMail just returns and does not modify those emails.
-func sendMail(ctx context.Context, dialer Dialer, ms []Mail) {
-	sender, err := dialHost(ctx, dialer)
+func sendMail(ctx context.Context, dialer Dialer, ms []Mail, authorize func() error) {
+	sender, err := dialHost(ctx, dialer, authorize)
 	if err != nil {
+		var denied *authorizationError
+		if errors.As(err, &denied) {
+			pauseUnauthorizedMail(denied.error, ms)
+			return
+		}
 		if ctx.Err() != nil {
 			return
 		}
@@ -166,6 +207,12 @@ func sendMail(ctx context.Context, dialer Dialer, ms []Mail) {
 	for i, m := range ms {
 		if ctx.Err() != nil {
 			return
+		}
+		if authorize != nil {
+			if err := authorize(); err != nil {
+				pauseUnauthorizedMail(err, ms[i:])
+				return
+			}
 		}
 		message.Reset()
 		err = m.Generate(message)
@@ -181,6 +228,12 @@ func sendMail(ctx context.Context, dialer Dialer, ms []Mail) {
 			continue
 		}
 
+		if authorize != nil {
+			if err := authorize(); err != nil {
+				pauseUnauthorizedMail(err, ms[i:])
+				return
+			}
+		}
 		err = gomail.SendCustomFrom(sender, smtp_from, message)
 		if err != nil {
 			if te, ok := err.(*textproto.Error); ok {
@@ -226,8 +279,13 @@ func sendMail(ctx context.Context, dialer Dialer, ms []Mail) {
 					"email": message.GetHeader("To")[0],
 				}).Warn(err)
 				origErr := err
-				sender, err = dialHost(ctx, dialer)
+				sender, err = dialHost(ctx, dialer, authorize)
 				if err != nil {
+					var denied *authorizationError
+					if errors.As(err, &denied) {
+						pauseUnauthorizedMail(denied.error, ms[i:])
+						return
+					}
 					if ctx.Err() != nil {
 						// Shutdown is not a permanent delivery failure. Leave the
 						// current and unattempted logs eligible for a later retry.

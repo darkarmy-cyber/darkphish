@@ -26,6 +26,10 @@ func (as *Server) Campaigns(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, cs, http.StatusOK)
 	//POST: Create a new campaign and return it as JSON
 	case r.Method == "POST":
+		if err := models.CheckSendingLicense(); err != nil {
+			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusForbidden)
+			return
+		}
 		c := models.Campaign{}
 		// Put the request into a campaign
 		err := json.NewDecoder(r.Body).Decode(&c)

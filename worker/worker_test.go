@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"github.com/darkarmy-cyber/darkphish/internal/licensetest"
 	"github.com/darkarmy-cyber/darkphish/internal/licensing"
 	"path/filepath"
 	"testing"
@@ -15,6 +16,30 @@ import (
 
 type logMailer struct {
 	queue chan []mailer.Mail
+}
+
+type successfulTestMailer struct{ called bool }
+
+func (m *successfulTestMailer) Start(context.Context) {}
+func (m *successfulTestMailer) Queue(messages []mailer.Mail) {
+	m.called = true
+	for _, message := range messages {
+		message.Success()
+	}
+}
+
+func TestLicensedWorkerCanSendTestEmail(t *testing.T) {
+	models.ConfigureLicenseManager(licensetest.Manager(t, licensing.StateActive))
+	t.Cleanup(func() { models.ConfigureLicenseManager(nil) })
+	m := &successfulTestMailer{}
+	w := &DefaultWorker{mailer: m}
+	if err := w.SendTestEmail(&models.EmailRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	w.jobs.Wait()
+	if !m.called {
+		t.Fatal("licensed test email never reached fake mailer")
+	}
 }
 
 type drainingMailer struct {
@@ -65,6 +90,8 @@ type testContext struct {
 }
 
 func setupTest(t *testing.T) *testContext {
+	models.ConfigureLicenseManager(licensetest.Manager(t, licensing.StateActive))
+	t.Cleanup(func() { models.ConfigureLicenseManager(nil) })
 	conf := &config.Config{
 		DBName:         "sqlite3",
 		DBPath:         ":memory:",
@@ -78,6 +105,24 @@ func setupTest(t *testing.T) *testContext {
 	ctx.config = conf
 	createTestData(t, ctx)
 	return ctx
+}
+
+func TestUnlicensedWorkerCannotSendEvenWithoutHTTP(t *testing.T) {
+	t.Cleanup(func() { models.ConfigureLicenseManager(nil) })
+	for _, state := range []licensing.State{"unconfigured", licensing.StateMissing, licensing.StateInvalid, licensing.StateExpired} {
+		models.ConfigureLicenseManager(nil)
+		if state != "unconfigured" {
+			models.ConfigureLicenseManager(licensetest.Manager(t, state))
+		}
+		w := &DefaultWorker{} // No mailer: dispatch must never be reached.
+		if err := w.SendTestEmail(nil); err != models.ErrSendingLicenseRequired {
+			t.Fatalf("state=%s error=%v", state, err)
+		}
+		w.LaunchCampaign(models.Campaign{})
+		if err := w.processCampaigns(time.Now()); err != models.ErrSendingLicenseRequired {
+			t.Fatal("scheduler permits unlicensed sending")
+		}
+	}
 }
 
 func createTestData(t *testing.T, ctx *testContext) {
@@ -238,6 +283,21 @@ func TestUnlicensedScheduledCampaignRemainsRetryable(t *testing.T) {
 	for _, entry := range logs {
 		if entry.Processing {
 			t.Fatal("denied mail stayed locked")
+		}
+		if err := entry.Lock(); err != nil {
+			t.Fatal(err)
+		}
+		if err := entry.PauseDelivery(models.ErrSendingLicenseRequired); err != nil {
+			t.Fatal(err)
+		}
+	}
+	retained, err := models.GetMailLogsByCampaign(campaign.Id)
+	if err != nil || len(retained) != len(logs) {
+		t.Fatal("authorization pause removed recipients")
+	}
+	for _, entry := range retained {
+		if entry.Processing || entry.SendAttempt != 0 {
+			t.Fatal("authorization pause consumed a retry or retained lock")
 		}
 	}
 	current, err := models.GetCampaignMailContext(campaign.Id, campaign.UserId)

@@ -1,0 +1,11 @@
+{{define "license_warning"}}
+{{if not .SendingAllowed}}
+<div class="alert alert-warning" role="alert" data-license-warning>
+    <strong>License activation required.</strong>
+    Campaigns and test emails cannot be sent without a valid DarkPhish license.
+    {{if .ModifySystem}}<a class="alert-link" href="/settings?tab=licensing">Activate or renew your license in Settings &gt; Licensing.</a>
+    {{else}}Contact your administrator to activate or renew the license.{{end}}
+    Reload this page after activation.
+</div>
+{{end}}
+{{end}}

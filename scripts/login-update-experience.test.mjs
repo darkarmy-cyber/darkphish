@@ -8,6 +8,7 @@ test('login uses the site identity without a footer and retains real authenticat
   assert.match(html, /Phishing<br>simulations\./)
   assert.match(html, /Built for<br>defenders\./)
   assert.doesNotMatch(html, /<footer|auth-signature|auth-eyebrow/)
+  assert.doesNotMatch(html, /Documentation|docs\.darkphish\.sk/)
   assert.match(html, /method="POST"/)
   assert.match(html, /autocomplete="current-password"/)
   assert.match(html, /template "flashes"/)

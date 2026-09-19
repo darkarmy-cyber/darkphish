@@ -15,10 +15,14 @@ test('login uses the site identity without a footer and retains real authenticat
   assert.doesNotMatch(html, /<script[^>]+src="https?:/)
 })
 
-test('login and admin CSS and update script are versioned across releases', () => {
-  for (const name of ['login','base','reset_password']) assert.match(read(`templates/${name}.html`), /darkphish\.css\?v={{\.Version}}/)
+test('public auth uses a release-agnostic layout key and admin assets are versioned', () => {
+  for (const name of ['login','reset_password']) {
+    assert.match(read(`templates/${name}.html`), /darkphish\.css\?v=auth-layout-2/)
+    assert.doesNotMatch(read(`templates/${name}.html`), /\.Version/)
+  }
+  assert.match(read('templates/base.html'), /darkphish\.css\?v={{\.Version}}/)
   assert.match(read('templates/update.html'), /update\.min\.js\?v={{\.Version}}/)
-  assert.equal((read('controllers/route.go').match(/Title: "Login", Version: config.Version/g) || []).length, 2)
+  assert.doesNotMatch(read('controllers/route.go'), /Title: "Login", Version: config.Version/)
 })
 
 test('credentials stay white with dark text including autofill and focus', () => {

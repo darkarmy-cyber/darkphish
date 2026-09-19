@@ -9,7 +9,9 @@ $(function () {
     };
     function request(url, method, data) {
         return $.ajax({url: "/api" + url, method: method, data: data === undefined ? undefined : JSON.stringify(data),
-            dataType: "json", contentType: "application/json", timeout: 15000});
+            // Release lookups allow 45 seconds on the server; leave room for the
+            // response instead of cancelling a valid slow check at 15 seconds.
+            dataType: "json", contentType: "application/json", timeout: url === "/updates" || url === "/updates/check" ? 60000 : 15000});
     }
     function controls() {
         var reason = busy || watching ? "An update operation is in progress." :
@@ -113,9 +115,11 @@ $(function () {
         // GET only: an interrupted POST may have reached the supervisor. Never replay it.
         request("/updates", "GET").done(function (status) {
             render(status);
+            // Another tab/admin may have won the apply race. Its authoritative
+            // in-progress state still needs monitoring, even after our 409.
+            if (status.applying) { observedApplying = true; targetVersion = status.latest_version; progress("An update is already running. Monitoring its result…"); watchRestart(240); return; }
             if (mayHaveApplied) {
                 if (outcome(status)) return;
-                if (status.applying) { progress("Verifying the release and preparing the update…"); watchRestart(240); return; }
                 unknown(status.error || "The update request was interrupted. Its outcome could not be confirmed.");
             } else {
                 finish("error", failureMessage(xhr), "The request was rejected. No update was started by this request.");

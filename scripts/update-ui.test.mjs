@@ -34,7 +34,7 @@ function page(path) {
     return elements.get(selector)
   }
   $.ajax = options => {
-    assert.equal(options.timeout, 15000)
+    assert.equal(options.timeout, ['/api/updates','/api/updates/check'].includes(options.url) ? 60000 : 15000)
     assert.ok(options.url.startsWith('/api/'))
     const request = Object.assign(deferred(), {url: options.url.slice(4), method: options.method,
       body: options.data && JSON.parse(options.data), session: true})
@@ -183,6 +183,21 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
       assert.equal(p.$('#updateApply').disabled, !!outcome.error || !outcome.available)
       assert.equal(p.timers.length, 0)
       assert.equal(p.requests.filter(r => r.url === '/updates/apply').length, 1)
+    }
+  })
+
+  test(`${path}: a rejected concurrent apply still monitors the authoritative operation`, () => {
+    for (const result_code of ['applied','rollback']) {
+      const p = page(path)
+      p.status({}); p.confirm(); p.requests.at(-1).resolve({})
+      p.requests.at(-1).reject({status:409,responseJSON:{message:'An update is already in progress'}})
+      p.status({applying:true})
+      assert.equal(p.$('#updateApply').disabled,true)
+      assert.equal(p.timers.length,1)
+      p.timers.shift()()
+      p.status({applying:false,current_version:result_code==='applied'?'0.15.0':'0.14.0',result_code,result:result_code==='applied'?'Update completed successfully':'Update failed; previous application restored'})
+      assert.equal(p.dialogs.at(-1).title,result_code==='applied'?'Update successful':'Update failed')
+      assert.equal(p.requests.filter(r=>r.url==='/updates/apply').length,1)
     }
   })
 

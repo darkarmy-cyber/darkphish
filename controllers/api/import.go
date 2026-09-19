@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/darkarmy-cyber/darkphish/internal/traininghtml"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/darkarmy-cyber/darkphish/util"
 	"github.com/jordan-wright/email"
-	"golang.org/x/net/html"
 )
 
 type cloneRequest struct {
@@ -24,7 +24,9 @@ func (cr *cloneRequest) validate() error {
 }
 
 type cloneResponse struct {
-	HTML string `json:"html"`
+	HTML           string `json:"html"`
+	TrainingStatic bool   `json:"training_static"`
+	Notice         string `json:"notice"`
 }
 
 type emailResponse struct {
@@ -92,8 +94,7 @@ func (as *Server) ImportEmail(w http.ResponseWriter, r *http.Request) {
 }
 
 // ImportSite allows for the importing of HTML from a website
-// Without "include_resources" set, it will merely place a "base" tag
-// so that all resources can be loaded relative to the given URL.
+// New imports are inert training material, never live sign-in clones.
 func (as *Server) ImportSite(w http.ResponseWriter, r *http.Request) {
 	cr := cloneRequest{}
 	if r.Method != "POST" {
@@ -114,33 +115,11 @@ func (as *Server) ImportSite(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
 		return
 	}
-	// Insert the base href tag to better handle relative resources
-	d, err := goquery.NewDocumentFromReader(bytes.NewReader(content))
-	if err != nil {
-		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
-		return
-	}
-	// Assuming we don't want to include resources, we'll need a base href
-	if d.Find("head base").Length() == 0 {
-		d.Find("head").PrependNodes(&html.Node{Type: html.ElementNode, Data: "base", Attr: []html.Attribute{{Key: "href", Val: sourceURL.String()}}})
-	}
-	forms := d.Find("form")
-	forms.Each(func(i int, f *goquery.Selection) {
-		// We'll want to store where we got the form from
-		// (the current URL)
-		originalURL := sourceURL.String()
-		if action, parseErr := sourceURL.Parse(f.AttrOr("action", "")); parseErr == nil {
-			originalURL = action.String()
-		}
-		f.PrependNodes(&html.Node{Type: html.ElementNode, Data: "input", Attr: []html.Attribute{
-			{Key: "type", Val: "hidden"}, {Key: "name", Val: "__original_url"}, {Key: "value", Val: originalURL},
-		}})
-	})
-	h, err := d.Html()
+	h, err := traininghtml.Sanitize(string(content), sourceURL)
 	if err != nil {
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusInternalServerError)
 		return
 	}
-	cs := cloneResponse{HTML: h}
+	cs := cloneResponse{HTML: h, TrainingStatic: true, Notice: traininghtml.Notice + " External stylesheets and dynamic content are not imported. Load verified raster images separately."}
 	JSONResponse(w, cs, http.StatusOK)
 }

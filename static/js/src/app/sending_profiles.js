@@ -1,5 +1,17 @@
 var profiles = []
 
+// Presentation only: preserve the server diagnostic without retrying a send.
+function testEmailErrorMessage(data) {
+    var message = data && data.responseJSON && data.responseJSON.message
+    if (typeof message !== "string" || !message.trim()) {
+        return "The test email result could not be confirmed. Check the server log before trying again."
+    }
+    if (/(^|[\s-])535(?=[\s"']|$)/.test(message)) {
+        return "The SMTP server rejected authentication (535). Ask your mail administrator to verify the sending account and permitted authentication method. Do not disable TLS certificate validation. Server diagnostic: " + message
+    }
+    return message
+}
+
 // Attempts to send a test email by POSTing to /campaigns/
 function sendTestEmail() {
     if ($("#sendTestModalSubmit").prop("disabled")) return
@@ -37,7 +49,7 @@ function sendTestEmail() {
         })
         .error(function (data) {
             $("#sendTestEmailModal\\.flashes").empty().append("<div style=\"text-align:center\" class=\"alert alert-danger\">\
-	    <i class=\"fa fa-exclamation-circle\"></i> " + escapeHtml(data.responseJSON.message) + "</div>")
+	    <i class=\"fa fa-exclamation-circle\"></i> " + escapeHtml(testEmailErrorMessage(data)) + "</div>")
             $("#sendTestModalSubmit").html(btnHtml)
         })
 }

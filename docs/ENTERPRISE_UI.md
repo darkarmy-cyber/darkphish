@@ -1,4 +1,21 @@
-# Warm graphite administrative interface
+# Administrative appearance and authentication
+
+## Current approved appearance
+
+Administration now opts into `body.classic-ui`, matching the user's supplied
+0.16 screenshots: dark Flat UI header, grey proportional sidebar, white canvas,
+large headings and the original component palette. `classic-admin.css` ships
+after `auth-update.css`. The warm administrative overrides below are no longer
+active on application pages; their shared authentication foundation is retained.
+The website-inspired login and white credential fields remain unchanged.
+
+Responsive navigation, wide editors, visible keyboard focus, reduced motion,
+the Dark Army credit and external documentation links remain supported. No
+backend, licensing, authentication or update behaviour is rolled back.
+Use screenshot/computed-style checks as well as source comparisons: matching
+CSS archives alone does not prove what a user's browser actually rendered.
+
+## Historical warm foundation
 
 This is the first implementation slice of the approved DarkPhish enterprise redesign: a shared visual foundation across the existing product, real sign-in/password reset and spacious editors. It is not a new frontend framework or an authentication/authorization change.
 

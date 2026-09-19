@@ -3,11 +3,11 @@ import {readFileSync} from 'node:fs'
 import test from 'node:test'
 const read = p => readFileSync(new URL('../' + p, import.meta.url), 'utf8')
 
-test('enterprise stylesheet is shipped last, scoped to admin and uses no external assets', () => {
+test('enterprise foundation remains available for auth but admin opts into the approved classic shell', () => {
   const css = read('static/css/enterprise.css')
   const gulp = read('gulpfile.js')
   assert.ok(gulp.indexOf("css_directory + 'enterprise.css'") > gulp.indexOf("css_directory + 'select2-bootstrap.min.css'"))
-  assert.match(read('templates/base.html'), /body class="enterprise-ui"/)
+  assert.match(read('templates/base.html'), /body class="classic-ui"/)
   assert.match(css, /--dp-canvas: #f5f3ee/)
   assert.match(css, /prefers-reduced-motion/)
   assert.match(css, /:focus-visible/)
@@ -36,6 +36,7 @@ test('reduced-motion durations survive the shipped CSS minifier', () => {
   const rule = bundle.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^}]+)\}/)?.[1]
   assert.ok(rule, 'shipped bundle contains the reduced-motion rule')
   assert.match(rule, /\.enterprise-ui\s*\*/)
+  assert.match(rule, /\.classic-ui\s*\*/)
   assert.match(rule, /\.auth-page\s*\*/)
   for (const property of ['animation-duration', 'transition-duration']) {
     const value = rule.match(new RegExp(`(?:[;{])\\s*${property}:\\s*([\\d.]+)(ms|s)\\s*!important(?:;|$)`))

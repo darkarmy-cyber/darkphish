@@ -16,6 +16,7 @@ import (
 	"github.com/darkarmy-cyber/darkphish/config"
 	ctx "github.com/darkarmy-cyber/darkphish/context"
 	"github.com/darkarmy-cyber/darkphish/controllers/api"
+	"github.com/darkarmy-cyber/darkphish/internal/traininghtml"
 	"github.com/darkarmy-cyber/darkphish/internal/update"
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/models"
@@ -268,6 +269,11 @@ func (ps *PhishingServer) PhishHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if p.TrainingStatic && r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "Static training pages do not accept submitted data", http.StatusMethodNotAllowed)
+		return
+	}
 	switch {
 	case r.Method == "GET":
 		err = rs.HandleClickedLink(d)
@@ -300,6 +306,27 @@ func (ps *PhishingServer) PhishHandler(w http.ResponseWriter, r *http.Request) {
 // connection. This usually involves writing out the page HTML or redirecting
 // the user to the correct URL.
 func renderPhishResponse(w http.ResponseWriter, r *http.Request, ptx models.PhishingTemplateContext, p models.Page) {
+	if p.TrainingStatic || traininghtml.IsStatic(p.HTML) {
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src data:; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'; sandbox")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "Static training pages do not accept submitted data", http.StatusMethodNotAllowed)
+			return
+		}
+		clean, err := traininghtml.Sanitize(p.HTML, nil)
+		if err != nil {
+			http.Error(w, "Training page is unavailable", http.StatusInternalServerError)
+			return
+		}
+		// Literal text, including {{ and backslashes, must not enter Go templates.
+		if r.Method == http.MethodHead {
+			return
+		}
+		_, _ = w.Write([]byte(clean))
+		return
+	}
 	// If the request was a form submit and a redirect URL was specified, we
 	// should send the user to that URL
 	if r.Method == "POST" {

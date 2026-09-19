@@ -88,7 +88,7 @@ func TestImportCancelledRequest(t *testing.T) {
 	}
 }
 
-func TestImportMetadataAttributesPreserveSimulationHTML(t *testing.T) {
+func TestImportProjectsInertTrainingHTML(t *testing.T) {
 	page := `<html><head></head><body><script>window.simulationOnly=true</script><form action='/submit?x=" data-bad="'><input name="field"></form></body></html>`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, page) }))
 	defer server.Close()
@@ -104,11 +104,10 @@ func TestImportMetadataAttributesPreserveSimulationHTML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata := document.Find(`input[name="__original_url"]`)
-	if metadata.Length() != 1 || len(metadata.Nodes[0].Attr) != 3 || document.Find("[data-bad]").Length() != 0 {
-		t.Fatal("import metadata escaped its attribute boundary")
+	if document.Find("form,input,script,base,[data-bad]").Length() != 0 {
+		t.Fatal("active content or source metadata survived static import")
 	}
-	if document.Find("script").Text() != "window.simulationOnly=true" {
-		t.Fatal("simulation HTML was globally sanitized")
+	if !imported.TrainingStatic || imported.Notice == "" || document.Find("body[data-darkphish-training=static-v1]").Length() != 1 {
+		t.Fatal("training safety mode missing")
 	}
 }

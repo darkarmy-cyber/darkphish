@@ -6,11 +6,16 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/darkarmy-cyber/darkphish/internal/traininghtml"
 	log "github.com/darkarmy-cyber/darkphish/logger"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Page contains the fields used for a Page model
 type Page struct {
+	// Persisted by the HTML mode marker; no database migration is required.
+	TrainingStatic     bool      `json:"training_static" gorm:"-"`
 	Id                 int64     `json:"id" gorm:"column:id; primaryKey"`
 	UserId             int64     `json:"-" gorm:"column:user_id"`
 	Name               string    `json:"name"`
@@ -65,6 +70,9 @@ func (p *Page) Validate() error {
 	if p.Name == "" {
 		return ErrPageNameNotSpecified
 	}
+	if p.TrainingStatic || traininghtml.IsStatic(p.HTML) {
+		return p.makeStaticTraining()
+	}
 	if err := ValidateTemplate(p.HTML); err != nil {
 		return err
 	}
@@ -74,6 +82,19 @@ func (p *Page) Validate() error {
 	return p.parseHTML()
 }
 
+func (p *Page) makeStaticTraining() error {
+	clean, err := traininghtml.Sanitize(p.HTML, nil)
+	if err != nil {
+		return err
+	}
+	p.HTML = clean
+	p.TrainingStatic = true
+	p.CaptureCredentials = false
+	p.CapturePasswords = false
+	p.RedirectURL = ""
+	return nil
+}
+
 // GetPages returns the pages owned by the given user.
 func GetPages(uid int64) ([]Page, error) {
 	ps := []Page{}
@@ -81,6 +102,9 @@ func GetPages(uid int64) ([]Page, error) {
 	if err != nil {
 		log.Error(err)
 		return ps, err
+	}
+	for i := range ps {
+		ps[i].TrainingStatic = traininghtml.IsStatic(ps[i].HTML)
 	}
 	return ps, err
 }
@@ -92,6 +116,7 @@ func GetPage(id int64, uid int64) (Page, error) {
 	if err != nil {
 		log.Error(err)
 	}
+	p.TrainingStatic = traininghtml.IsStatic(p.HTML)
 	return p, err
 }
 
@@ -102,6 +127,7 @@ func GetPageByName(n string, uid int64) (Page, error) {
 	if err != nil {
 		log.Error(err)
 	}
+	p.TrainingStatic = traininghtml.IsStatic(p.HTML)
 	return p, err
 }
 
@@ -123,11 +149,24 @@ func PostPage(p *Page) error {
 // PutPage edits an existing Page in the database.
 // Per the PUT Method RFC, it presumes all data for a page is provided.
 func PutPage(p *Page) error {
-	err := p.Validate()
-	if err != nil {
-		return err
-	}
-	err = db.Where("id=?", p.Id).Save(p).Error
+	// Serialize the mode check and write. A concurrent legacy edit must not
+	// overwrite a newly static page and silently re-enable active forms.
+	err := db.Transaction(func(tx *gorm.DB) error {
+		prior := Page{}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id=? AND user_id=?", p.Id, p.UserId).Take(&prior).Error; err != nil {
+			return err
+		}
+		if traininghtml.IsStatic(prior.HTML) {
+			p.TrainingStatic = true
+		}
+		if err := p.Validate(); err != nil {
+			return err
+		}
+		// Updates must never fall back to an INSERT of a deleted/foreign page.
+		return tx.Model(&Page{}).Where("id=? AND user_id=?", p.Id, p.UserId).
+			Select("name", "html", "capture_credentials", "capture_passwords", "redirect_url", "modified_date").Updates(p).Error
+	})
 	if err != nil {
 		log.Error(err)
 	}

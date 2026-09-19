@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,13 +56,12 @@ func setupTest(t *testing.T) *testContext {
 	return ctx
 }
 
-func TestSiteImportBaseHref(t *testing.T) {
+func TestSiteImportDoesNotExposeActiveBaseOrRemoteImage(t *testing.T) {
 	ctx := setupTest(t)
 	h := "<html><head></head><body><img src=\"/test.png\"/></body></html>"
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, h)
 	}))
-	expected := fmt.Sprintf("<html><head><base href=\"%s\"/></head><body><img src=\"/test.png\"/>\n</body></html>", ts.URL)
 	defer ts.Close()
 	response := makeImportRequest(ctx, []string{"127.0.0.1/32", "::1/128"}, ts.URL)
 	cs := cloneResponse{}
@@ -69,7 +69,7 @@ func TestSiteImportBaseHref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error decoding response: %v", err)
 	}
-	if cs.HTML != expected {
-		t.Fatalf("unexpected response received. expected %s got %s", expected, cs.HTML)
+	if !cs.TrainingStatic || cs.Notice == "" || strings.Contains(cs.HTML, "<base") || strings.Contains(cs.HTML, `src="/test.png"`) {
+		t.Fatal("import did not apply the restricted static contract")
 	}
 }

@@ -151,7 +151,7 @@ function attach(files) {
                 escapeHtml(file.name),
                 '<span class="remove-row"><i class="fa fa-trash-o"></i></span>',
                 reader.result.split(",")[1],
-                file.type || "application/octet-stream"
+                escapeHtml(file.type || "application/octet-stream")
             ]).draw()
         }
         reader.onerror = function (e) {
@@ -205,7 +205,7 @@ function edit(idx) {
                 escapeHtml(file.name),
                 '<span class="remove-row"><i class="fa fa-trash-o"></i></span>',
                 file.content,
-                file.type || "application/octet-stream"
+                escapeHtml(file.type || "application/octet-stream")
             ])
         })
         attachmentsTable.rows.add(attachmentRows).draw()
@@ -266,7 +266,7 @@ function copy(idx) {
             escapeHtml(file.name),
             '<span class="remove-row"><i class="fa fa-trash-o"></i></span>',
             file.content,
-            file.type || "application/octet-stream"
+            escapeHtml(file.type || "application/octet-stream")
         ]).draw()
     })
     // Handle Deletion

@@ -493,7 +493,7 @@ function renderTimeline(data) {
                 if (details.error) {
                     results += '<div class="timeline-event-details"><i class="fa fa-caret-right"></i> View Details</div>'
                     results += '<div class="timeline-event-results">'
-                    results += '<span class="label label-default">Error</span> ' + details.error
+                    results += '<span class="label label-default">Error</span> ' + escapeHtml(details.error)
                     results += '</div>'
                 }
             }

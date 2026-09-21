@@ -76,7 +76,7 @@ func assertLicenseCoordination(t *testing.T, database *sql.DB) {
 
 func assertSecuritySchema(t *testing.T, database *sql.DB) {
 	t.Helper()
-	for _, table := range []string{"campaign_credential_policies", "credential_policy_results", "encrypted_credentials", "personal_access_tokens", "audit_events", "privileged_sessions", "campaign_reviewers", "audit_outbox", "audit_checkpoints", "audit_chain_heads", "audit_delivery_receipts"} {
+	for _, table := range []string{"campaign_credential_policies", "credential_policy_results", "encrypted_credentials", "personal_access_tokens", "audit_events", "privileged_sessions", "browser_sessions", "campaign_reviewers", "audit_outbox", "audit_checkpoints", "audit_chain_heads", "audit_delivery_receipts"} {
 		if _, err := database.Exec("SELECT COUNT(*) FROM " + table); err != nil {
 			t.Fatalf("security table %s is unavailable: %v", table, err)
 		}

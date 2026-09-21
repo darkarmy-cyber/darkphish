@@ -68,6 +68,9 @@ func PutUserWithAudit(u *User, revokePrivileged bool, event audit.Event) error {
 			if err := tx.Where("user_id=?", u.Id).Delete(&PrivilegedSession{}).Error; err != nil {
 				return err
 			}
+			if err := tx.Where("user_id=?", u.Id).Delete(&BrowserSession{}).Error; err != nil {
+				return err
+			}
 		}
 		event.TargetType = "user"
 		event.TargetID = strconv.FormatInt(u.Id, 10)
@@ -173,7 +176,10 @@ func DeleteUser(id int64) error {
 			return err
 		}
 	}
-	// Finally, delete the user
+	// Finally, delete active server-side sessions and the user.
+	if err = db.Where("user_id=?", id).Delete(&BrowserSession{}).Error; err != nil {
+		return err
+	}
 	err = db.Where("id=?", id).Delete(&User{}).Error
 	return err
 }

@@ -327,7 +327,7 @@ func schemaSnapshot(t *testing.T, connection *sql.DB, backend string) string {
 func contentSnapshot(t *testing.T, connection *sql.DB, backend string) string {
 	t.Helper()
 	// Static schema allowlist only. No request or external identifier reaches SQL.
-	tables := []string{"users", "roles", "permissions", "role_permissions", "campaigns", "templates", "attachments", "pages", "smtp", "headers", "groups", "targets", "group_targets", "results", "events", "mail_logs", "email_requests", "imap", "webhooks", "campaign_credential_policies", "credential_policy_results", "encrypted_credentials", "personal_access_tokens", "privileged_sessions", "campaign_reviewers", "audit_events", "audit_outbox", "audit_checkpoints", "goose_db_version"}
+	tables := []string{"users", "roles", "permissions", "role_permissions", "campaigns", "templates", "attachments", "pages", "smtp", "headers", "groups", "targets", "group_targets", "results", "events", "mail_logs", "email_requests", "imap", "webhooks", "campaign_credential_policies", "credential_policy_results", "encrypted_credentials", "personal_access_tokens", "privileged_sessions", "browser_sessions", "campaign_reviewers", "audit_events", "audit_outbox", "audit_checkpoints", "goose_db_version"}
 	includeCoordination := os.Getenv("DARKPHISH_COMPAT_COORDINATION") == "1"
 	if includeCoordination {
 		tables = append(tables, "audit_chain_heads", "audit_delivery_receipts", "audit_signing_identities")

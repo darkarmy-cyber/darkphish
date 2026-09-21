@@ -140,8 +140,11 @@ func GetContext(handler http.Handler) http.HandlerFunc {
 		// reuse the values in different handlers
 		r = ctx.Set(r, "session", session)
 		if id, ok := session.Values["id"].(int64); ok {
-			u, err := models.GetUser(id)
-			if err != nil {
+			binding, _ := session.Values["session_id"].(string)
+			active, activeErr := models.IsBrowserSessionActive(id, binding, time.Now().UTC())
+			if activeErr != nil || !active {
+				r = ctx.Set(r, "user", nil)
+			} else if u, err := models.GetUser(id); err != nil {
 				r = ctx.Set(r, "user", nil)
 			} else {
 				r = ctx.Set(r, "user", u)

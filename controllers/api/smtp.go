@@ -31,6 +31,10 @@ func (as *Server) SendingProfiles(w http.ResponseWriter, r *http.Request) {
 			JSONResponse(w, models.Response{Success: false, Message: "Invalid request"}, http.StatusBadRequest)
 			return
 		}
+		if s.Id != 0 {
+			JSONResponse(w, models.Response{Success: false, Message: "new SMTP profiles must not specify an id"}, http.StatusBadRequest)
+			return
+		}
 		// Check to make sure the name is unique
 		_, err = models.GetSMTPByName(s.Name, ctx.Get(r, "user_id").(int64))
 		if !errors.Is(err, models.ErrRecordNotFound) {

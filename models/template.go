@@ -7,6 +7,7 @@ import (
 
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Template models hold the attributes for an email template to be sent to targets
@@ -27,6 +28,9 @@ var ErrTemplateNameNotSpecified = errors.New("Template name not specified")
 
 // ErrTemplateMissingParameter is thrown when a needed parameter is not provided
 var ErrTemplateMissingParameter = errors.New("Need to specify at least plaintext or HTML content")
+
+// ErrTemplateIDSpecified rejects create payloads that could otherwise upsert an existing row.
+var ErrTemplateIDSpecified = errors.New("new templates must not specify an id")
 
 // Validate checks the given template to make sure values are appropriate and complete
 func (t *Template) Validate() error {
@@ -122,26 +126,25 @@ func GetTemplateByName(n string, uid int64) (Template, error) {
 
 // PostTemplate creates a new template in the database.
 func PostTemplate(t *Template) error {
-	// Insert into the DB
+	if t.Id != 0 {
+		return ErrTemplateIDSpecified
+	}
 	if err := t.Validate(); err != nil {
 		return err
 	}
-	err := db.Save(t).Error
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	// Save every attachment
-	for i := range t.Attachments {
-		t.Attachments[i].TemplateId = t.Id
-		err := db.Save(&t.Attachments[i]).Error
-		if err != nil {
-			log.Error(err)
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(t).Error; err != nil {
 			return err
 		}
-	}
-	return nil
+		for i := range t.Attachments {
+			t.Attachments[i].Id = 0
+			t.Attachments[i].TemplateId = t.Id
+			if err := tx.Create(&t.Attachments[i]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // PutTemplate edits an existing template in the database.
@@ -150,31 +153,33 @@ func PutTemplate(t *Template) error {
 	if err := t.Validate(); err != nil {
 		return err
 	}
-	// Delete all attachments, and replace with new ones
-	err := db.Where("template_id=?", t.Id).Delete(&Attachment{}).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		log.Error(err)
-		return err
-	}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = nil
-	}
-	for i := range t.Attachments {
-		t.Attachments[i].TemplateId = t.Id
-		err := db.Save(&t.Attachments[i]).Error
-		if err != nil {
-			log.Error(err)
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var existing Template
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id=? AND user_id=?", t.Id, t.UserId).Take(&existing).Error; err != nil {
 			return err
 		}
-	}
-
-	// Save final template
-	err = db.Where("id=?", t.Id).Save(t).Error
+		if err := tx.Where("template_id=?", t.Id).Delete(&Attachment{}).Error; err != nil {
+			return err
+		}
+		for i := range t.Attachments {
+			t.Attachments[i].Id = 0
+			t.Attachments[i].TemplateId = t.Id
+			if err := tx.Create(&t.Attachments[i]).Error; err != nil {
+				return err
+			}
+		}
+		result := tx.Model(&Template{}).Where("id=? AND user_id=?", t.Id, t.UserId).
+			Select("name", "envelope_sender", "subject", "text", "html", "modified_date").Updates(t)
+		if result.Error != nil {
+			return result.Error
+		}
+		return nil
+	})
 	if err != nil {
 		log.Error(err)
-		return err
 	}
-	return nil
+	return err
 }
 
 // DeleteTemplate deletes an existing template in the database.

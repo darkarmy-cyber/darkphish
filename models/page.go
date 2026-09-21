@@ -29,6 +29,9 @@ type Page struct {
 // ErrPageNameNotSpecified is thrown if the name of the landing page is blank.
 var ErrPageNameNotSpecified = errors.New("Page Name not specified")
 
+// ErrPageIDSpecified rejects create payloads that could otherwise upsert an existing row.
+var ErrPageIDSpecified = errors.New("new pages must not specify an id")
+
 // parseHTML parses the page HTML on save to handle the
 // capturing (or lack thereof!) of credentials and passwords
 func (p *Page) parseHTML() error {
@@ -133,13 +136,14 @@ func GetPageByName(n string, uid int64) (Page, error) {
 
 // PostPage creates a new page in the database.
 func PostPage(p *Page) error {
-	err := p.Validate()
-	if err != nil {
+	if p.Id != 0 {
+		return ErrPageIDSpecified
+	}
+	if err := p.Validate(); err != nil {
 		log.Error(err)
 		return err
 	}
-	// Insert into the DB
-	err = db.Save(p).Error
+	err := db.Create(p).Error
 	if err != nil {
 		log.Error(err)
 	}

@@ -31,6 +31,10 @@ func (as *Server) Pages(w http.ResponseWriter, r *http.Request) {
 			JSONResponse(w, models.Response{Success: false, Message: "Invalid request"}, http.StatusBadRequest)
 			return
 		}
+		if p.Id != 0 {
+			JSONResponse(w, models.Response{Success: false, Message: "new pages must not specify an id"}, http.StatusBadRequest)
+			return
+		}
 		// Check to make sure the name is unique
 		_, err = models.GetPageByName(p.Name, ctx.Get(r, "user_id").(int64))
 		if !errors.Is(err, models.ErrRecordNotFound) {

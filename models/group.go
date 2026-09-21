@@ -290,7 +290,7 @@ func PutGroup(g *Group) error {
 		// the record with the latest information.
 		if id, ok := cacheExisting[nt.Email]; ok {
 			nt.Id = id
-			err = UpdateTarget(tx, nt)
+			err = UpdateTarget(tx, nt, g.UserId)
 			if err != nil {
 				log.Error(err)
 				tx.Rollback()
@@ -338,48 +338,82 @@ func DeleteGroup(g *Group) error {
 
 func insertTargetIntoGroup(tx *gorm.DB, t Target, gid int64) error {
 	if _, err := mail.ParseAddress(t.Email); err != nil {
-		log.WithFields(logrus.Fields{
-			"email": t.Email,
-		}).Error("Invalid email")
+		log.WithFields(logrus.Fields{"email": t.Email}).Error("Invalid email")
 		return err
 	}
-	// Fixed SQL and bound values make recipient identity explicit, including
-	// empty fields that GORM's struct predicates otherwise omit.
-	err := tx.Where("email = ? AND first_name = ? AND last_name = ? AND position = ?",
-		t.Email, t.FirstName, t.LastName, t.Position).FirstOrCreate(&t).Error
-	if err != nil {
-		log.WithFields(logrus.Fields{
-			"email": t.Email,
-		}).Error(err)
+	var group Group
+	if err := tx.Select("id", "user_id").Where("id=?", gid).Take(&group).Error; err != nil {
 		return err
 	}
-	// This join table has no model primary key: it is an insert, not an upsert.
-	err = tx.Create(&GroupTarget{GroupId: gid, TargetId: t.Id}).Error
-	if err != nil {
+	// Recipient identity is tenant-local. Reuse an identical row only when it
+	// is already associated with another group owned by the same user.
+	var existing Target
+	err := tx.Table("targets").
+		Select("targets.*").
+		Joins("JOIN group_targets gt ON gt.target_id=targets.id").
+		Joins("JOIN groups g ON g.id=gt.group_id").
+		Where("g.user_id=? AND targets.email=? AND targets.first_name=? AND targets.last_name=? AND targets.position=?",
+			group.UserId, t.Email, t.FirstName, t.LastName, t.Position).
+		First(&existing).Error
+	switch {
+	case err == nil:
+		t.Id = existing.Id
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		t.Id = 0
+		if err = tx.Create(&t).Error; err != nil {
+			return err
+		}
+	default:
+		return err
+	}
+	if err = tx.Create(&GroupTarget{GroupId: gid, TargetId: t.Id}).Error; err != nil {
 		log.Error(err)
-		return err
 	}
-	if err != nil {
-		log.WithFields(logrus.Fields{
-			"email": t.Email,
-		}).Error("Error adding many-many mapping")
-		return err
-	}
-	return nil
+	return err
 }
 
-// UpdateTarget updates the given target information in the database.
-func UpdateTarget(tx *gorm.DB, target Target) error {
+// UpdateTarget updates recipient information without crossing tenant boundaries.
+// Legacy databases may contain a target row shared by groups from different users;
+// in that case all associations for the current owner move to a private copy first.
+func UpdateTarget(tx *gorm.DB, target Target, ownerID int64) error {
+	var foreignReferences int64
+	if err := tx.Table("group_targets gt").
+		Joins("JOIN groups g ON g.id=gt.group_id").
+		Where("gt.target_id=? AND g.user_id<>?", target.Id, ownerID).
+		Count(&foreignReferences).Error; err != nil {
+		return err
+	}
+	targetID := target.Id
+	if foreignReferences > 0 {
+		copyTarget := target
+		copyTarget.Id = 0
+		if err := tx.Create(&copyTarget).Error; err != nil {
+			return err
+		}
+		var ownerGroupIDs []int64
+		if err := tx.Table("groups g").
+			Joins("JOIN group_targets gt ON gt.group_id=g.id").
+			Where("gt.target_id=? AND g.user_id=?", target.Id, ownerID).
+			Pluck("g.id", &ownerGroupIDs).Error; err != nil {
+			return err
+		}
+		for _, groupID := range ownerGroupIDs {
+			if err := tx.Model(&GroupTarget{}).
+				Where("group_id=? AND target_id=?", groupID, target.Id).
+				Update("target_id", copyTarget.Id).Error; err != nil {
+				return err
+			}
+		}
+		targetID = copyTarget.Id
+	}
 	targetInfo := map[string]interface{}{
 		"first_name": target.FirstName,
 		"last_name":  target.LastName,
 		"position":   target.Position,
 	}
-	err := tx.Model(&target).Where("id = ?", target.Id).Updates(targetInfo).Error
+	err := tx.Model(&Target{}).Where("id=?", targetID).Updates(targetInfo).Error
 	if err != nil {
-		log.WithFields(logrus.Fields{
-			"email": target.Email,
-		}).Error(err)
+		log.WithFields(logrus.Fields{"email": target.Email}).Error(err)
 	}
 	return err
 }

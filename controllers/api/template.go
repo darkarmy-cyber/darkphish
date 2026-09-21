@@ -31,6 +31,10 @@ func (as *Server) Templates(w http.ResponseWriter, r *http.Request) {
 			JSONResponse(w, models.Response{Success: false, Message: "Invalid JSON structure"}, http.StatusBadRequest)
 			return
 		}
+		if t.Id != 0 {
+			JSONResponse(w, models.Response{Success: false, Message: "new templates must not specify an id"}, http.StatusBadRequest)
+			return
+		}
 		_, err = models.GetTemplateByName(t.Name, ctx.Get(r, "user_id").(int64))
 		if !errors.Is(err, models.ErrRecordNotFound) {
 			JSONResponse(w, models.Response{Success: false, Message: "Template name already in use"}, http.StatusConflict)

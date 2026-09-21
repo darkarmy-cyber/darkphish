@@ -214,3 +214,22 @@ func TestLicensePathsAndRefreshBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestTrustedProxyValidation(t *testing.T) {
+	conf := &Config{
+		AdminConf: AdminServer{
+			MaxRequestBodyBytes: DefaultMaxRequestBodyBytes,
+			TrustedProxies:      []string{"127.0.0.1", "10.0.0.0/8", "::1/128"},
+		},
+		Session: SessionConfig{LifetimeHours: DefaultSessionLifetimeHours},
+	}
+	if err := conf.ValidateSecurity(); err != nil {
+		t.Fatalf("expected IP and CIDR trusted proxies to be accepted: %v", err)
+	}
+	for _, value := range []string{"proxy.example.test", "10.0.0.1/99", ""} {
+		conf.AdminConf.TrustedProxies = []string{value}
+		if err := conf.ValidateSecurity(); err == nil {
+			t.Errorf("expected invalid trusted proxy %q to be rejected", value)
+		}
+	}
+}

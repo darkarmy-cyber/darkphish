@@ -97,8 +97,10 @@ default; server databases default to ten connections.
 Place the administrative endpoint behind TLS, restrict it to administrators,
 and isolate the simulation listener. Configure exact, scheme-qualified
 `trusted_origins`; configure administrative `cors_allowed_origins` only where a
-separate trusted client requires them. Use `/healthz` for process liveness and
-`/readyz` for database readiness.
+separate trusted client requires them. Forwarded client-address headers are ignored
+by default. When a reverse proxy is required, list only its exact IP addresses or
+CIDR ranges in `admin_server.trusted_proxies`; never add untrusted client networks.
+Use `/healthz` for process liveness and `/readyz` for database readiness.
 
 SQLite needs exclusive, filesystem-consistent backups of the configured DB file.
 MySQL and PostgreSQL need transactionally consistent backups and protected

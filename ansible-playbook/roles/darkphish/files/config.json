@@ -3,7 +3,8 @@
 		"listen_url": "127.0.0.1:3333",
 		"use_tls": true,
 		"cert_path": "/etc/ssl/crt/darkphish.crt",
-		"key_path": "/etc/ssl/private/darkphish.pem"
+		"key_path": "/etc/ssl/private/darkphish.pem",
+		"trusted_proxies": []
 	},
 	"phish_server": {
 		"listen_url": "127.0.0.1:8080",

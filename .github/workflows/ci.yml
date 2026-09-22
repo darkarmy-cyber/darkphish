@@ -55,7 +55,13 @@ jobs:
           cache: true
       - name: Verify formatting
         shell: bash
-        run: test -z "$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
+        run: |
+          unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
+          if [ -n "$unformatted" ]; then
+            printf 'Files requiring gofmt:\n%s\n' "$unformatted"
+            git ls-files -z '*.go' | xargs -0 gofmt -d
+            exit 1
+          fi
       - name: Build
         run: go build -trimpath ./...
       - name: Unit tests

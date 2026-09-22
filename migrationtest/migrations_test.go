@@ -44,12 +44,20 @@ func exerciseLatestMigration(t *testing.T, driver, dialect, dsn, migrations stri
 	assertSecuritySchema(t, database)
 	assertLicenseCoordination(t, database)
 	if err := goose.Down(database, migrations); err != nil {
-		t.Fatalf("migrate latest down: %v", err)
+		t.Fatalf("migrate browser sessions down: %v", err)
+	}
+	if _, err := database.Exec("SELECT COUNT(*) FROM browser_sessions"); err == nil {
+		t.Fatal("browser_sessions still exists after rolling back the 0.20 migration")
+	}
+	assertSecuritySchemaWithoutBrowserSessions(t, database)
+	assertLicenseCoordination(t, database)
+	if err := goose.Down(database, migrations); err != nil {
+		t.Fatalf("migrate license coordination down: %v", err)
 	}
 	if _, err := database.Exec("SELECT COUNT(*) FROM license_coordination"); err == nil {
 		t.Fatal("license_coordination still exists after rolling back the 0.11 migration")
 	}
-	assertSecuritySchema(t, database)
+	assertSecuritySchemaWithoutBrowserSessions(t, database)
 	if err := goose.Down(database, migrations); err != nil {
 		t.Fatalf("migrate audit coordination down: %v", err)
 	}
@@ -76,7 +84,15 @@ func assertLicenseCoordination(t *testing.T, database *sql.DB) {
 
 func assertSecuritySchema(t *testing.T, database *sql.DB) {
 	t.Helper()
-	for _, table := range []string{"campaign_credential_policies", "credential_policy_results", "encrypted_credentials", "personal_access_tokens", "audit_events", "privileged_sessions", "browser_sessions", "campaign_reviewers", "audit_outbox", "audit_checkpoints", "audit_chain_heads", "audit_delivery_receipts"} {
+	assertSecuritySchemaWithoutBrowserSessions(t, database)
+	if _, err := database.Exec("SELECT COUNT(*) FROM browser_sessions"); err != nil {
+		t.Fatalf("security table browser_sessions is unavailable: %v", err)
+	}
+}
+
+func assertSecuritySchemaWithoutBrowserSessions(t *testing.T, database *sql.DB) {
+	t.Helper()
+	for _, table := range []string{"campaign_credential_policies", "credential_policy_results", "encrypted_credentials", "personal_access_tokens", "audit_events", "privileged_sessions", "campaign_reviewers", "audit_outbox", "audit_checkpoints", "audit_chain_heads", "audit_delivery_receipts"} {
 		if _, err := database.Exec("SELECT COUNT(*) FROM " + table); err != nil {
 			t.Fatalf("security table %s is unavailable: %v", table, err)
 		}

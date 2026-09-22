@@ -54,11 +54,23 @@ func requestWithCopiedCookie(t *testing.T, method, target string, cookie *http.C
 	return response
 }
 
+func allowNormalSession(t *testing.T) {
+	t.Helper()
+	admin, err := models.GetUser(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin.PasswordChangeRequired = false
+	if err := models.PutUser(&admin); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func assertSessionReplayRejected(t *testing.T, baseURL string, cookie *http.Cookie) {
 	t.Helper()
 	ui := requestWithCopiedCookie(t, http.MethodGet, baseURL+"/", cookie)
 	ui.Body.Close()
-	if ui.StatusCode != http.StatusFound || ui.Header.Get("Location") != "/login" {
+	if ui.StatusCode != http.StatusTemporaryRedirect || !strings.HasPrefix(ui.Header.Get("Location"), "/login") {
 		t.Fatalf("revoked cookie reached UI: status=%d location=%q", ui.StatusCode, ui.Header.Get("Location"))
 	}
 	api := requestWithCopiedCookie(t, http.MethodGet, baseURL+"/api/campaigns/", cookie)
@@ -71,6 +83,7 @@ func assertSessionReplayRejected(t *testing.T, baseURL string, cookie *http.Cook
 func TestLogoutRevokesCopiedBrowserSession(t *testing.T) {
 	ctx := setupTest(t)
 	defer tearDown(t, ctx)
+	allowNormalSession(t)
 	client := sessionTestClient(t)
 	login := attemptLogin(t, ctx, client, "admin", "darkphish", "")
 	login.Body.Close()
@@ -100,6 +113,7 @@ func TestLogoutRevokesCopiedBrowserSession(t *testing.T) {
 func TestPasswordChangeRotatesBrowserSessions(t *testing.T) {
 	ctx := setupTest(t)
 	defer tearDown(t, ctx)
+	allowNormalSession(t)
 	client := sessionTestClient(t)
 	login := attemptLogin(t, ctx, client, "admin", "darkphish", "")
 	login.Body.Close()

@@ -120,8 +120,8 @@ func TestPasswordChangeRotatesBrowserSessions(t *testing.T) {
 	copied := copiedSessionCookie(t, client, ctx.adminServer.URL)
 
 	form := url.Values{
-		"current_password":    {"darkphish"},
-		"new_password":        {"Synthetic-session-password-20!"},
+		"current_password":     {"darkphish"},
+		"new_password":         {"Synthetic-session-password-20!"},
 		"confirm_new_password": {"Synthetic-session-password-20!"},
 	}
 	request, err := http.NewRequest(http.MethodPost, ctx.adminServer.URL+"/settings", strings.NewReader(form.Encode()))

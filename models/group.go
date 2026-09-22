@@ -351,9 +351,9 @@ func insertTargetIntoGroup(tx *gorm.DB, t Target, gid int64) error {
 	err := tx.Table("targets").
 		Select("targets.*").
 		Joins("JOIN group_targets gt ON gt.target_id=targets.id").
-		Joins("JOIN groups g ON g.id=gt.group_id").
-		Where("g.user_id=? AND targets.email=? AND targets.first_name=? AND targets.last_name=? AND targets.position=?",
-			group.UserId, t.Email, t.FirstName, t.LastName, t.Position).
+		Where("gt.group_id IN (?) AND targets.email=? AND targets.first_name=? AND targets.last_name=? AND targets.position=?",
+			tx.Model(&Group{}).Select("id").Where("user_id=?", group.UserId),
+			t.Email, t.FirstName, t.LastName, t.Position).
 		First(&existing).Error
 	switch {
 	case err == nil:
@@ -378,8 +378,8 @@ func insertTargetIntoGroup(tx *gorm.DB, t Target, gid int64) error {
 func UpdateTarget(tx *gorm.DB, target Target, ownerID int64) error {
 	var foreignReferences int64
 	if err := tx.Table("group_targets gt").
-		Joins("JOIN groups g ON g.id=gt.group_id").
-		Where("gt.target_id=? AND g.user_id<>?", target.Id, ownerID).
+		Where("gt.target_id=? AND gt.group_id IN (?)", target.Id,
+			tx.Model(&Group{}).Select("id").Where("user_id<>?", ownerID)).
 		Count(&foreignReferences).Error; err != nil {
 		return err
 	}
@@ -391,10 +391,10 @@ func UpdateTarget(tx *gorm.DB, target Target, ownerID int64) error {
 			return err
 		}
 		var ownerGroupIDs []int64
-		if err := tx.Table("groups g").
-			Joins("JOIN group_targets gt ON gt.group_id=g.id").
-			Where("gt.target_id=? AND g.user_id=?", target.Id, ownerID).
-			Pluck("g.id", &ownerGroupIDs).Error; err != nil {
+		if err := tx.Model(&Group{}).
+			Where("user_id=? AND id IN (?)", ownerID,
+				tx.Table("group_targets").Select("group_id").Where("target_id=?", target.Id)).
+			Pluck("id", &ownerGroupIDs).Error; err != nil {
 			return err
 		}
 		for _, groupID := range ownerGroupIDs {

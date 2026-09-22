@@ -4,8 +4,8 @@ import (
 	"errors"
 	"time"
 
-	"gorm.io/gorm"
 	"gopkg.in/check.v1"
+	"gorm.io/gorm"
 )
 
 func (s *ModelsSuite) TestObjectWritesEnforceCreateOnlyAndOwnership(c *check.C) {

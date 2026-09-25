@@ -402,7 +402,7 @@ func (as *AdminServer) Settings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		session := ctx.Get(r, "session").(*sessions.Session)
-		session.Values = map[interface{}]interface{}{"id": u.Id, "session_id": binding}
+		session.Values = rotatedBrowserSessionValues(session, u.Id, binding)
 		if err = session.Save(r, w); err != nil {
 			_ = models.RevokeBrowserSession(binding)
 			api.JSONResponse(w, models.Response{Success: false, Message: "Password changed; sign in again"}, http.StatusInternalServerError)
@@ -489,6 +489,16 @@ func (as *AdminServer) handleInvalidLogin(w http.ResponseWriter, r *http.Request
 
 func recordBrowserAudit(r *http.Request, actor string, actorID int64, action, target, result string) {
 	audit.Record(r, actor, actorID, action, target, result, "session")
+}
+
+func rotatedBrowserSessionValues(session *sessions.Session, userID int64, binding string) map[interface{}]interface{} {
+	values := map[interface{}]interface{}{"id": userID, "session_id": binding}
+	for _, key := range []string{"impersonator_id", "impersonator_username"} {
+		if value, ok := session.Values[key]; ok {
+			values[key] = value
+		}
+	}
+	return values
 }
 
 // Webhooks is an admin-only handler that handles webhooks
@@ -692,7 +702,7 @@ func (as *AdminServer) ResetPassword(w http.ResponseWriter, r *http.Request) {
 			getTemplate(w, "reset_password").ExecuteTemplate(w, "base", params)
 			return
 		}
-		session.Values = map[interface{}]interface{}{"id": u.Id, "session_id": binding}
+		session.Values = rotatedBrowserSessionValues(session, u.Id, binding)
 		if err = session.Save(r, w); err != nil {
 			_ = models.RevokeBrowserSession(binding)
 			http.Error(w, "Password changed; sign in again", http.StatusInternalServerError)

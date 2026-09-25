@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	"github.com/darkarmy-cyber/darkphish/models"
 )
 
@@ -178,6 +179,79 @@ func TestImpersonationReportsBrowserSessionRotationFailure(t *testing.T) {
 	stillActive.Body.Close()
 	if stillActive.StatusCode != http.StatusOK {
 		t.Fatalf("failed impersonation invalidated the original session: status=%d", stillActive.StatusCode)
+	}
+}
+
+func TestPasswordResetDuringImpersonationPreservesStopAudit(t *testing.T) {
+	ctx := setupTest(t)
+	defer tearDown(t, ctx)
+	allowNormalSession(t)
+	target, err := models.GetUserByUsername("houdini")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target.AccountLocked = false
+	target.PasswordChangeRequired = true
+	if err := models.PutUser(&target); err != nil {
+		t.Fatal(err)
+	}
+
+	client := sessionTestClient(t)
+	login := attemptLogin(t, ctx, client, "admin", "darkphish", "")
+	login.Body.Close()
+	if login.StatusCode != http.StatusFound {
+		t.Fatalf("login status=%d", login.StatusCode)
+	}
+
+	impersonateForm := url.Values{"username": {"houdini"}}
+	impersonate, err := http.NewRequest(http.MethodPost, ctx.adminServer.URL+"/impersonate", strings.NewReader(impersonateForm.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	impersonate.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	impersonate.Header.Set("Referer", ctx.adminServer.URL+"/users")
+	impersonated, err := client.Do(impersonate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	impersonated.Body.Close()
+	if impersonated.StatusCode != http.StatusFound {
+		t.Fatalf("impersonation status=%d", impersonated.StatusCode)
+	}
+
+	resetForm := url.Values{
+		"password":         {"Synthetic-impersonated-reset-20!"},
+		"confirm_password": {"Synthetic-impersonated-reset-20!"},
+	}
+	reset, err := http.NewRequest(http.MethodPost, ctx.adminServer.URL+"/reset_password?next=/", strings.NewReader(resetForm.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reset.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reset.Header.Set("Referer", ctx.adminServer.URL+"/reset_password")
+	resetResponse, err := client.Do(reset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resetResponse.Body.Close()
+	if resetResponse.StatusCode != http.StatusFound {
+		t.Fatalf("password reset status=%d", resetResponse.StatusCode)
+	}
+
+	logout, err := client.Get(ctx.adminServer.URL + "/logout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	logout.Body.Close()
+	if logout.StatusCode != http.StatusFound {
+		t.Fatalf("logout status=%d", logout.StatusCode)
+	}
+	events, total, err := audit.Query(audit.Filter{Action: "impersonation.stop", ActorID: 1, Page: 1, PerPage: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(events) != 1 || events[0].Actor != "admin" || events[0].TargetID != "houdini" {
+		t.Fatalf("missing impersonation stop audit: total=%d events=%+v", total, events)
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/darkarmy-cyber/darkphish/mailer"
 	"github.com/gophish/gomail"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Dialer is a wrapper around a standard gomail.Dialer in order
@@ -78,17 +79,17 @@ func (s *SMTP) openPassword() error {
 	return nil
 }
 
-func (s *SMTP) saveWithProtectedPassword(query *gorm.DB) error {
+func (s *SMTP) protectPassword() (string, func(), error) {
 	plain := s.Password
 	protected, err := secretStore.Seal(plain)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	s.Password = protected
-	err = query.Save(s).Error
-	s.Password = plain
-	s.PasswordSet = plain != ""
-	return err
+	return plain, func() {
+		s.Password = plain
+		s.PasswordSet = plain != ""
+	}, nil
 }
 
 // Header contains the fields and methods for a sending profile to have
@@ -115,6 +116,12 @@ var ErrHostNotSpecified = errors.New("No SMTP Host specified")
 // ErrInvalidHost indicates that the SMTP server string is invalid
 var ErrInvalidHost = errors.New("Invalid SMTP server address")
 
+// ErrSMTPIDSpecified rejects create payloads that could otherwise upsert an existing row.
+var ErrSMTPIDSpecified = errors.New("new SMTP profiles must not specify an id")
+
+// ErrInvalidSMTPInterface rejects metadata values outside the supported transport.
+var ErrInvalidSMTPInterface = errors.New("unsupported SMTP interface type")
+
 // TableName specifies the database tablename for Gorm to use
 func (s SMTP) TableName() string {
 	return "smtp"
@@ -122,6 +129,12 @@ func (s SMTP) TableName() string {
 
 // Validate ensures that SMTP configs/connections are valid
 func (s *SMTP) Validate() error {
+	if s.Interface == "" {
+		s.Interface = "SMTP"
+	}
+	if s.Interface != "SMTP" {
+		return ErrInvalidSMTPInterface
+	}
 	switch {
 	case s.FromAddress == "":
 		return ErrFromAddressNotSpecified
@@ -244,54 +257,73 @@ func GetSMTPByName(n string, uid int64) (SMTP, error) {
 
 // PostSMTP creates a new SMTP in the database.
 func PostSMTP(s *SMTP) error {
-	err := s.Validate()
-	if err != nil {
+	if s.Id != 0 {
+		return ErrSMTPIDSpecified
+	}
+	if err := s.Validate(); err != nil {
 		log.Error(err)
 		return err
 	}
-	// Insert into the DB
-	err = s.saveWithProtectedPassword(db)
+	plain, restore, err := s.protectPassword()
 	if err != nil {
-		log.Error(err)
+		return err
 	}
-	// Save custom headers
-	for i := range s.Headers {
-		s.Headers[i].SMTPId = s.Id
-		err := db.Save(&s.Headers[i]).Error
-		if err != nil {
-			log.Error(err)
+	defer restore()
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(s).Error; err != nil {
 			return err
 		}
-	}
+		for i := range s.Headers {
+			s.Headers[i].Id = 0
+			s.Headers[i].SMTPId = s.Id
+			if err := tx.Create(&s.Headers[i]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	s.Password = plain
 	return err
 }
 
 // PutSMTP edits an existing SMTP in the database.
 // Per the PUT Method RFC, it presumes all data for a SMTP is provided.
 func PutSMTP(s *SMTP) error {
-	err := s.Validate()
-	if err != nil {
+	if err := s.Validate(); err != nil {
 		log.Error(err)
 		return err
 	}
-	err = s.saveWithProtectedPassword(db.Where("id=?", s.Id))
+	plain, restore, err := s.protectPassword()
 	if err != nil {
-		log.Error(err)
-	}
-	// Delete all custom headers, and replace with new ones
-	err = db.Where("smtp_id=?", s.Id).Delete(&Header{}).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		log.Error(err)
 		return err
 	}
-	// Save custom headers
-	for i := range s.Headers {
-		s.Headers[i].SMTPId = s.Id
-		err := db.Save(&s.Headers[i]).Error
-		if err != nil {
-			log.Error(err)
+	defer restore()
+	err = db.Transaction(func(tx *gorm.DB) error {
+		var existing SMTP
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id=? AND user_id=?", s.Id, s.UserId).Take(&existing).Error; err != nil {
 			return err
 		}
+		result := tx.Model(&SMTP{}).Where("id=? AND user_id=?", s.Id, s.UserId).
+			Select("interface_type", "name", "host", "username", "password", "from_address", "ignore_cert_errors", "modified_date").Updates(s)
+		if result.Error != nil {
+			return result.Error
+		}
+		if err := tx.Where("smtp_id=?", s.Id).Delete(&Header{}).Error; err != nil {
+			return err
+		}
+		for i := range s.Headers {
+			s.Headers[i].Id = 0
+			s.Headers[i].SMTPId = s.Id
+			if err := tx.Create(&s.Headers[i]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	s.Password = plain
+	if err != nil {
+		log.Error(err)
 	}
 	return err
 }

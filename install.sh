@@ -485,6 +485,7 @@ create_production_config() {
     "cert_path": "${CONFIG_DIR}/tls/admin.crt",
     "key_path": "${CONFIG_DIR}/tls/admin.key",
     "trusted_origins": ["https://localhost:3333", "https://127.0.0.1:3333"],
+    "trusted_proxies": [],
     "cors_allowed_origins": [],
     "allowed_internal_hosts": [],
     "max_request_body_bytes": 16777216

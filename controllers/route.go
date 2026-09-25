@@ -39,11 +39,13 @@ type AdminServerOption func(*AdminServer)
 // AdminServer is an HTTP server that implements the administrative DarkPhish
 // handlers, including the dashboard and REST API.
 type AdminServer struct {
-	updates *update.Service
-	server  *http.Server
-	worker  worker.Worker
-	config  config.AdminServer
-	limiter *ratelimit.PostLimiter
+	updates              *update.Service
+	server               *http.Server
+	worker               worker.Worker
+	config               config.AdminServer
+	limiter              *ratelimit.PostLimiter
+	revokeBrowserSession func(string) error
+	rotateBrowserSession func(string, int64, string, time.Time) error
 }
 
 var defaultTLSConfig = &tls.Config{
@@ -73,6 +75,18 @@ func WithWorker(w worker.Worker) AdminServerOption {
 	}
 }
 
+func withBrowserSessionRevoker(revoke func(string) error) AdminServerOption {
+	return func(as *AdminServer) {
+		as.revokeBrowserSession = revoke
+	}
+}
+
+func withBrowserSessionRotator(rotate func(string, int64, string, time.Time) error) AdminServerOption {
+	return func(as *AdminServer) {
+		as.rotateBrowserSession = rotate
+	}
+}
+
 // NewAdminServer returns a new instance of the AdminServer with the
 // provided config and options applied.
 func NewAdminServer(conf config.AdminServer, options ...AdminServerOption) *AdminServer {
@@ -90,10 +104,12 @@ func NewAdminServer(conf config.AdminServer, options ...AdminServerOption) *Admi
 	}
 	defaultLimiter := ratelimit.NewPostLimiter()
 	as := &AdminServer{
-		worker:  defaultWorker,
-		server:  defaultServer,
-		limiter: defaultLimiter,
-		config:  conf,
+		worker:               defaultWorker,
+		server:               defaultServer,
+		limiter:              defaultLimiter,
+		config:               conf,
+		revokeBrowserSession: models.RevokeBrowserSession,
+		rotateBrowserSession: models.RotateBrowserSession,
 	}
 	for _, opt := range options {
 		opt(as)
@@ -220,9 +236,8 @@ func (as *AdminServer) registerRoutes() {
 	gzipWrapper, _ := gziphandler.NewGzipLevelHandler(gzip.BestCompression)
 	adminHandler = gzipWrapper(adminHandler)
 
-	// Respect X-Forwarded-For and X-Real-IP headers in case we're behind a
-	// reverse proxy.
-	adminHandler = handlers.ProxyHeaders(adminHandler)
+	// Forwarded client addresses are accepted only from explicitly trusted peers.
+	adminHandler = mid.TrustedProxyHeaders(adminHandler, as.config.TrustedProxies)
 
 	// Setup logging
 	adminHandler = handlers.CombinedLoggingHandler(log.Writer(), adminHandler)
@@ -375,13 +390,24 @@ func (as *AdminServer) Settings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		u.Hash = string(newHash)
-		if err = models.PutUser(&u); err != nil {
+		binding, bindingErr := models.NewSessionBinding()
+		if bindingErr != nil {
+			api.JSONResponse(w, models.Response{Success: false, Message: "Unable to rotate session"}, http.StatusInternalServerError)
+			return
+		}
+		if err = models.PutUserAndRotateBrowserSession(&u, binding, time.Now().UTC()); err != nil {
 			msg.Message = err.Error()
 			msg.Success = false
 			api.JSONResponse(w, msg, http.StatusInternalServerError)
 			return
 		}
-		_ = models.RevokeUserPrivilegedSessions(u.Id)
+		session := ctx.Get(r, "session").(*sessions.Session)
+		session.Values = rotatedBrowserSessionValues(session, u.Id, binding)
+		if err = session.Save(r, w); err != nil {
+			_ = models.RevokeBrowserSession(binding)
+			api.JSONResponse(w, models.Response{Success: false, Message: "Password changed; sign in again"}, http.StatusInternalServerError)
+			return
+		}
 		recordBrowserAudit(r, u.Username, u.Id, "password.change", u.Username, "success")
 		api.JSONResponse(w, msg, http.StatusOK)
 	}
@@ -465,6 +491,16 @@ func recordBrowserAudit(r *http.Request, actor string, actorID int64, action, ta
 	audit.Record(r, actor, actorID, action, target, result, "session")
 }
 
+func rotatedBrowserSessionValues(session *sessions.Session, userID int64, binding string) map[interface{}]interface{} {
+	values := map[interface{}]interface{}{"id": userID, "session_id": binding}
+	for _, key := range []string{"impersonator_id", "impersonator_username"} {
+		if value, ok := session.Values[key]; ok {
+			values[key] = value
+		}
+	}
+	return values
+}
+
 // Webhooks is an admin-only handler that handles webhooks
 func (as *AdminServer) Webhooks(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/settings?tab=webhooks", http.StatusSeeOther)
@@ -488,17 +524,26 @@ func (as *AdminServer) Impersonate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		session := ctx.Get(r, "session").(*sessions.Session)
-		session.Values = make(map[interface{}]interface{})
-		session.Values["id"] = u.Id
+		oldBinding, _ := session.Values["session_id"].(string)
 		binding, bindingErr := models.NewSessionBinding()
 		if bindingErr != nil {
 			http.Error(w, "Unable to create session", http.StatusInternalServerError)
 			return
 		}
-		session.Values["session_id"] = binding
-		session.Values["impersonator_id"] = actor.Id
-		session.Values["impersonator_username"] = actor.Username
-		session.Save(r, w)
+		if err := as.rotateBrowserSession(oldBinding, u.Id, binding, time.Now().UTC()); err != nil {
+			log.Error(err)
+			http.Error(w, "Unable to rotate session", http.StatusInternalServerError)
+			return
+		}
+		session.Values = map[interface{}]interface{}{
+			"id": u.Id, "session_id": binding,
+			"impersonator_id": actor.Id, "impersonator_username": actor.Username,
+		}
+		if err := session.Save(r, w); err != nil {
+			_ = models.RevokeBrowserSession(binding)
+			http.Error(w, "Unable to save session", http.StatusInternalServerError)
+			return
+		}
 		recordBrowserAudit(r, actor.Username, actor.Id, "impersonation.start", u.Username, "success")
 	}
 	http.Redirect(w, r, "/", http.StatusFound)
@@ -562,8 +607,16 @@ func (as *AdminServer) Login(w http.ResponseWriter, r *http.Request) {
 			as.handleInvalidLogin(w, r, "Unable to create session")
 			return
 		}
+		if err := models.CreateBrowserSession(u.Id, binding, time.Now().UTC()); err != nil {
+			as.handleInvalidLogin(w, r, "Unable to create session")
+			return
+		}
 		session.Values = map[interface{}]interface{}{"id": u.Id, "session_id": binding}
-		session.Save(r, w)
+		if err := session.Save(r, w); err != nil {
+			_ = models.RevokeBrowserSession(binding)
+			as.handleInvalidLogin(w, r, "Unable to save session")
+			return
+		}
 		recordBrowserAudit(r, u.Username, u.Id, "auth.login.success", u.Username, "success")
 		as.nextOrIndex(w, r)
 	}
@@ -574,6 +627,12 @@ func (as *AdminServer) Logout(w http.ResponseWriter, r *http.Request) {
 	u := ctx.Get(r, "user").(models.User)
 	session := ctx.Get(r, "session").(*sessions.Session)
 	binding, _ := session.Values["session_id"].(string)
+	if err := as.revokeBrowserSession(binding); err != nil {
+		recordBrowserAudit(r, u.Username, u.Id, "auth.logout", u.Username, "failure")
+		log.Errorf("Unable to revoke browser session for user %d: %v", u.Id, err)
+		http.Error(w, "Unable to sign out", http.StatusServiceUnavailable)
+		return
+	}
 	_ = models.RevokePrivilegedSession(binding)
 	impersonatorID, impersonating := session.Values["impersonator_id"].(int64)
 	impersonatorUsername, _ := session.Values["impersonator_username"].(string)
@@ -630,7 +689,12 @@ func (as *AdminServer) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		}
 		u.PasswordChangeRequired = false
 		u.Hash = newHash
-		if err = models.PutUser(&u); err != nil {
+		binding, bindingErr := models.NewSessionBinding()
+		if bindingErr != nil {
+			http.Error(w, "Unable to rotate session", http.StatusInternalServerError)
+			return
+		}
+		if err = models.PutUserAndRotateBrowserSession(&u, binding, time.Now().UTC()); err != nil {
 			Flash(w, r, "danger", err.Error())
 			params.Flashes = session.Flashes()
 			session.Save(r, w)
@@ -638,10 +702,15 @@ func (as *AdminServer) ResetPassword(w http.ResponseWriter, r *http.Request) {
 			getTemplate(w, "reset_password").ExecuteTemplate(w, "base", params)
 			return
 		}
+		session.Values = rotatedBrowserSessionValues(session, u.Id, binding)
+		if err = session.Save(r, w); err != nil {
+			_ = models.RevokeBrowserSession(binding)
+			http.Error(w, "Password changed; sign in again", http.StatusInternalServerError)
+			return
+		}
 		if u.Username == models.DefaultAdminUsername {
 			models.RemoveInitialAdminPasswordFile()
 		}
-		_ = models.RevokeUserPrivilegedSessions(u.Id)
 		recordBrowserAudit(r, u.Username, u.Id, "password.change", u.Username, "success")
 		// TODO: We probably want to flash a message here that the password was
 		// changed successfully. The problem is that when the user resets their

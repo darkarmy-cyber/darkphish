@@ -34,6 +34,7 @@ type AdminServer struct {
 	KeyPath              string   `json:"key_path"`
 	AllowedInternalHosts []string `json:"allowed_internal_hosts"`
 	TrustedOrigins       []string `json:"trusted_origins"`
+	TrustedProxies       []string `json:"trusted_proxies"`
 	CORSAllowedOrigins   []string `json:"cors_allowed_origins"`
 	MaxRequestBodyBytes  int64    `json:"max_request_body_bytes"`
 }
@@ -427,6 +428,15 @@ func (c *Config) ValidateSecurity() error {
 	}
 	if c.PAT.MaxLifetimeDays < 1 || c.PAT.MaxLifetimeDays > 3650 {
 		return errors.New("personal_access_tokens.max_lifetime_days must be between 1 and 3650")
+	}
+	for _, trustedProxy := range c.AdminConf.TrustedProxies {
+		trustedProxy = strings.TrimSpace(trustedProxy)
+		if net.ParseIP(trustedProxy) != nil {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(trustedProxy); err != nil {
+			return fmt.Errorf("admin_server.trusted_proxies entry %q must be an IP address or CIDR range", trustedProxy)
+		}
 	}
 	for _, origin := range c.AdminConf.TrustedOrigins {
 		parsed, err := url.Parse(origin)

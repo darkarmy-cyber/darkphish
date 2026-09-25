@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	ctx "github.com/darkarmy-cyber/darkphish/context"
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/gorilla/mux"
+	"github.com/gorilla/sessions"
 )
 
 type createPATRequest struct {
@@ -41,6 +43,26 @@ func (as *Server) PersonalAccessTokens(w http.ResponseWriter, r *http.Request) {
 			JSONResponse(w, models.Response{Success: false, Message: "Invalid JSON structure"}, http.StatusBadRequest)
 			return
 		}
+		if containsPATScope(request.Scopes, "credentials:view") {
+			if authMethod != "session" {
+				JSONResponse(w, models.Response{Success: false, Message: "Fresh browser reauthentication is required for credentials:view tokens"}, http.StatusPreconditionRequired)
+				return
+			}
+			session, _ := ctx.Get(r, "session").(*sessions.Session)
+			binding := ""
+			if session != nil {
+				binding, _ = session.Values["session_id"].(string)
+			}
+			fresh, freshErr := models.IsPrivilegedSessionFresh(userID, binding, time.Now().UTC())
+			if freshErr != nil {
+				JSONResponse(w, models.Response{Success: false, Message: "Unable to validate privileged session"}, http.StatusInternalServerError)
+				return
+			}
+			if !fresh {
+				JSONResponse(w, models.Response{Success: false, Message: "Fresh browser reauthentication is required for credentials:view tokens"}, http.StatusPreconditionRequired)
+				return
+			}
+		}
 		event := audit.NewRequestEvent(r, user.Username, user.Id, "", "", "success", authMethod)
 		pat, raw, err := models.CreatePersonalAccessTokenWithAudit(userID, request.Name, request.Scopes, request.ExpiresAt, event)
 		if err != nil {
@@ -65,4 +87,13 @@ func (as *Server) PersonalAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	JSONResponse(w, models.Response{Success: true, Message: "Personal access token revoked"}, http.StatusOK)
+}
+
+func containsPATScope(scopes []string, required string) bool {
+	for _, scope := range scopes {
+		if strings.TrimSpace(scope) == required {
+			return true
+		}
+	}
+	return false
 }

@@ -5,6 +5,7 @@
 		"cert_path": "darkphish_admin.crt",
 		"key_path": "darkphish_admin.key",
 		"trusted_origins": [],
+		"trusted_proxies": [],
 		"cors_allowed_origins": [],
 		"allowed_internal_hosts": [],
 		"max_request_body_bytes": 16777216

@@ -17,6 +17,9 @@ func CleanupSecurityRetention(now time.Time) (int64, int64, error) {
 	if _, err := DeleteExpiredPrivilegedSessions(now); err != nil {
 		return credentials, 0, err
 	}
+	if _, err := DeleteExpiredBrowserSessions(now); err != nil {
+		return credentials, 0, err
+	}
 	if _, err := AuditExpiredCampaignReviewers(now); err != nil {
 		return credentials, 0, err
 	}

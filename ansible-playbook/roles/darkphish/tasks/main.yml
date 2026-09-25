@@ -45,11 +45,19 @@
     state: directory
     mode: "0755"
 
+- name: Ensure ssl-cert group exists
+  group:
+    name: ssl-cert
+    system: yes
+    state: present
+
 - name: Ensure /etc/ssl/private folder exists
   file:
     path: /etc/ssl/private
     state: directory
-    mode: "0755"
+    owner: root
+    group: ssl-cert
+    mode: "0710"
 
 - name: Ensure /etc/ssl/crt folder exists
   file:
@@ -75,6 +83,9 @@
 - name: Generate an OpenSSL private key with the default values (4096 bits, RSA)
   openssl_privatekey:
     path: "{{ darkphish_ssl_cert_path }}"
+    owner: root
+    group: ssl-cert
+    mode: "0640"
 
 - name: Generate an OpenSSL Certificate Signing Request
   openssl_csr:
@@ -124,19 +135,19 @@
     owner: "{{ darkphish_user }}"
     group: "{{ darkphish_user }}"
 
-- name: Ensure darkphish user has permission for CRT file.
+- name: Ensure the TLS certificate is readable by nginx and Darkphish.
   file:
     path: "{{ darkphish_crt_path }}"
-    mode: 0755
-    owner: "{{ darkphish_user }}"
-    group: "{{ darkphish_user }}"
+    mode: "0644"
+    owner: root
+    group: root
 
-- name: Ensure darkphish user has permission for SSL certificate.
+- name: Restrict the TLS private key to root and ssl-cert members.
   file:
     path: "{{ darkphish_ssl_cert_path }}"
-    mode: 0755
-    owner: "{{ darkphish_user }}"
-    group: "{{ darkphish_user }}"
+    mode: "0640"
+    owner: root
+    group: ssl-cert
 
 - name: Create directory for darkphish.
   file:

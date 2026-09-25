@@ -52,6 +52,7 @@ func (s *ModelsSuite) TearDownTest(c *check.C) {
 	db.Where("1 = 1").Delete(EncryptedCredential{})
 	db.Where("1 = 1").Delete(PersonalAccessToken{})
 	db.Where("1 = 1").Delete(PrivilegedSession{})
+	db.Where("1 = 1").Delete(BrowserSession{})
 	db.Where("1 = 1").Delete(CampaignReviewer{})
 	db.Where("1 = 1").Delete(auditOutboxRow{})
 	db.Where("1 = 1").Delete(auditCheckpointRow{})

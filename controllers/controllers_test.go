@@ -22,7 +22,7 @@ type testContext struct {
 	origPath    string
 }
 
-func setupTest(t *testing.T) *testContext {
+func setupTest(t *testing.T, options ...AdminServerOption) *testContext {
 	wd, _ := os.Getwd()
 	fmt.Println(wd)
 	conf := &config.Config{
@@ -44,7 +44,7 @@ func setupTest(t *testing.T) *testContext {
 	}
 	ctx := &testContext{}
 	ctx.config = conf
-	ctx.adminServer = httptest.NewUnstartedServer(NewAdminServer(ctx.config.AdminConf).server.Handler)
+	ctx.adminServer = httptest.NewUnstartedServer(NewAdminServer(ctx.config.AdminConf, options...).server.Handler)
 	ctx.adminServer.Config.Addr = ctx.config.AdminConf.ListenURL
 	ctx.adminServer.Start()
 	// Get the API key to use for these tests

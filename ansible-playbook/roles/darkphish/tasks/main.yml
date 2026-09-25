@@ -45,6 +45,12 @@
     state: directory
     mode: "0755"
 
+- name: Ensure ssl-cert group exists
+  group:
+    name: ssl-cert
+    system: yes
+    state: present
+
 - name: Ensure /etc/ssl/private folder exists
   file:
     path: /etc/ssl/private

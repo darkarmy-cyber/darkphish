@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"errors"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -107,6 +108,37 @@ func TestLogoutRevokesCopiedBrowserSession(t *testing.T) {
 	newLogin.Body.Close()
 	if newLogin.StatusCode != http.StatusFound {
 		t.Fatalf("new login status=%d", newLogin.StatusCode)
+	}
+}
+
+func TestLogoutReportsBrowserSessionRevocationFailure(t *testing.T) {
+	revokeErr := errors.New("synthetic browser-session revocation failure")
+	ctx := setupTest(t, withBrowserSessionRevoker(func(string) error {
+		return revokeErr
+	}))
+	defer tearDown(t, ctx)
+	allowNormalSession(t)
+	client := sessionTestClient(t)
+	login := attemptLogin(t, ctx, client, "admin", "darkphish", "")
+	login.Body.Close()
+	if login.StatusCode != http.StatusFound {
+		t.Fatalf("login status=%d", login.StatusCode)
+	}
+	copied := copiedSessionCookie(t, client, ctx.adminServer.URL)
+
+	logout, err := client.Get(ctx.adminServer.URL + "/logout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	logout.Body.Close()
+	if logout.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("logout status=%d, want %d", logout.StatusCode, http.StatusServiceUnavailable)
+	}
+
+	stillActive := requestWithCopiedCookie(t, http.MethodGet, ctx.adminServer.URL+"/", copied)
+	stillActive.Body.Close()
+	if stillActive.StatusCode != http.StatusOK {
+		t.Fatalf("failed logout silently invalidated session: status=%d", stillActive.StatusCode)
 	}
 }
 

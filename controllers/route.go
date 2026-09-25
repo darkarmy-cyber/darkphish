@@ -39,11 +39,12 @@ type AdminServerOption func(*AdminServer)
 // AdminServer is an HTTP server that implements the administrative DarkPhish
 // handlers, including the dashboard and REST API.
 type AdminServer struct {
-	updates *update.Service
-	server  *http.Server
-	worker  worker.Worker
-	config  config.AdminServer
-	limiter *ratelimit.PostLimiter
+	updates              *update.Service
+	server               *http.Server
+	worker               worker.Worker
+	config               config.AdminServer
+	limiter              *ratelimit.PostLimiter
+	revokeBrowserSession func(string) error
 }
 
 var defaultTLSConfig = &tls.Config{
@@ -73,6 +74,12 @@ func WithWorker(w worker.Worker) AdminServerOption {
 	}
 }
 
+func withBrowserSessionRevoker(revoke func(string) error) AdminServerOption {
+	return func(as *AdminServer) {
+		as.revokeBrowserSession = revoke
+	}
+}
+
 // NewAdminServer returns a new instance of the AdminServer with the
 // provided config and options applied.
 func NewAdminServer(conf config.AdminServer, options ...AdminServerOption) *AdminServer {
@@ -90,10 +97,11 @@ func NewAdminServer(conf config.AdminServer, options ...AdminServerOption) *Admi
 	}
 	defaultLimiter := ratelimit.NewPostLimiter()
 	as := &AdminServer{
-		worker:  defaultWorker,
-		server:  defaultServer,
-		limiter: defaultLimiter,
-		config:  conf,
+		worker:               defaultWorker,
+		server:               defaultServer,
+		limiter:              defaultLimiter,
+		config:               conf,
+		revokeBrowserSession: models.RevokeBrowserSession,
 	}
 	for _, opt := range options {
 		opt(as)
@@ -601,8 +609,13 @@ func (as *AdminServer) Logout(w http.ResponseWriter, r *http.Request) {
 	u := ctx.Get(r, "user").(models.User)
 	session := ctx.Get(r, "session").(*sessions.Session)
 	binding, _ := session.Values["session_id"].(string)
+	if err := as.revokeBrowserSession(binding); err != nil {
+		recordBrowserAudit(r, u.Username, u.Id, "auth.logout", u.Username, "failure")
+		log.Errorf("Unable to revoke browser session for user %d: %v", u.Id, err)
+		http.Error(w, "Unable to sign out", http.StatusServiceUnavailable)
+		return
+	}
 	_ = models.RevokePrivilegedSession(binding)
-	_ = models.RevokeBrowserSession(binding)
 	impersonatorID, impersonating := session.Values["impersonator_id"].(int64)
 	impersonatorUsername, _ := session.Values["impersonator_username"].(string)
 	session.Values = make(map[interface{}]interface{})

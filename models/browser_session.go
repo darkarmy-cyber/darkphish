@@ -41,6 +41,22 @@ func CreateBrowserSession(userID int64, binding string, now time.Time) error {
 	return createBrowserSessionWithDB(db, userID, binding, now)
 }
 
+func RotateBrowserSession(oldBinding string, userID int64, newBinding string, now time.Time) error {
+	if oldBinding == "" {
+		return errors.New("existing browser session binding is required")
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Where("session_hash=?", sessionBindingHash(oldBinding)).Delete(&BrowserSession{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("existing browser session was not active")
+		}
+		return createBrowserSessionWithDB(tx, userID, newBinding, now)
+	})
+}
+
 func IsBrowserSessionActive(userID int64, binding string, now time.Time) (bool, error) {
 	if binding == "" {
 		return false, nil

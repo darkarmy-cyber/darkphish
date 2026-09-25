@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/darkarmy-cyber/darkphish/models"
 )
@@ -139,6 +140,44 @@ func TestLogoutReportsBrowserSessionRevocationFailure(t *testing.T) {
 	stillActive.Body.Close()
 	if stillActive.StatusCode != http.StatusOK {
 		t.Fatalf("failed logout silently invalidated session: status=%d", stillActive.StatusCode)
+	}
+}
+
+func TestImpersonationReportsBrowserSessionRotationFailure(t *testing.T) {
+	rotateErr := errors.New("synthetic browser-session rotation failure")
+	ctx := setupTest(t, withBrowserSessionRotator(func(string, int64, string, time.Time) error {
+		return rotateErr
+	}))
+	defer tearDown(t, ctx)
+	allowNormalSession(t)
+	client := sessionTestClient(t)
+	login := attemptLogin(t, ctx, client, "admin", "darkphish", "")
+	login.Body.Close()
+	if login.StatusCode != http.StatusFound {
+		t.Fatalf("login status=%d", login.StatusCode)
+	}
+	copied := copiedSessionCookie(t, client, ctx.adminServer.URL)
+
+	form := url.Values{"username": {"houdini"}}
+	request, err := http.NewRequest(http.MethodPost, ctx.adminServer.URL+"/impersonate", strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Referer", ctx.adminServer.URL+"/users")
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("impersonation status=%d, want %d", response.StatusCode, http.StatusInternalServerError)
+	}
+
+	stillActive := requestWithCopiedCookie(t, http.MethodGet, ctx.adminServer.URL+"/", copied)
+	stillActive.Body.Close()
+	if stillActive.StatusCode != http.StatusOK {
+		t.Fatalf("failed impersonation invalidated the original session: status=%d", stillActive.StatusCode)
 	}
 }
 

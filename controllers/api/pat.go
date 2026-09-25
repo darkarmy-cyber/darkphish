@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	ctx "github.com/darkarmy-cyber/darkphish/context"
@@ -90,7 +91,7 @@ func (as *Server) PersonalAccessToken(w http.ResponseWriter, r *http.Request) {
 
 func containsPATScope(scopes []string, required string) bool {
 	for _, scope := range scopes {
-		if scope == required {
+		if strings.TrimSpace(scope) == required {
 			return true
 		}
 	}

@@ -18,10 +18,13 @@ import (
 	"github.com/gorilla/sessions"
 )
 
-func sensitivePATRequest(t *testing.T, server *Server, user models.User, binding string) *httptest.ResponseRecorder {
+func sensitivePATRequest(t *testing.T, server *Server, user models.User, binding string, scopes ...string) *httptest.ResponseRecorder {
 	t.Helper()
+	if len(scopes) == 0 {
+		scopes = []string{"credentials:view"}
+	}
 	payload, err := json.Marshal(createPATRequest{
-		Name: "credential review token", Scopes: []string{"credentials:view"},
+		Name: "credential review token", Scopes: scopes,
 		ExpiresAt: time.Now().UTC().Add(time.Hour),
 	})
 	if err != nil {
@@ -64,6 +67,10 @@ func TestCredentialsViewPATRequiresFreshBrowserReauthentication(t *testing.T) {
 	stale := sensitivePATRequest(t, test.apiServer, test.admin, binding)
 	if stale.Code != http.StatusPreconditionRequired || strings.Contains(stale.Body.String(), "darkphish_pat_") {
 		t.Fatalf("stale session issued sensitive PAT: status=%d body=%s", stale.Code, stale.Body.String())
+	}
+	spaced := sensitivePATRequest(t, test.apiServer, test.admin, binding, " credentials:view ")
+	if spaced.Code != http.StatusPreconditionRequired || strings.Contains(spaced.Body.String(), "darkphish_pat_") {
+		t.Fatalf("non-normalized scope bypassed reauthentication: status=%d body=%s", spaced.Code, spaced.Body.String())
 	}
 
 	if _, err := models.ReauthenticatePrivileged(

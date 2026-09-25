@@ -45,6 +45,7 @@ type AdminServer struct {
 	config               config.AdminServer
 	limiter              *ratelimit.PostLimiter
 	revokeBrowserSession func(string) error
+	rotateBrowserSession func(string, int64, string, time.Time) error
 }
 
 var defaultTLSConfig = &tls.Config{
@@ -80,6 +81,12 @@ func withBrowserSessionRevoker(revoke func(string) error) AdminServerOption {
 	}
 }
 
+func withBrowserSessionRotator(rotate func(string, int64, string, time.Time) error) AdminServerOption {
+	return func(as *AdminServer) {
+		as.rotateBrowserSession = rotate
+	}
+}
+
 // NewAdminServer returns a new instance of the AdminServer with the
 // provided config and options applied.
 func NewAdminServer(conf config.AdminServer, options ...AdminServerOption) *AdminServer {
@@ -102,6 +109,7 @@ func NewAdminServer(conf config.AdminServer, options ...AdminServerOption) *Admi
 		limiter:              defaultLimiter,
 		config:               conf,
 		revokeBrowserSession: models.RevokeBrowserSession,
+		rotateBrowserSession: models.RotateBrowserSession,
 	}
 	for _, opt := range options {
 		opt(as)
@@ -512,11 +520,11 @@ func (as *AdminServer) Impersonate(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Unable to create session", http.StatusInternalServerError)
 			return
 		}
-		if err := models.CreateBrowserSession(u.Id, binding, time.Now().UTC()); err != nil {
-			http.Error(w, "Unable to create session", http.StatusInternalServerError)
+		if err := as.rotateBrowserSession(oldBinding, u.Id, binding, time.Now().UTC()); err != nil {
+			log.Error(err)
+			http.Error(w, "Unable to rotate session", http.StatusInternalServerError)
 			return
 		}
-		_ = models.RevokeBrowserSession(oldBinding)
 		session.Values = map[interface{}]interface{}{
 			"id": u.Id, "session_id": binding,
 			"impersonator_id": actor.Id, "impersonator_username": actor.Username,

@@ -40,7 +40,7 @@ function save(idx) {
         template.attachments.push({
             name: unescapeHtml(target[1]),
             content: target[3],
-            type: target[4],
+            type: unescapeHtml(target[4]),
         })
     })
 

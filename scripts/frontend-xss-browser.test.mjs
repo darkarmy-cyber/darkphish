@@ -16,8 +16,8 @@ test("stored metadata and campaign names remain text in a real browser", () => {
     const campaigns = readSource("static/js/src/app/campaigns.js")
 
     assert.match(campaignResults, /escapeHtml\(details\.error\)/)
-    assert.match(sendingProfiles, /escapeHtml\(profile\.interface_type \|\| "SMTP"\)/)
-    assert.match(templates, /escapeHtml\(attachment\.type \|\| "application\/octet-stream"\)/)
+    assert.match(sendingProfiles, /escapeHtml\(profile\.interface_type\)/)
+    assert.match(templates, /escapeHtml\(file\.type \|\| "application\/octet-stream"\)/)
     assert.match(campaigns, /confirmButtonText:\s*"Delete Campaign"/)
     assert.doesNotMatch(campaigns, /confirmButtonText:\s*"Delete "\s*\+/)
 

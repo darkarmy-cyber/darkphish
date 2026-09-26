@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import {
   api, expectedReleaseAssetNames, generatedPath, greenCommit, pages, peelTagToCommit,
-  requiredChecks, versionTag,
+  requiredChecks, trustedReleaseTarget, versionTag,
 } from "./release-lib.mjs"
 import { matchesTrustedReleaseBody } from "./release-body-match.mjs"
 import { releaseBody } from "./release-notes.mjs"
@@ -233,13 +233,14 @@ function assertSameAssets(assets, snapshot, tag) {
 }
 
 export async function verifyTrustedRelease(repo, summary, main) {
-  if (!semver.test(summary?.tag_name || "") || !Number.isSafeInteger(summary?.id) || summary.id < 1 || summary.prerelease !== false || !bot(summary.author) || !sha40(summary.target_commitish)) return null
-  const version = summary.tag_name.slice(1), source = summary.target_commitish
+  if (!semver.test(summary?.tag_name || "") || !Number.isSafeInteger(summary?.id) || summary.id < 1 || summary.prerelease !== false || !bot(summary.author)) return null
+  const version = summary.tag_name.slice(1)
   if (versionTag(version) !== summary.tag_name) throw new Error("release tag canonicalization failed")
   const tagState = await readTagState(repo, summary.tag_name)
-  if (tagState.commit !== source) throw new Error(`${summary.tag_name}: immutable tag does not match release source`)
+  const source = tagState.commit
+  if (!trustedReleaseTarget(summary, source)) throw new Error(`${summary.tag_name}: release target metadata does not match its immutable source`)
   const release = await api(`repos/${repo}/releases/${summary.id}`)
-  if (release.tag_name !== summary.tag_name || release.target_commitish !== source || release.prerelease !== false || !bot(release.author) || release.draft !== summary.draft || release.name !== summary.name) throw new Error(`${summary.tag_name}: release identity changed during reconciliation`)
+  if (release.tag_name !== summary.tag_name || !trustedReleaseTarget(release, source) || release.target_commitish !== summary.target_commitish || release.prerelease !== false || !bot(release.author) || release.draft !== summary.draft || release.name !== summary.name) throw new Error(`${summary.tag_name}: release identity changed during reconciliation`)
   const assets = await pages(`repos/${repo}/releases/${release.id}/assets`)
   assertAssetMetadata(assets, version, release.tag_name)
   const changelog = await sourceText(repo, source)

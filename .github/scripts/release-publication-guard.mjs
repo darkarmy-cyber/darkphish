@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   api, assertCurrentVersionPublished, expectedReleaseAssetNames, generatedPath, greenCommit,
-  pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, versionTag,
+  pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, trustedReleaseTarget, versionTag,
 } from "../../scripts/release-lib.mjs"
 import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
 import { normalizationHold } from "../../scripts/release-normalization-hold.mjs"
@@ -34,7 +34,7 @@ async function expectedMetadata(repo, source, version) {
 }
 function assertExactPublished(release, version, source, expected) {
   const tag = versionTag(version)
-  if (!release || release.tag_name !== tag || release.target_commitish !== source || release.name !== expected.name || release.body !== expected.body || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) {
+  if (!release || release.tag_name !== tag || !trustedReleaseTarget(release, source) || release.name !== expected.name || release.body !== expected.body || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) {
     throw new Error("published release metadata does not exactly match the verified source")
   }
   return release
@@ -152,8 +152,8 @@ async function assertPublishedSnapshot(repo, release, version, tagState, common)
   assertSameAssets(await pages(`repos/${repo}/releases/${release.id}/assets`), common.snapshot)
 }
 async function commonPublishedState(repo, release, version, main, tagState) {
-  const source = release.target_commitish
-  if (!sha40(source) || !tagState || tagState.commit !== source) throw new Error("published release tag/source identity is invalid")
+  const source = tagState?.commit
+  if (!sha40(source) || !trustedReleaseTarget(release, source)) throw new Error("published release tag/source identity is invalid")
   await verifySourceAncestry(repo, source, main)
   await verifiedReleasePR(repo, source, version, versionTag(version))
   const expected = await expectedMetadata(repo, source, version)
@@ -374,7 +374,7 @@ async function holdPublication() {
     }
     await withdrawUnverified(repo, hold.tag, tagState, [release])
     const withdrawn = await api(`repos/${repo}/releases/${release.id}`)
-    if (withdrawn?.draft !== true || withdrawn?.prerelease !== false || withdrawn?.target_commitish !== hold.source || withdrawn?.name !== release.name || withdrawn?.body !== release.body || !actionsBot(withdrawn?.author)) throw new Error("trusted publication changed unexpectedly while entering normalization hold")
+    if (withdrawn?.draft !== true || withdrawn?.prerelease !== false || !trustedReleaseTarget(withdrawn, hold.source) || withdrawn?.name !== release.name || withdrawn?.body !== release.body || !actionsBot(withdrawn?.author)) throw new Error("trusted publication changed unexpectedly while entering normalization hold")
     assertSameAssets(await pages(`repos/${repo}/releases/${release.id}/assets`), common.snapshot)
     console.log(`Verified ${kind} publication ${hold.tag} from run ${run.id} and withdrew it to draft under normalization hold.`)
   }

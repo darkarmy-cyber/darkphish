@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { api, assertCurrentVersionPublished, expectedReleaseAssetNames, greenCommit, pages, peelTagToCommit, repository, versionTag } from "../../scripts/release-lib.mjs"
+import { api, assertCurrentVersionPublished, expectedReleaseAssetNames, greenCommit, pages, peelTagToCommit, repository, trustedReleaseTarget, versionTag } from "../../scripts/release-lib.mjs"
 import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 
@@ -19,7 +19,7 @@ async function sourceText(repo, path, source) {
 }
 async function expectedMetadata(repo, source, version) { return { name: releaseName(version), body: canonicalReleaseBody(await sourceText(repo, "CHANGELOG.md", source), version, source) } }
 function assertExactPublished(release, version, source, expected) {
-  if (!release || release.tag_name !== versionTag(version) || release.target_commitish !== source || release.name !== expected.name || release.body !== expected.body || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) throw new Error("published recovery metadata changed before attestation acceptance")
+  if (!release || release.tag_name !== versionTag(version) || !trustedReleaseTarget(release, source) || release.name !== expected.name || release.body !== expected.body || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) throw new Error("published recovery metadata changed before attestation acceptance")
   return release
 }
 async function readTagState(repo, tag) {

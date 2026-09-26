@@ -54,6 +54,17 @@ async function readTagState(repo, tag) {
   if (!sha40(commit)) throw new Error("release tag does not peel to a commit")
   return { objectType, objectSha, commit }
 }
+async function assertImmutableTagProtection(repo, tag) {
+  const ref = `refs/tags/${tag}`, summaries = await pages(`repos/${repo}/rulesets?includes_parents=true`)
+  for (const summary of summaries) {
+    if (!Number.isSafeInteger(summary?.id) || summary.id < 1 || summary.target !== "tag" || summary.enforcement !== "active") continue
+    const ruleset = await api(`repos/${repo}/rulesets/${summary.id}`), names = new Set((ruleset?.rules || []).map((rule) => rule?.type))
+    const includes = ruleset?.conditions?.ref_name?.include || [], excludes = ruleset?.conditions?.ref_name?.exclude || []
+    const included = includes.includes(ref) || (includes.includes("refs/tags/v*") && tag.startsWith("v"))
+    if (ruleset?.target === "tag" && ruleset.enforcement === "active" && included && excludes.length === 0 && names.has("update") && names.has("deletion") && Array.isArray(ruleset.bypass_actors) && ruleset.bypass_actors.length === 0 && ruleset.current_user_can_bypass === "never") return ruleset
+  }
+  throw new Error(`release recovery requires active no-bypass update and deletion protection for ${ref}`)
+}
 function sameTagState(actual, expected) { return Boolean(actual && expected && actual.objectType === expected.objectType && actual.objectSha === expected.objectSha && actual.commit === expected.commit) }
 async function assertTagState(repo, tag, expected, message) {
   const current = await readTagState(repo, tag)
@@ -274,8 +285,8 @@ async function recoveryState(repo, version, main) {
   }
   const tagState = await assertTagSnapshot(repo, tag, initialTagState, "release tag ref object changed during recovery state verification")
   const drafts = tagged.filter((release) => release.draft === true)
-  const draftSources = new Set(drafts.map((draft) => draft?.target_commitish).filter(sha40))
-  if (!tagState && drafts.length && draftSources.size !== 1) throw new Error("pending release drafts disagree on one immutable source")
+  const draftTargets = drafts.map((draft) => draft?.target_commitish), draftSources = new Set(draftTargets.filter(sha40))
+  if (!tagState && drafts.length && (draftSources.size !== 1 || draftTargets.some((target) => target !== [...draftSources][0]))) throw new Error("pending release drafts disagree on one immutable source")
   const tagSHA = tagState?.commit || null, draftSource = drafts.length ? [...draftSources][0] : null, source = tagSHA || draftSource
   if (!source) {
     await assertNoUnstagedRelease(repo, version)
@@ -344,6 +355,7 @@ async function publish() {
   const executionSHA = process.env.RECOVERY_EXECUTION_SHA || process.env.GITHUB_SHA
   if (!version || !sha40(source) || !sha40(expectedMain) || !sha40(executionSHA) || expectedMain !== executionSHA) throw new Error("recovery publication inputs are invalid or not bound to the immutable execution SHA")
   const tag = versionTag(version)
+  await assertImmutableTagProtection(repo, tag)
   const tagPresentValue = process.env.RECOVERY_TAG_PRESENT
   if (!["true", "false"].includes(tagPresentValue)) throw new Error("recovery tag snapshot input is invalid")
   const initialTagExpectation = { present: tagPresentValue === "true" }
@@ -377,7 +389,10 @@ async function publish() {
   if (originalRun.id.toString() !== process.env.RECOVERY_ORIGINAL_RUN_ID) throw new Error("selected historical Native release provenance changed")
   await assertTagState(repo, tag, immutableTag, "immutable release tag ref object changed after recovery tag creation")
   await verifyStagingSet(immutableTag)
+  await assertImmutableTagProtection(repo, tag)
   let release = await api(`repos/${repo}/releases`, { method: "POST", body: { tag_name: tag, name: state.expected.name, body: state.expected.body, draft: true, prerelease: false, make_latest: "true" } })
+  await assertImmutableTagProtection(repo, tag)
+  await assertTagState(repo, tag, immutableTag, "immutable release tag ref object changed while creating recovery metadata")
   assertExactDraft(release, version, source, state.expected)
   await verifyStagingSet(immutableTag, release)
   for (const name of local.names) await uploadAsset(release, name, local.bytes.get(name)); await uploadAsset(release, local.receiptName, receipt)

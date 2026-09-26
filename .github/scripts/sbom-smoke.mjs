@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 
 // These sentinels intentionally fail closed if removed or their fixture syntax
-// changes. neo-async is transitive: package.json alone cannot supply its version.
+// changes. fast-uri is transitive: package.json alone cannot supply its version.
 export function smokeRepresentatives({ goMod, goSum, pnpmLock }) {
   const goVersions = [...goMod.matchAll(/^\s*github\.com\/gorilla\/mux (v[^\s]+)\s*$/gm)]
   assert.equal(goVersions.length, 1, "Expected one pinned Go sentinel")
@@ -11,11 +11,11 @@ export function smokeRepresentatives({ goMod, goSum, pnpmLock }) {
   assert.ok(goSum.split(/\r?\n/).some(line => line.startsWith(`github.com/gorilla/mux ${goVersion} h1:`)), "Go sentinel must have a module checksum")
   const packageSection = pnpmLock.replace(/\r\n/g, "\n").split(/^packages:\n/m)[1]?.split(/^snapshots:\n/m)[0]
   assert.ok(packageSection, "Expected pnpm packages section")
-  const npmVersions = [...packageSection.matchAll(/^  neo-async@(\d+\.\d+\.\d+):$/gm)]
+  const npmVersions = [...packageSection.matchAll(/^  fast-uri@(\d+\.\d+\.\d+):$/gm)]
   assert.equal(npmVersions.length, 1, "Expected one pinned pnpm transitive sentinel")
   return [
     { name: "github.com/gorilla/mux", version: goVersion, purl: `pkg:golang/github.com/gorilla/mux@${goVersion}` },
-    { name: "neo-async", version: npmVersions[0][1], purl: `pkg:npm/neo-async@${npmVersions[0][1]}` },
+    { name: "fast-uri", version: npmVersions[0][1], purl: `pkg:npm/fast-uri@${npmVersions[0][1]}` },
   ]
 }
 

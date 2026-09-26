@@ -6,7 +6,7 @@ import { smokeRepresentatives, validateSmokeSBOM } from "./sbom-smoke.mjs"
 const fixtures = {
   goMod: "require (\n\tgithub.com/gorilla/mux v1.8.1\n)\n",
   goSum: "github.com/gorilla/mux v1.8.1 h1:fixture\n",
-  pnpmLock: "lockfileVersion: '9.0'\npackages:\n  neo-async@2.6.2:\n    resolution: {}\nsnapshots:\n  neo-async@2.6.2: {}\n",
+  pnpmLock: "lockfileVersion: '9.0'\npackages:\n  fast-uri@2.6.2:\n    resolution: {}\nsnapshots:\n  fast-uri@2.6.2: {}\n",
 }
 const packageFor = item => ({ name: item.name, versionInfo: item.version, SPDXID: `SPDXRef-${item.name}`, externalRefs: [{ referenceType: "purl", referenceLocator: item.purl }] })
 const valid = () => ({ spdxVersion: "SPDX-2.3", packages: smokeRepresentatives(fixtures).map(packageFor) })
@@ -28,16 +28,16 @@ test("each missing ecosystem, wrong version or wrong purl fails despite nonempty
 })
 test("removed, ambiguous or changed fixture syntax fails closed", () => {
   for (const change of [{ goMod: "" }, { goSum: "github.com/gorilla/mux v1.8.1/go.mod h1:fixture\n" },
-    { pnpmLock: "snapshots:\n  neo-async@2.6.2: {}\n" },
-    { pnpmLock: fixtures.pnpmLock.replace("  neo-async@2.6.2:\n", "  neo-async@2.6.2:\n  neo-async@2.6.3:\n") },
+    { pnpmLock: "snapshots:\n  fast-uri@2.6.2: {}\n" },
+    { pnpmLock: fixtures.pnpmLock.replace("  fast-uri@2.6.2:\n", "  fast-uri@2.6.2:\n  fast-uri@2.6.3:\n") },
   ]) assert.throws(() => smokeRepresentatives({ ...fixtures, ...change }))
 })
 test("current repository fixtures supply both sentinels without hardcoded versions", () => {
   const source = file => readFileSync(new URL(`../../${file}`, import.meta.url), "utf8")
   const expected = smokeRepresentatives({ goMod: source("go.mod"), goSum: source("go.sum"), pnpmLock: source("pnpm-lock.yaml") })
   assert.equal(expected.length, 2)
-  assert.equal(JSON.parse(source("package.json")).dependencies?.["neo-async"], undefined)
-  assert.equal(JSON.parse(source("package.json")).devDependencies?.["neo-async"], undefined)
+  assert.equal(JSON.parse(source("package.json")).dependencies?.["fast-uri"], undefined)
+  assert.equal(JSON.parse(source("package.json")).devDependencies?.["fast-uri"], undefined)
 })
 test("PR and main smoke triggers cover every copied manifest and validator", () => {
   const workflow = readFileSync(new URL("../workflows/sbom-smoke.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n")

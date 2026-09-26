@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import {
   assetDisposition, assertGeneratedCommits, assertPublishedVersion, assertReleaseState,
   checksPassed, expectedReleaseAssetNames, generatedPath, nextPatchVersion,
-  peelTagToCommit, protectedMergeRequest, verifyChecksums, verifyPublishedAssetManifest, versionTag,
+  peelTagToCommit, protectedMergeRequest, trustedReleaseTarget, verifyChecksums, verifyPublicationReceipt, verifyPublishedAssetManifest, versionTag,
 } from "./release-lib.mjs"
 
 const bot = { login: "github-actions[bot]", type: "Bot", id: 41898282 }
@@ -52,7 +52,7 @@ test("patch preparation requires trusted publisher and exact completed artifact 
     [source, { ...published, published_at: "2026-09-07" }], [source, { ...published, published_at: "09/07/2026 12:00:00" }],
     [source, { ...published, published_at: "2026-09-07T12:00:00+00:00" }], [source, { ...published, published_at: "2026-02-30T00:00:00Z" }],
     [source, { ...published, published_at: "2026-01-01T24:00:00Z" }], [source, { ...published, published_at: "2026-13-01T00:00:00Z" }],
-    [source, { ...published, published_at: "2026-04-31T00:00:00Z" }], [source, { ...published, target_commitish: "main" }],
+    [source, { ...published, published_at: "2026-04-31T00:00:00Z" }], [source, { ...published, target_commitish: "other" }],
     [source, { ...published, body: "missing provenance" }], [source, { ...published, assets: assets.slice(0, 6) }],
     [source, { ...published, assets: [...assets.slice(0, 6), { ...assets[6], name: "unexpected.bin" }] }],
     [source, { ...published, assets: [...assets.slice(0, 6), assets[0]] }],
@@ -61,6 +61,9 @@ test("patch preparation requires trusted publisher and exact completed artifact 
     [source, { ...published, assets: assets.map((a, i) => i ? a : { ...a, digest: null }) }], ["b".repeat(40), published],
   ]
   for (const [tagSHA, value] of invalid) assert.throws(() => assertPublishedVersion(tagSHA, value, "0.7.0"))
+  const recovered = { ...published, target_commitish: "main" }
+  assert.equal(trustedReleaseTarget(recovered, source), true)
+  assert.equal(assertPublishedVersion(source, recovered, "0.7.0"), recovered)
 })
 
 test("published asset names are cryptographically bound by SHA256SUMS", async () => {
@@ -75,6 +78,21 @@ test("published asset names are cryptographically bound by SHA256SUMS", async ()
   await assert.rejects(verifyPublishedAssetManifest(renamed, { download }), /cryptographically bound/)
   const wrong = async () => new Response(manifest.replace(payloads[0].digest.slice(7), "f".repeat(64)), { status: 200 })
   await assert.rejects(verifyPublishedAssetManifest(published, { download: wrong }), /cryptographically bound/)
+})
+
+test("recovered release receipt remains bound to the immutable tag commit", async () => {
+  const version = "0.7.1", { source, published } = publishedFixture(version)
+  const recovered = { ...published, target_commitish: "main" }
+  const manifest = recovered.assets.find((asset) => asset.name === "SHA256SUMS")
+  const receipt = JSON.stringify({
+    schema: "darkphish-release-publication-receipt/v1",
+    tag: `v${version}`,
+    source_sha: source,
+    checksums_sha256: manifest.digest.slice(7),
+  })
+  const download = async () => new Response(receipt, { status: 200 })
+  assert.equal(await verifyPublicationReceipt(recovered, version, { download, source }), true)
+  await assert.rejects(verifyPublicationReceipt(recovered, version, { download }), /does not prove/)
 })
 
 test("release tag peeling accepts only a bounded chain ending in a commit", async () => {

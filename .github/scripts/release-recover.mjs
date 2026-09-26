@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   api, assertCurrentVersionPublished, assetDisposition, expectedReleaseAssetNames, generatedPath,
-  greenCommit, pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, verifyChecksums, versionTag,
+  greenCommit, pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, trustedReleaseTarget, verifyChecksums, versionTag,
 } from "../../scripts/release-lib.mjs"
 import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
@@ -121,12 +121,12 @@ async function expectedMetadata(repo, source, version) {
 }
 function assertExactDraft(release, version, source, expected) {
   const tag = versionTag(version)
-  if (!release || !Number.isSafeInteger(release.id) || release.id < 1 || release.tag_name !== tag || release.target_commitish !== source || release.name !== expected.name || release.body !== expected.body || release.draft !== true || release.prerelease !== false || release.published_at !== null || !actionsBot(release.author)) throw new Error("pending release draft metadata does not exactly match the verified source")
+  if (!release || !Number.isSafeInteger(release.id) || release.id < 1 || release.tag_name !== tag || !trustedReleaseTarget(release, source) || release.name !== expected.name || release.body !== expected.body || release.draft !== true || release.prerelease !== false || release.published_at !== null || !actionsBot(release.author)) throw new Error("pending release draft metadata does not exactly match the verified source")
   return release
 }
 function assertExactPublished(release, version, source, expected) {
   const tag = versionTag(version)
-  if (!release || release.tag_name !== tag || release.target_commitish !== source || release.name !== expected.name || release.body !== expected.body || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) throw new Error("published release metadata does not exactly match the verified source")
+  if (!release || release.tag_name !== tag || !trustedReleaseTarget(release, source) || release.name !== expected.name || release.body !== expected.body || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) throw new Error("published release metadata does not exactly match the verified source")
   return release
 }
 function timestamp(value, label) { const parsed = Date.parse(value || ""); if (!Number.isFinite(parsed)) throw new Error(`${label} timestamp is invalid`); return parsed }
@@ -193,7 +193,7 @@ async function qualifyingRecoveryRun(repo, release, version, main) {
   } finally { rmSync(directory, { recursive: true, force: true }) }
 }
 async function verifyPublishedRecovery(repo, release, version, main, tagState, expected) {
-  const source = release.target_commitish
+  const source = tagState.commit
   assertExactPublished(release, version, source, expected)
   const canonical = await assertCurrentVersionPublished(repo, { version })
   if (canonical.id !== release.id) throw new Error("published recovery resolved a different release identity")
@@ -254,10 +254,10 @@ async function recoveryState(repo, version, main) {
   const tag = versionTag(version)
   let releases = await pages(`repos/${repo}/releases`), tagged = releases.filter((release) => release?.tag_name === tag), published = tagged.filter((release) => release.draft === false)
   const initialTagState = await readTagState(repo, tag)
-  if (published.length === 1 && initialTagState && sha40(published[0]?.target_commitish) && initialTagState.commit === published[0].target_commitish) {
+  if (published.length === 1 && initialTagState && trustedReleaseTarget(published[0], initialTagState.commit)) {
     const candidate = published[0]
     try {
-      const source = candidate.target_commitish
+      const source = initialTagState.commit
       await verifySourceAncestry(repo, source, main); await verifiedReleasePR(repo, source, version, tag)
       const originalRun = await verifyOriginalNativeRelease(repo, source), expected = await expectedMetadata(repo, source, version)
       const recoveryRun = await verifyPublishedRecovery(repo, candidate, version, main, initialTagState, expected)
@@ -274,9 +274,9 @@ async function recoveryState(repo, version, main) {
   }
   const tagState = await assertTagSnapshot(repo, tag, initialTagState, "release tag ref object changed during recovery state verification")
   const drafts = tagged.filter((release) => release.draft === true)
-  const draftSources = new Set(drafts.map((draft) => draft?.target_commitish))
-  if (drafts.length && (draftSources.size !== 1 || !sha40([...draftSources][0]))) throw new Error("pending release drafts disagree on one immutable source")
-  const tagSHA = tagState?.commit || null, draftSource = drafts.length ? [...draftSources][0] : null, source = draftSource || tagSHA
+  const draftSources = new Set(drafts.map((draft) => draft?.target_commitish).filter(sha40))
+  if (!tagState && drafts.length && draftSources.size !== 1) throw new Error("pending release drafts disagree on one immutable source")
+  const tagSHA = tagState?.commit || null, draftSource = drafts.length ? [...draftSources][0] : null, source = tagSHA || draftSource
   if (!source) {
     await assertNoUnstagedRelease(repo, version)
     return null
@@ -377,7 +377,7 @@ async function publish() {
   if (originalRun.id.toString() !== process.env.RECOVERY_ORIGINAL_RUN_ID) throw new Error("selected historical Native release provenance changed")
   await assertTagState(repo, tag, immutableTag, "immutable release tag ref object changed after recovery tag creation")
   await verifyStagingSet(immutableTag)
-  let release = await api(`repos/${repo}/releases`, { method: "POST", body: { tag_name: tag, target_commitish: source, name: state.expected.name, body: state.expected.body, draft: true, prerelease: false, make_latest: "true" } })
+  let release = await api(`repos/${repo}/releases`, { method: "POST", body: { tag_name: tag, name: state.expected.name, body: state.expected.body, draft: true, prerelease: false, make_latest: "true" } })
   assertExactDraft(release, version, source, state.expected)
   await verifyStagingSet(immutableTag, release)
   for (const name of local.names) await uploadAsset(release, name, local.bytes.get(name)); await uploadAsset(release, local.receiptName, receipt)

@@ -105,6 +105,14 @@ patch. Rerun failed publication jobs to reuse original build artifacts. If a ful
 rerun produces different archive bytes, investigate the draft instead of
 overwriting them.
 
+When recovery publishes an already-existing immutable tag, it omits
+`target_commitish` from the GitHub release-creation request. GitHub then records
+the default branch in release metadata, while recovery continues to derive and
+verify the source SHA from the immutable tag object. The release body, receipt,
+artifacts, checksums, attestations and original release-run provenance remain
+bound to that SHA. This avoids granting workflow-file write authority merely to
+create release metadata for an existing tag.
+
 Once a generated release PR advances `VERSION`, ordinary protected engineering
 merges and Dependabot merges are frozen until that exact current version has a
 trusted published release. This durable boundary covers the interval before the

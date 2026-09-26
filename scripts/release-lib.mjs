@@ -39,6 +39,7 @@ export function expectedReleaseAssetNames(version) {
   ].sort()
 }
 const githubActionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
+export const trustedReleaseTarget = (release, source) => release?.target_commitish === source || release?.target_commitish === "main"
 const githubPublishedAt = (value) => {
   if (typeof value !== "string") return false
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/)
@@ -67,8 +68,8 @@ export async function peelTagToCommit(ref, fetchTag, maxDepth = 8) {
 }
 export function assertPublishedVersion(tagSHA, release, version) {
   const tag = versionTag(version), expectedNames = expectedReleaseAssetNames(version)
-  const source = release?.target_commitish
-  if (release?.tag_name !== tag || release.draft !== false || release.prerelease !== false || !githubPublishedAt(release?.published_at) || !/^[a-f0-9]{40}$/.test(source || "") || !githubActionsBot(release?.author)) throw new Error(`patch release requires trusted published current version ${tag}`)
+  const source = tagSHA
+  if (release?.tag_name !== tag || release.draft !== false || release.prerelease !== false || !githubPublishedAt(release?.published_at) || !/^[a-f0-9]{40}$/.test(source || "") || !trustedReleaseTarget(release, source) || !githubActionsBot(release?.author)) throw new Error(`patch release requires trusted published current version ${tag}`)
   if (assertReleaseState(tagSHA, release, source) !== "published") throw new Error(`patch release requires trusted published current version ${tag}`)
   const assets = release.assets
   if (!Array.isArray(assets) || assets.length !== expectedNames.length) throw new Error(`patch release requires complete trusted artifact set for ${tag}`)
@@ -103,7 +104,7 @@ export async function verifyPublishedAssetManifest(release, { download = fetch }
   for (const asset of payloads) if (expected.get(asset.name) !== asset.digest?.replace(/^sha256:/, "")) throw new Error("published release asset name is not cryptographically bound to its digest")
   return true
 }
-export async function verifyPublicationReceipt(release, version, { download = fetch } = {}) {
+export async function verifyPublicationReceipt(release, version, { download = fetch, source = release?.target_commitish } = {}) {
   const name = publicationReceiptName(version)
   if (!name) return true
   const receiptAsset = release?.assets?.find((asset) => asset?.name === name)
@@ -115,7 +116,7 @@ export async function verifyPublicationReceipt(release, version, { download = fe
   const expected = {
     schema: "darkphish-release-publication-receipt/v1",
     tag: versionTag(version),
-    source_sha: release.target_commitish,
+    source_sha: source,
     checksums_sha256: manifest?.digest?.replace(/^sha256:/, ""),
   }
   if (Object.keys(receipt).sort().join("\n") !== Object.keys(expected).sort().join("\n") || Object.entries(expected).some(([key, value]) => receipt[key] !== value) || !/^[a-f0-9]{64}$/.test(expected.checksums_sha256 || "")) throw new Error("published release publication receipt does not prove the final gated artifact set")
@@ -129,7 +130,7 @@ export async function assertCurrentVersionPublished(repo, { request = api, versi
   assertPublishedVersion(tagSHA, release, version)
   if (verifyManifest) {
     await verifyPublishedAssetManifest(release)
-    await verifyPublicationReceipt(release, version)
+    await verifyPublicationReceipt(release, version, { source: tagSHA })
   }
   return release
 }

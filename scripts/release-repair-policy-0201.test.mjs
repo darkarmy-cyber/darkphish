@@ -6,6 +6,9 @@ const repo = "darkarmy-cyber/darkphish"
 const base = "cafdcc08b9d968931cb1446891055e3256d0caec"
 const head = "a".repeat(40)
 const allowed = [
+  "scripts/changelog.mjs",
+  "scripts/changelog-repair-policy.mjs",
+  "scripts/changelog-repair-policy.test.mjs",
   "scripts/release-maintainer-review.mjs",
   "scripts/release-maintainer-review-0201.test.mjs",
   "scripts/release-repair-policy.mjs",
@@ -13,6 +16,14 @@ const allowed = [
   "changes/recover-v0-20-1-review-provenance.md",
   "docs/RELEASE_REPAIR_0201.md",
 ]
+const added = new Set([
+  "scripts/changelog-repair-policy.mjs",
+  "scripts/changelog-repair-policy.test.mjs",
+  "scripts/release-maintainer-review-0201.test.mjs",
+  "scripts/release-repair-policy-0201.test.mjs",
+  "changes/recover-v0-20-1-review-provenance.md",
+  "docs/RELEASE_REPAIR_0201.md",
+])
 
 function fixture() {
   const pr = {
@@ -20,7 +31,7 @@ function fixture() {
     head: { sha: head, ref: "fix/recover-v0.20.1-review-provenance", repo: { full_name: repo } },
     base: { ref: "main", sha: base },
   }
-  const files = allowed.map(filename => ({ filename, status: filename.startsWith("changes/") || filename.startsWith("docs/") || filename.endsWith("0201.test.mjs") ? "added" : "modified" }))
+  const files = allowed.map(filename => ({ filename, status: added.has(filename) ? "added" : "modified" }))
   const request = async (path, options = {}) => {
     if (path.endsWith("/files?per_page=100&page=1")) return structuredClone(files)
     if (path.includes("/contents/VERSION?")) return { type: "file", encoding: "base64", content: Buffer.from("0.20.1\n").toString("base64") }

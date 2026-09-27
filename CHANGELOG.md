@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.20.2 - 2026-09-27
+
+### Fixed
+
+- Recover the exact generated v0.20.1 release merge through a one-time audited provenance exception without weakening review requirements for any future release.
+- Correct the one-time v0.20.1 recovery provenance manifest to include the immutable Native release run's final job-completion step.
+
 ## 0.20.1 - 2026-09-27
 
 ### Fixed

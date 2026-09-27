@@ -22,7 +22,7 @@ const timestampAllowed = new Set([
   "changes/resumption-publication-timestamp.md", "docs/RELEASE_RESUME_TIMESTAMP.md",
 ])
 const release0201Allowed = new Set([
-  "scripts/changelog.mjs", "scripts/changelog-repair-policy.mjs", "scripts/changelog-repair-policy.test.mjs",
+  "scripts/changelog.mjs", "scripts/changelog.test.mjs", "scripts/changelog-repair-policy.mjs", "scripts/changelog-repair-policy.test.mjs",
   "scripts/release-maintainer-review.mjs", "scripts/release-maintainer-review-0201.test.mjs",
   "scripts/release-repair-policy.mjs", "scripts/release-repair-policy-0201.test.mjs",
   "changes/recover-v0-20-1-review-provenance.md", "docs/RELEASE_REPAIR_0201.md",

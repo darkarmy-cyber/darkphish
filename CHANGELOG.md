@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.20.1 - 2026-09-27
+
+### Fixed
+
+- Restore release recovery for immutable tags whose historical source changed workflow files relative to current main.
+- Verify redacted Actions ruleset data against a maintainer-reviewed configuration snapshot and fail closed after any policy update.
+- Allow release recovery to verify immutable tag rulesets independently of GitHub's token-contextual bypass hint while still requiring active update and deletion protection with no configured bypass actors.
+
+### Security
+
+- Harden tenant isolation, browser-session revocation, proxy address trust, sensitive PAT issuance, stored-value rendering, recipient ownership, and TLS private-key permissions.
+
 ## 0.20.0 - 2026-09-19
 
 ### Security

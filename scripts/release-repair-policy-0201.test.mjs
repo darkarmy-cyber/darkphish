@@ -7,6 +7,7 @@ const base = "cafdcc08b9d968931cb1446891055e3256d0caec"
 const head = "a".repeat(40)
 const allowed = [
   "scripts/changelog.mjs",
+  "scripts/changelog.test.mjs",
   "scripts/changelog-repair-policy.mjs",
   "scripts/changelog-repair-policy.test.mjs",
   "scripts/release-maintainer-review.mjs",

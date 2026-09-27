@@ -38,7 +38,7 @@ export function audited0201MetadataFailure(candidate) {
   }
   const metadata = jobs.find((job) => job.id === 108687061302)
   const steps = metadata?.steps
-  if (!Array.isArray(steps) || steps.length !== 8) return false
+  if (!Array.isArray(steps) || steps.length !== 9) return false
   const expectedSteps = [
     [1, "Set up job", "success"],
     [2, "Run actions/checkout@v7", "success"],
@@ -48,6 +48,7 @@ export function audited0201MetadataFailure(candidate) {
     [6, "Run node scripts/release-publish.mjs metadata", "failure"],
     [11, "Post Run actions/setup-node@v7", "skipped"],
     [12, "Post Run actions/checkout@v7", "success"],
+    [13, "Complete job", "success"],
   ]
   return expectedSteps.every(([number, name, conclusion], index) => {
     const step = steps[index]

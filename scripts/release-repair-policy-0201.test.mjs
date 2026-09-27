@@ -31,13 +31,20 @@ const added = new Set([
   "docs/RELEASE_REPAIR_0201.md",
 ])
 
-function fixture() {
+function fixture(followup = false) {
+  const followupAllowed = [
+    ".github/scripts/release-recover-0201-policy.mjs", ".github/scripts/release-recover-0201-policy.test.mjs",
+    "scripts/changelog-repair-policy.mjs", "scripts/changelog-repair-policy.test.mjs",
+    "scripts/release-repair-policy.mjs", "scripts/release-repair-policy-0201.test.mjs",
+    "changes/recover-v0-20-1-run-manifest.md", "docs/RELEASE_REPAIR_0201.md",
+  ]
   const pr = {
-    number: 117, state: "open", draft: false, author_association: "OWNER",
-    head: { sha: head, ref: "fix/recover-v0.20.1-review-provenance", repo: { full_name: repo } },
-    base: { ref: "main", sha: base },
+    number: followup ? 118 : 117, state: "open", draft: false, author_association: "OWNER",
+    head: { sha: head, ref: followup ? "fix/recover-v0.20.1-run-manifest" : "fix/recover-v0.20.1-review-provenance", repo: { full_name: repo } },
+    base: { ref: "main", sha: followup ? "3cc011581698b73c76512f155f7fd78399345efd" : base },
   }
-  const files = allowed.map(filename => ({ filename, status: added.has(filename) ? "added" : "modified" }))
+  const selected = followup ? followupAllowed : allowed
+  const files = selected.map(filename => ({ filename, status: (followup ? filename === "changes/recover-v0-20-1-run-manifest.md" : added.has(filename)) ? "added" : "modified" }))
   const request = async (path, options = {}) => {
     if (path.endsWith("/files?per_page=100&page=1")) return structuredClone(files)
     if (path.includes("/contents/VERSION?")) return { type: "file", encoding: "base64", content: Buffer.from("0.20.1\n").toString("base64") }
@@ -54,9 +61,13 @@ test("PR117 alone may repair the absent v0.20.1 release provenance boundary", as
   await fixture().verify()
 })
 
+test("PR118 alone may correct the immutable run-345 job manifest", async () => {
+  await fixture(true).verify()
+})
+
 test("v0.20.1 repair rejects scope, identity, version and release-state drift", async () => {
   const changes = [
-    f => { f.pr.number = 118 },
+    f => { f.pr.number = 119 },
     f => { f.pr.base.sha = "b".repeat(40) },
     f => { f.pr.head.ref = "fix/other" },
     f => { f.pr.head.repo.full_name = "other/repo" },

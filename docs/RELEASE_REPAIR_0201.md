@@ -34,3 +34,8 @@ After protected merge, the recovery workflow rebuilds the immutable v0.20.1
 source, produces the complete native archive set, checksum manifest, SPDX SBOM
 and publication receipt, attests them, creates the immutable tag and release,
 and verifies the public result.
+
+Follow-up PR #118 corrects the immutable run-345 metadata manifest to include
+GitHub's final successful `Complete job` step (step 13). Its separate exact
+eight-file scope, base and immediate post-merge state are pinned in the same
+fail-closed repair policies.

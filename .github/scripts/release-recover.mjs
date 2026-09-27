@@ -19,6 +19,7 @@ const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(valu
 const output = (name, value) => { if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`) }
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const tagRulesetSnapshot = JSON.parse(readFileSync(new URL("../release-tag-ruleset.json", import.meta.url), "utf8"))
+const sameInstant = (left, right) => typeof left === "string" && typeof right === "string" && Number.isFinite(Date.parse(left)) && Date.parse(left) === Date.parse(right)
 
 function releaseName(version) { return `Darkphish ${version.split(".").slice(0, 2).join(".")}` }
 async function sourceText(repo, path, source) {
@@ -57,7 +58,7 @@ async function readTagState(repo, tag) {
 }
 function matchesPinnedTagRuleset(repo, ruleset) {
   const snapshot = tagRulesetSnapshot
-  if (snapshot?.schema !== "darkphish-release-tag-ruleset/v1" || snapshot.id !== ruleset?.id || snapshot.name !== ruleset?.name || snapshot.target !== "tag" || snapshot.target !== ruleset.target || snapshot.source_type !== "Repository" || snapshot.source_type !== ruleset.source_type || snapshot.source !== repo || snapshot.source !== ruleset.source || snapshot.enforcement !== "active" || snapshot.enforcement !== ruleset.enforcement || snapshot.created_at !== ruleset.created_at || snapshot.updated_at !== ruleset.updated_at) return false
+  if (snapshot?.schema !== "darkphish-release-tag-ruleset/v1" || snapshot.id !== ruleset?.id || snapshot.name !== ruleset?.name || snapshot.target !== "tag" || snapshot.target !== ruleset.target || snapshot.source_type !== "Repository" || snapshot.source_type !== ruleset.source_type || snapshot.source !== repo || snapshot.source !== ruleset.source || snapshot.enforcement !== "active" || snapshot.enforcement !== ruleset.enforcement || !sameInstant(snapshot.created_at, ruleset.created_at) || !sameInstant(snapshot.updated_at, ruleset.updated_at)) return false
   if (!Array.isArray(snapshot.bypass_actors) || snapshot.bypass_actors.length !== 0) return false
   const expectedIncludes = snapshot.conditions?.ref_name?.include, expectedExcludes = snapshot.conditions?.ref_name?.exclude
   const actualIncludes = ruleset.conditions?.ref_name?.include, actualExcludes = ruleset.conditions?.ref_name?.exclude

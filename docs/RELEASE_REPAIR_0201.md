@@ -14,8 +14,10 @@ blocks publication.
 
 The repair merge itself is pinned to PR #117, branch
 `fix/recover-v0.20.1-review-provenance`, base
-`cafdcc08b9d968931cb1446891055e3256d0caec`, VERSION `0.20.1`, a six-file
-allowlist, and the continued absence of both the tag and release. It must pass
+`cafdcc08b9d968931cb1446891055e3256d0caec`, VERSION `0.20.1`, a nine-file
+allowlist, and the continued absence of both the tag and release. The same
+identity and exact file set are the only case allowed to stage the `0.20.2`
+changelog fragment before `v0.20.1` exists. It must pass
 the ordinary exact-head code and explicit security reviews, required checks,
 CodeQL baseline, resolved-thread and protected-merge gates. It does not permit
 tag movement, artifact substitution, a different release PR, or any future

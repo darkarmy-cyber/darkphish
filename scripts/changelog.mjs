@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process"
 import { readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { auditedPendingPatchRepair } from "./changelog-repair-policy.mjs"
 
 const rootURL = new URL("../", import.meta.url)
 const root = fileURLToPath(rootURL)
@@ -59,6 +60,25 @@ function releaseTagExists(value) {
   }
 }
 
+function pendingPatchRepairAllowed(current, target, base) {
+  if (!base || !process.env.GITHUB_EVENT_PATH) return false
+  try {
+    const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"))
+    const baseSHA = execFileSync("git", ["rev-parse", "--verify", base], { cwd: root, encoding: "utf8" }).trim()
+    return auditedPendingPatchRepair({
+      repository: process.env.GITHUB_REPOSITORY,
+      eventName: process.env.GITHUB_EVENT_NAME,
+      event,
+      current,
+      target,
+      baseSHA,
+      files: changedFiles(base),
+    })
+  } catch {
+    return false
+  }
+}
+
 function allowedTargets(current) {
   return new Set([current, nextPatch(current), nextMinor(current)])
 }
@@ -82,7 +102,7 @@ function validate(requirePRFragment = false, base = "") {
     }
   }
   const target = selectedTarget(values, current)
-  if (target === nextPatch(current) && !releaseTagExists(current)) {
+  if (target === nextPatch(current) && !releaseTagExists(current) && !pendingPatchRepairAllowed(current, target, base)) {
     throw new Error(`patch release ${target} requires published current version v${current}`)
   }
   if (requirePRFragment) {

@@ -22,8 +22,14 @@ const timestampAllowed = new Set([
   "changes/resumption-publication-timestamp.md", "docs/RELEASE_RESUME_TIMESTAMP.md",
 ])
 const release0201Allowed = new Set([
+  "scripts/changelog.mjs", "scripts/changelog-repair-policy.mjs", "scripts/changelog-repair-policy.test.mjs",
   "scripts/release-maintainer-review.mjs", "scripts/release-maintainer-review-0201.test.mjs",
   "scripts/release-repair-policy.mjs", "scripts/release-repair-policy-0201.test.mjs",
+  "changes/recover-v0-20-1-review-provenance.md", "docs/RELEASE_REPAIR_0201.md",
+])
+const release0201Added = new Set([
+  "scripts/changelog-repair-policy.mjs", "scripts/changelog-repair-policy.test.mjs",
+  "scripts/release-maintainer-review-0201.test.mjs", "scripts/release-repair-policy-0201.test.mjs",
   "changes/recover-v0-20-1-review-provenance.md", "docs/RELEASE_REPAIR_0201.md",
 ])
 
@@ -41,6 +47,10 @@ export async function verifyReleaseRepair(repo, pr, request) {
     new Set(files.map(f => f.filename)).size !== files.length ||
     files.some(f => !paths.has(f.filename) || (!(resume && f.filename === ".github/release-normalization-hold.json" && f.status === "removed") && !["added", "modified"].includes(f.status)) || f.previous_filename)) {
     throw new Error("Release repair includes unauthorized paths or file operations")
+  }
+  if (release0201 && (files.length !== paths.size || files.some(file =>
+    file.status !== (release0201Added.has(file.filename) ? "added" : "modified")))) {
+    throw new Error("v0.20.1 release repair does not match its exact reviewed file set")
   }
   const read = async (path, ref = pr.head.sha) => {
     const file = await request(`repos/${repo}/contents/${path}?ref=${ref}`)

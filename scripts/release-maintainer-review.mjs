@@ -147,6 +147,41 @@ async function verifyLegacyProtectedAutoMerge(get, repo, pr) {
   return { ...evidence, historicalConnectorReviews: true, mergeCommit: pr.merge_commit_sha }
 }
 
+async function verifyAuditedRelease0201Merge(get, repo, pr, files) {
+  requireReview(pr.state === "closed" && pr.merged_at && /^[a-f0-9]{40}$/.test(pr.merge_commit_sha || ""),
+    "Audited v0.20.1 release PR lacks immutable merge provenance")
+  // One post-merge recovery authorization for the generated-only v0.20.1 PR.
+  // The policy change carrying this tuple is independently code/security
+  // reviewed. Any identity, tree or chronology change must fail closed.
+  requireReview(repo === "darkarmy-cyber/darkphish" && pr.number === 116 &&
+    pr.head.ref === "release/v0.20.1" && pr.head.sha === "5bd47cde0983e0506fd1dc177efe59cfd1960ef9" &&
+    pr.base.sha === "1ad4467eaca1f6d182e4f0458f39cda58e5d3ce6" &&
+    pr.merge_commit_sha === "cafdcc08b9d968931cb1446891055e3256d0caec" &&
+    pr.merged_at === "2026-09-27T19:02:26Z" && trustedReleaseReviewer(pr.merged_by),
+  "Release is not the audited v0.20.1 generated-only merge")
+  const expected = [
+    ["CHANGELOG.md", "modified", "77d0215697b09b5cc9b5a6f65be566694504f64d", 12, 0],
+    ["VERSION", "modified", "847e9aef6d1fc26617ae67d57b2cf5f920bd5efe", 1, 1],
+    ["changes/recover-existing-release-tag.md", "removed", "378f523d005050ae0d47b1fdaa61421d71c729e8", 0, 5],
+    ["changes/recovery-redacted-ruleset.md", "removed", "17dc7f6a4986b0cc2161432c4f9e0f07cddf6dd1", 0, 6],
+    ["changes/recovery-ruleset-context.md", "removed", "6b18d987b1c92d0f10d6b6f6918ebfc223c57f03", 0, 6],
+    ["changes/security-hardening-0-20.md", "removed", "6dcb68fd06cb619b758f98025a44c6f8cc9de78a", 0, 5],
+  ].sort((left, right) => left[0].localeCompare(right[0]))
+  const actual = files.map(file => [file.filename, file.status, file.sha, file.additions, file.deletions])
+    .sort((left, right) => left[0].localeCompare(right[0]))
+  requireReview(JSON.stringify(actual) === JSON.stringify(expected),
+    "Audited v0.20.1 generated file manifest changed")
+  await verifyResolvedThreads(get, repo, pr)
+  const finalPR = await get(`repos/${repo}/pulls/${pr.number}`)
+  requireReview(finalPR.number === pr.number && trustedActionsActor(finalPR.user) && finalPR.draft === false &&
+    finalPR.head?.repo?.full_name === repo && finalPR.head?.ref === pr.head.ref && finalPR.head?.sha === pr.head.sha &&
+    finalPR.base?.ref === "main" && finalPR.base?.sha === pr.base.sha && finalPR.title === pr.title &&
+    finalPR.state === pr.state && finalPR.merged_at === pr.merged_at && finalPR.merge_commit_sha === pr.merge_commit_sha &&
+    trustedReleaseReviewer(finalPR.merged_by),
+  "Audited v0.20.1 release PR changed during provenance verification")
+  return { head: pr.head.sha, base: pr.base.sha, auditedRelease0201: true, mergeCommit: pr.merge_commit_sha }
+}
+
 export function releaseReviewBody(repo, pr) {
   requireReview(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) && Number.isSafeInteger(pr?.number) && pr.number > 0 &&
     /^[a-f0-9]{40}$/.test(pr?.head?.sha || "") && /^[a-f0-9]{40}$/.test(pr?.base?.sha || ""), "Invalid release review body target")
@@ -187,9 +222,10 @@ export async function verifyReleaseMaintainerReview(repo, pr, { get }) {
 
   const trusted = reviews.filter((review) => trustedReleaseReviewer(review.user))
   if (trusted.length === 0) {
-    requireReview(repo === "darkarmy-cyber/darkphish" && pr.number === 20,
+    if (repo === "darkarmy-cyber/darkphish" && pr.number === 20) return verifyLegacyProtectedAutoMerge(get, repo, pr)
+    if (repo === "darkarmy-cyber/darkphish" && pr.number === 116) return verifyAuditedRelease0201Merge(get, repo, pr, files)
+    throw new ReleaseMaintainerReviewError(
       `Release PR #${pr.number} is missing the required exact-head generated-release attestation from oliverkko (309485696) before merge; publication remains blocked`)
-    return verifyLegacyProtectedAutoMerge(get, repo, pr)
   }
   const latest = trusted.reduce((current, review) => !current || review.id > current.id ? review : current, null)
   requireReview(latest.state === "APPROVED" && latest.commit_id === pr.head.sha, "Trusted maintainer review is not an approval of the exact release head")

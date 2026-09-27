@@ -5,6 +5,11 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+function copyChangelog(root) {
+  copyFileSync(new URL("changelog.mjs", import.meta.url), join(root, "scripts/changelog.mjs"))
+  copyFileSync(new URL("changelog-repair-policy.mjs", import.meta.url), join(root, "scripts/changelog-repair-policy.mjs"))
+}
+
 function markVersionPublished(root, current) {
   execFileSync("git", ["init", "--quiet"], { cwd: root })
   execFileSync("git", ["config", "user.email", "tests@darkphish.invalid"], { cwd: root })
@@ -19,7 +24,7 @@ test("release recovery aggregates additional 0.3 fragments without losing histor
   try {
     mkdirSync(join(root, "scripts"))
     mkdirSync(join(root, "changes"))
-    copyFileSync(new URL("changelog.mjs", import.meta.url), join(root, "scripts/changelog.mjs"))
+    copyChangelog(root)
     writeFileSync(join(root, "VERSION"), "0.3.0\n")
     const history = "## 0.2.0 - 2026-09-04\n\n### Fixed\n\n- historical fix\n"
     writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n\n## 0.3.0 - 2026-09-05\n\n### Fixed\n\n- existing fix\n\n" + history)
@@ -42,7 +47,7 @@ test("release metadata accepts current, next patch, and next minor targets", () 
     try {
       mkdirSync(join(root, "scripts"))
       mkdirSync(join(root, "changes"))
-      copyFileSync(new URL("changelog.mjs", import.meta.url), join(root, "scripts/changelog.mjs"))
+      copyChangelog(root)
       writeFileSync(join(root, "VERSION"), `${current}\n`)
       writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n\n## 0.2.0 - 2026-09-04\n")
       writeFileSync(join(root, "changes/fix.md"), `---\ncategory: Fixed\nversion: ${target}\n---\n- release fix\n`)
@@ -62,7 +67,7 @@ test("release metadata rejects mixed patch and next-minor targets", () => {
   try {
     mkdirSync(join(root, "scripts"))
     mkdirSync(join(root, "changes"))
-    copyFileSync(new URL("changelog.mjs", import.meta.url), join(root, "scripts/changelog.mjs"))
+    copyChangelog(root)
     writeFileSync(join(root, "VERSION"), "0.7.0\n")
     writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n\n## 0.7.0 - 2026-09-07\n")
     writeFileSync(join(root, "changes/hotfix.md"), "---\ncategory: Fixed\nversion: 0.7.1\n---\n- patch fix\n")
@@ -83,7 +88,7 @@ test("release metadata rejects skipped patch and other unsupported targets", () 
     try {
       mkdirSync(join(root, "scripts"))
       mkdirSync(join(root, "changes"))
-      copyFileSync(new URL("changelog.mjs", import.meta.url), join(root, "scripts/changelog.mjs"))
+      copyChangelog(root)
       writeFileSync(join(root, "VERSION"), "0.3.0\n")
       writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n")
       writeFileSync(join(root, "changes/fix.md"), `---\ncategory: Fixed\nversion: ${target}\n---\n- invalid release target\n`)
@@ -99,7 +104,7 @@ test("patch metadata rejects an unpublished current version", () => {
   try {
     mkdirSync(join(root, "scripts"))
     mkdirSync(join(root, "changes"))
-    copyFileSync(new URL("changelog.mjs", import.meta.url), join(root, "scripts/changelog.mjs"))
+    copyChangelog(root)
     writeFileSync(join(root, "VERSION"), "0.7.0\n")
     writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n\n## 0.7.0 - 2026-09-07\n")
     writeFileSync(join(root, "changes/hotfix.md"), "---\ncategory: Fixed\nversion: 0.7.1\n---\n- patch fix\n")

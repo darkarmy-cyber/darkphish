@@ -6,6 +6,9 @@ const repository = "darkarmy-cyber/darkphish"
 const base = "cafdcc08b9d968931cb1446891055e3256d0caec"
 const branch = "fix/recover-v0.20.1-review-provenance"
 const files = [
+  ".github/scripts/release-recover-0201-policy.mjs",
+  ".github/scripts/release-recover-0201-policy.test.mjs",
+  ".github/scripts/release-recover.mjs",
   "changes/recover-v0-20-1-review-provenance.md",
   "docs/RELEASE_REPAIR_0201.md",
   "scripts/changelog-repair-policy.mjs",
@@ -30,10 +33,27 @@ test("only PR117 may stage its 0.20.2 fragment while v0.20.1 recovery is pending
   assert.equal(auditedPendingPatchRepair(fixture()), true)
 })
 
+test("only the immediate reviewed squash merge may keep pending patch validation green", () => {
+  const headSHA = "d".repeat(40)
+  const value = {
+    repository, eventName: "push", current: "0.20.1", target: "0.20.2", baseSHA: base,
+    files: [...files], headSHA, parentSHAs: [base],
+    commitTitle: "fix(release): recover v0.20.1 review provenance (#117)",
+    event: { ref: "refs/heads/main", before: base, after: headSHA, deleted: false, forced: false,
+      repository: { full_name: repository } },
+  }
+  assert.equal(auditedPendingPatchRepair(value), true)
+  for (const change of [
+    candidate => { candidate.event.before = "a".repeat(40) }, candidate => { candidate.event.after = "b".repeat(40) },
+    candidate => { candidate.parentSHAs.push("c".repeat(40)) }, candidate => { candidate.commitTitle = "other" },
+    candidate => { candidate.files.pop() }, candidate => { candidate.event.forced = true },
+  ]) { const candidate = structuredClone(value); change(candidate); assert.equal(auditedPendingPatchRepair(candidate), false) }
+})
+
 test("pending-patch repair rejects any identity, version, base or file drift", () => {
   const changes = [
     value => { value.repository = "other/repo" },
-    value => { value.eventName = "push" },
+    value => { value.eventName = "workflow_dispatch" },
     value => { value.current = "0.20.0" },
     value => { value.target = "0.20.3" },
     value => { value.baseSHA = "a".repeat(40) },

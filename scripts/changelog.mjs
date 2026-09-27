@@ -61,10 +61,14 @@ function releaseTagExists(value) {
 }
 
 function pendingPatchRepairAllowed(current, target, base) {
-  if (!base || !process.env.GITHUB_EVENT_PATH) return false
+  if (!process.env.GITHUB_EVENT_PATH) return false
   try {
     const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"))
-    const baseSHA = execFileSync("git", ["rev-parse", "--verify", base], { cwd: root, encoding: "utf8" }).trim()
+    const comparisonBase = base || event.before
+    const baseSHA = execFileSync("git", ["rev-parse", "--verify", comparisonBase], { cwd: root, encoding: "utf8" }).trim()
+    const headSHA = execFileSync("git", ["rev-parse", "--verify", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
+    const parentSHAs = execFileSync("git", ["show", "-s", "--format=%P", "HEAD"], { cwd: root, encoding: "utf8" }).trim().split(/\s+/).filter(Boolean)
+    const commitTitle = execFileSync("git", ["show", "-s", "--format=%s", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
     return auditedPendingPatchRepair({
       repository: process.env.GITHUB_REPOSITORY,
       eventName: process.env.GITHUB_EVENT_NAME,
@@ -72,7 +76,10 @@ function pendingPatchRepairAllowed(current, target, base) {
       current,
       target,
       baseSHA,
-      files: changedFiles(base),
+      headSHA,
+      parentSHAs,
+      commitTitle,
+      files: changedFiles(comparisonBase),
     })
   } catch {
     return false

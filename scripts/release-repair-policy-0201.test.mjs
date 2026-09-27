@@ -6,6 +6,9 @@ const repo = "darkarmy-cyber/darkphish"
 const base = "cafdcc08b9d968931cb1446891055e3256d0caec"
 const head = "a".repeat(40)
 const allowed = [
+  ".github/scripts/release-recover-0201-policy.mjs",
+  ".github/scripts/release-recover-0201-policy.test.mjs",
+  ".github/scripts/release-recover.mjs",
   "scripts/changelog.mjs",
   "scripts/changelog.test.mjs",
   "scripts/changelog-repair-policy.mjs",
@@ -18,6 +21,8 @@ const allowed = [
   "docs/RELEASE_REPAIR_0201.md",
 ]
 const added = new Set([
+  ".github/scripts/release-recover-0201-policy.mjs",
+  ".github/scripts/release-recover-0201-policy.test.mjs",
   "scripts/changelog-repair-policy.mjs",
   "scripts/changelog-repair-policy.test.mjs",
   "scripts/release-maintainer-review-0201.test.mjs",

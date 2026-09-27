@@ -18,6 +18,8 @@ const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.t
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
 const output = (name, value) => { if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`) }
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const tagRulesetSnapshot = JSON.parse(readFileSync(new URL("../release-tag-ruleset.json", import.meta.url), "utf8"))
+const sameInstant = (left, right) => typeof left === "string" && typeof right === "string" && Number.isFinite(Date.parse(left)) && Date.parse(left) === Date.parse(right)
 
 function releaseName(version) { return `Darkphish ${version.split(".").slice(0, 2).join(".")}` }
 async function sourceText(repo, path, source) {
@@ -54,14 +56,26 @@ async function readTagState(repo, tag) {
   if (!sha40(commit)) throw new Error("release tag does not peel to a commit")
   return { objectType, objectSha, commit }
 }
+function matchesPinnedTagRuleset(repo, ruleset) {
+  const snapshot = tagRulesetSnapshot
+  if (snapshot?.schema !== "darkphish-release-tag-ruleset/v1" || snapshot.id !== ruleset?.id || snapshot.name !== ruleset?.name || snapshot.target !== "tag" || snapshot.target !== ruleset.target || snapshot.source_type !== "Repository" || snapshot.source_type !== ruleset.source_type || snapshot.source !== repo || snapshot.source !== ruleset.source || snapshot.enforcement !== "active" || snapshot.enforcement !== ruleset.enforcement || !sameInstant(snapshot.created_at, ruleset.created_at) || !sameInstant(snapshot.updated_at, ruleset.updated_at)) return false
+  if (!Array.isArray(snapshot.bypass_actors) || snapshot.bypass_actors.length !== 0) return false
+  const expectedIncludes = snapshot.conditions?.ref_name?.include, expectedExcludes = snapshot.conditions?.ref_name?.exclude
+  const actualIncludes = ruleset.conditions?.ref_name?.include, actualExcludes = ruleset.conditions?.ref_name?.exclude
+  if (!Array.isArray(expectedIncludes) || !Array.isArray(expectedExcludes) || JSON.stringify(expectedIncludes) !== JSON.stringify(actualIncludes) || JSON.stringify(expectedExcludes) !== JSON.stringify(actualExcludes)) return false
+  const expectedRules = Array.isArray(snapshot.rules) ? snapshot.rules.map((rule) => rule?.type).sort() : []
+  const actualRules = Array.isArray(ruleset.rules) ? ruleset.rules.map((rule) => rule?.type).sort() : []
+  return expectedRules.join("\n") === "deletion\nupdate" && expectedRules.join("\n") === actualRules.join("\n") && (!Array.isArray(ruleset.bypass_actors) || ruleset.bypass_actors.length === 0)
+}
 async function assertImmutableTagProtection(repo, tag) {
   const ref = `refs/tags/${tag}`, summaries = await pages(`repos/${repo}/rulesets?includes_parents=true`)
   for (const summary of summaries) {
     if (!Number.isSafeInteger(summary?.id) || summary.id < 1 || summary.target !== "tag" || summary.enforcement !== "active") continue
-    const ruleset = await api(`repos/${repo}/rulesets/${summary.id}`), names = new Set((ruleset?.rules || []).map((rule) => rule?.type))
+    const ruleset = await api(`repos/${repo}/rulesets/${summary.id}`)
+    const names = new Set((ruleset?.rules || []).map((rule) => rule?.type))
     const includes = ruleset?.conditions?.ref_name?.include || [], excludes = ruleset?.conditions?.ref_name?.exclude || []
     const included = includes.includes(ref) || (includes.includes("refs/tags/v*") && tag.startsWith("v"))
-    if (ruleset?.target === "tag" && ruleset.enforcement === "active" && included && excludes.length === 0 && names.has("update") && names.has("deletion") && Array.isArray(ruleset.bypass_actors) && ruleset.bypass_actors.length === 0) return ruleset
+    if (ruleset?.target === "tag" && ruleset.enforcement === "active" && included && excludes.length === 0 && names.has("update") && names.has("deletion") && matchesPinnedTagRuleset(repo, ruleset)) return ruleset
   }
   throw new Error(`release recovery requires active no-bypass update and deletion protection for ${ref}`)
 }

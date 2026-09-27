@@ -54,15 +54,23 @@ async function readTagState(repo, tag) {
   if (!sha40(commit)) throw new Error("release tag does not peel to a commit")
   return { objectType, objectSha, commit }
 }
+async function publicRuleset(repo, id) {
+  const response = await fetch(`https://api.github.com/repos/${repo}/rulesets/${id}`, { redirect: "error", signal: AbortSignal.timeout(15000), headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } })
+  if (!response.ok) throw new Error(`public GitHub ruleset lookup returned HTTP ${response.status}`)
+  const ruleset = await response.json()
+  if (ruleset?.id !== id) throw new Error("public GitHub ruleset lookup returned an inconsistent identity")
+  return ruleset
+}
 async function assertImmutableTagProtection(repo, tag) {
   const ref = `refs/tags/${tag}`, summaries = await pages(`repos/${repo}/rulesets?includes_parents=true`)
   for (const summary of summaries) {
     if (!Number.isSafeInteger(summary?.id) || summary.id < 1 || summary.target !== "tag" || summary.enforcement !== "active") continue
-    const ruleset = await api(`repos/${repo}/rulesets/${summary.id}`), names = new Set((ruleset?.rules || []).map((rule) => rule?.type))
+    const authenticated = await api(`repos/${repo}/rulesets/${summary.id}`)
+    const ruleset = Array.isArray(authenticated?.bypass_actors) ? authenticated : await publicRuleset(repo, summary.id)
+    const names = new Set((ruleset?.rules || []).map((rule) => rule?.type))
     const includes = ruleset?.conditions?.ref_name?.include || [], excludes = ruleset?.conditions?.ref_name?.exclude || []
     const included = includes.includes(ref) || (includes.includes("refs/tags/v*") && tag.startsWith("v"))
-    const noBypass = Array.isArray(ruleset?.bypass_actors) ? ruleset.bypass_actors.length === 0 : ruleset?.current_user_can_bypass === "never"
-    if (ruleset?.target === "tag" && ruleset.enforcement === "active" && included && excludes.length === 0 && names.has("update") && names.has("deletion") && noBypass) return ruleset
+    if (ruleset?.target === "tag" && ruleset.enforcement === "active" && included && excludes.length === 0 && names.has("update") && names.has("deletion") && Array.isArray(ruleset.bypass_actors) && ruleset.bypass_actors.length === 0) return ruleset
   }
   throw new Error(`release recovery requires active no-bypass update and deletion protection for ${ref}`)
 }

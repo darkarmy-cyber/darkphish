@@ -1,0 +1,65 @@
+import assert from "node:assert/strict"
+import test from "node:test"
+import { verifyReleaseRepair } from "./release-repair-policy.mjs"
+
+const repo = "darkarmy-cyber/darkphish"
+const base = "cafdcc08b9d968931cb1446891055e3256d0caec"
+const head = "a".repeat(40)
+const allowed = [
+  "scripts/release-maintainer-review.mjs",
+  "scripts/release-maintainer-review-0201.test.mjs",
+  "scripts/release-repair-policy.mjs",
+  "scripts/release-repair-policy-0201.test.mjs",
+  "changes/recover-v0-20-1-review-provenance.md",
+  "docs/RELEASE_REPAIR_0201.md",
+]
+
+function fixture() {
+  const pr = {
+    number: 117, state: "open", draft: false, author_association: "OWNER",
+    head: { sha: head, ref: "fix/recover-v0.20.1-review-provenance", repo: { full_name: repo } },
+    base: { ref: "main", sha: base },
+  }
+  const files = allowed.map(filename => ({ filename, status: filename.startsWith("changes/") || filename.startsWith("docs/") || filename.endsWith("0201.test.mjs") ? "added" : "modified" }))
+  const request = async (path, options = {}) => {
+    if (path.endsWith("/files?per_page=100&page=1")) return structuredClone(files)
+    if (path.includes("/contents/VERSION?")) return { type: "file", encoding: "base64", content: Buffer.from("0.20.1\n").toString("base64") }
+    if (path.endsWith("/git/ref/tags/v0.20.1") || path.endsWith("/releases/tags/v0.20.1")) {
+      assert.equal(options.missing, true)
+      return null
+    }
+    throw new Error(`Unexpected request ${path}`)
+  }
+  return { pr, files, request, verify: () => verifyReleaseRepair(repo, pr, request) }
+}
+
+test("PR117 alone may repair the absent v0.20.1 release provenance boundary", async () => {
+  await fixture().verify()
+})
+
+test("v0.20.1 repair rejects scope, identity, version and release-state drift", async () => {
+  const changes = [
+    f => { f.pr.number = 118 },
+    f => { f.pr.base.sha = "b".repeat(40) },
+    f => { f.pr.head.ref = "fix/other" },
+    f => { f.pr.head.repo.full_name = "other/repo" },
+    f => { f.pr.author_association = "NONE" },
+    f => { f.files[0].status = "removed" },
+    f => { f.files.push({ filename: "VERSION", status: "modified" }) },
+  ]
+  for (const change of changes) {
+    const f = fixture(); change(f)
+    await assert.rejects(f.verify())
+  }
+
+  for (const target of ["tag", "release", "version"]) {
+    const f = fixture(), original = f.request
+    f.request = async (path, options) => {
+      if (target === "version" && path.includes("/contents/VERSION?")) return { type: "file", encoding: "base64", content: Buffer.from("0.20.2\n").toString("base64") }
+      if (target === "tag" && path.endsWith("/git/ref/tags/v0.20.1")) return { object: { type: "commit", sha: base } }
+      if (target === "release" && path.endsWith("/releases/tags/v0.20.1")) return { tag_name: "v0.20.1" }
+      return original(path, options)
+    }
+    await assert.rejects(verifyReleaseRepair(repo, f.pr, f.request))
+  }
+})

@@ -21,13 +21,18 @@ const timestampAllowed = new Set([
   "scripts/release-repair-policy.mjs", "scripts/release-repair-policy.test.mjs",
   "changes/resumption-publication-timestamp.md", "docs/RELEASE_RESUME_TIMESTAMP.md",
 ])
+const release0201Allowed = new Set([
+  "scripts/release-maintainer-review.mjs", "scripts/release-maintainer-review-0201.test.mjs",
+  "scripts/release-repair-policy.mjs", "scripts/release-repair-policy-0201.test.mjs",
+  "changes/recover-v0-20-1-review-provenance.md", "docs/RELEASE_REPAIR_0201.md",
+])
 
 export async function verifyReleaseRepair(repo, pr, request) {
-  const resume = pr.number === 58, timestamp = pr.number === 59
-  const expectedBase = timestamp ? "697fe42eb20f3f5197be9545ed5b3bf835b730c0" : resume ? "88377d6951ede7352acb257777250bdfecd2052b" : base
-  const paths = timestamp ? timestampAllowed : resume ? resumeAllowed : allowed
-  const branch = timestamp ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-timestamp" : resume ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-finalize" : "fix/historical-release-review-provenance"
-  if (repo !== repository || ![56, 58, 59].includes(pr.number) || pr.base?.sha !== expectedBase || pr.base.ref !== "main" ||
+  const resume = pr.number === 58, timestamp = pr.number === 59, release0201 = pr.number === 117
+  const expectedBase = release0201 ? "cafdcc08b9d968931cb1446891055e3256d0caec" : timestamp ? "697fe42eb20f3f5197be9545ed5b3bf835b730c0" : resume ? "88377d6951ede7352acb257777250bdfecd2052b" : base
+  const paths = release0201 ? release0201Allowed : timestamp ? timestampAllowed : resume ? resumeAllowed : allowed
+  const branch = release0201 ? "fix/recover-v0.20.1-review-provenance" : timestamp ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-timestamp" : resume ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-finalize" : "fix/historical-release-review-provenance"
+  if (repo !== repository || ![56, 58, 59, 117].includes(pr.number) || pr.base?.sha !== expectedBase || pr.base.ref !== "main" ||
     pr.head?.repo?.full_name !== repository || pr.head.ref !== branch ||
     !/^[a-f0-9]{40}$/.test(pr.head.sha || "") || pr.state !== "open" || pr.draft !== false ||
     !["OWNER", "MEMBER", "COLLABORATOR"].includes(pr.author_association)) throw new Error("Not the authorized release repair")
@@ -42,7 +47,13 @@ export async function verifyReleaseRepair(repo, pr, request) {
     if (file?.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") throw new Error("Missing release repair boundary")
     return Buffer.from(file.content, "base64").toString("utf8")
   }
-  if ((await read("VERSION")).trim() !== "0.7.1") throw new Error("Release repair VERSION changed")
+  if ((await read("VERSION")).trim() !== (release0201 ? "0.20.1" : "0.7.1")) throw new Error("Release repair VERSION changed")
+  if (release0201) {
+    const tag = await request(`repos/${repo}/git/ref/tags/v0.20.1`, { missing: true })
+    const release = await request(`repos/${repo}/releases/tags/v0.20.1`, { missing: true })
+    if (tag !== null || release !== null) throw new Error("v0.20.1 recovery repair requires the reviewed absent tag and release state")
+    return
+  }
   if (timestamp) {
     for (const ref of [expectedBase, pr.head.sha]) {
       if (await request(`repos/${repo}/contents/.github/release-normalization-hold.json?ref=${ref}`, { missing: true }) !== null) {

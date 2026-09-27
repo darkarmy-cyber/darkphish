@@ -61,7 +61,8 @@ async function assertImmutableTagProtection(repo, tag) {
     const ruleset = await api(`repos/${repo}/rulesets/${summary.id}`), names = new Set((ruleset?.rules || []).map((rule) => rule?.type))
     const includes = ruleset?.conditions?.ref_name?.include || [], excludes = ruleset?.conditions?.ref_name?.exclude || []
     const included = includes.includes(ref) || (includes.includes("refs/tags/v*") && tag.startsWith("v"))
-    if (ruleset?.target === "tag" && ruleset.enforcement === "active" && included && excludes.length === 0 && names.has("update") && names.has("deletion") && Array.isArray(ruleset.bypass_actors) && ruleset.bypass_actors.length === 0) return ruleset
+    const noBypass = Array.isArray(ruleset?.bypass_actors) ? ruleset.bypass_actors.length === 0 : ruleset?.current_user_can_bypass === "never"
+    if (ruleset?.target === "tag" && ruleset.enforcement === "active" && included && excludes.length === 0 && names.has("update") && names.has("deletion") && noBypass) return ruleset
   }
   throw new Error(`release recovery requires active no-bypass update and deletion protection for ${ref}`)
 }

@@ -27,6 +27,7 @@ function runFixture() {
       step(3, "Run actions/setup-node@v7", "success"), step(4, "Run node scripts/changelog.mjs validate", "success"),
       step(5, "Enforce release normalization hold", "success"), step(6, "Run node scripts/release-publish.mjs metadata", "failure"),
       step(11, "Post Run actions/setup-node@v7", "skipped"), step(12, "Post Run actions/checkout@v7", "success"),
+      step(13, "Complete job", "success"),
     ] },
     { id: 108687103646, run_id: 36343131819, name: "verify", status: "completed", conclusion: "skipped" },
     { id: 108687104304, run_id: 36343131819, name: "binaries", status: "completed", conclusion: "skipped" },

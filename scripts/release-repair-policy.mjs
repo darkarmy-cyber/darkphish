@@ -34,13 +34,19 @@ const release0201Added = new Set([
   "scripts/release-maintainer-review-0201.test.mjs", "scripts/release-repair-policy-0201.test.mjs",
   "changes/recover-v0-20-1-review-provenance.md", "docs/RELEASE_REPAIR_0201.md",
 ])
+const release0201FollowupAllowed = new Set([
+  ".github/scripts/release-recover-0201-policy.mjs", ".github/scripts/release-recover-0201-policy.test.mjs",
+  "scripts/changelog-repair-policy.mjs", "scripts/changelog-repair-policy.test.mjs",
+  "scripts/release-repair-policy.mjs", "scripts/release-repair-policy-0201.test.mjs",
+  "changes/recover-v0-20-1-run-manifest.md", "docs/RELEASE_REPAIR_0201.md",
+])
 
 export async function verifyReleaseRepair(repo, pr, request) {
-  const resume = pr.number === 58, timestamp = pr.number === 59, release0201 = pr.number === 117
-  const expectedBase = release0201 ? "cafdcc08b9d968931cb1446891055e3256d0caec" : timestamp ? "697fe42eb20f3f5197be9545ed5b3bf835b730c0" : resume ? "88377d6951ede7352acb257777250bdfecd2052b" : base
-  const paths = release0201 ? release0201Allowed : timestamp ? timestampAllowed : resume ? resumeAllowed : allowed
-  const branch = release0201 ? "fix/recover-v0.20.1-review-provenance" : timestamp ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-timestamp" : resume ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-finalize" : "fix/historical-release-review-provenance"
-  if (repo !== repository || ![56, 58, 59, 117].includes(pr.number) || pr.base?.sha !== expectedBase || pr.base.ref !== "main" ||
+  const resume = pr.number === 58, timestamp = pr.number === 59, release0201 = pr.number === 117, release0201Followup = pr.number === 118
+  const expectedBase = release0201Followup ? "3cc011581698b73c76512f155f7fd78399345efd" : release0201 ? "cafdcc08b9d968931cb1446891055e3256d0caec" : timestamp ? "697fe42eb20f3f5197be9545ed5b3bf835b730c0" : resume ? "88377d6951ede7352acb257777250bdfecd2052b" : base
+  const paths = release0201Followup ? release0201FollowupAllowed : release0201 ? release0201Allowed : timestamp ? timestampAllowed : resume ? resumeAllowed : allowed
+  const branch = release0201Followup ? "fix/recover-v0.20.1-run-manifest" : release0201 ? "fix/recover-v0.20.1-review-provenance" : timestamp ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-timestamp" : resume ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-finalize" : "fix/historical-release-review-provenance"
+  if (repo !== repository || ![56, 58, 59, 117, 118].includes(pr.number) || pr.base?.sha !== expectedBase || pr.base.ref !== "main" ||
     pr.head?.repo?.full_name !== repository || pr.head.ref !== branch ||
     !/^[a-f0-9]{40}$/.test(pr.head.sha || "") || pr.state !== "open" || pr.draft !== false ||
     !["OWNER", "MEMBER", "COLLABORATOR"].includes(pr.author_association)) throw new Error("Not the authorized release repair")
@@ -50,8 +56,8 @@ export async function verifyReleaseRepair(repo, pr, request) {
     files.some(f => !paths.has(f.filename) || (!(resume && f.filename === ".github/release-normalization-hold.json" && f.status === "removed") && !["added", "modified"].includes(f.status)) || f.previous_filename)) {
     throw new Error("Release repair includes unauthorized paths or file operations")
   }
-  if (release0201 && (files.length !== paths.size || files.some(file =>
-    file.status !== (release0201Added.has(file.filename) ? "added" : "modified")))) {
+  if ((release0201 || release0201Followup) && (files.length !== paths.size || files.some(file =>
+    file.status !== ((release0201 ? release0201Added : new Set(["changes/recover-v0-20-1-run-manifest.md"])).has(file.filename) ? "added" : "modified")))) {
     throw new Error("v0.20.1 release repair does not match its exact reviewed file set")
   }
   const read = async (path, ref = pr.head.sha) => {
@@ -59,8 +65,8 @@ export async function verifyReleaseRepair(repo, pr, request) {
     if (file?.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") throw new Error("Missing release repair boundary")
     return Buffer.from(file.content, "base64").toString("utf8")
   }
-  if ((await read("VERSION")).trim() !== (release0201 ? "0.20.1" : "0.7.1")) throw new Error("Release repair VERSION changed")
-  if (release0201) {
+  if ((await read("VERSION")).trim() !== (release0201 || release0201Followup ? "0.20.1" : "0.7.1")) throw new Error("Release repair VERSION changed")
+  if (release0201 || release0201Followup) {
     const tag = await request(`repos/${repo}/git/ref/tags/v0.20.1`, { missing: true })
     const release = await request(`repos/${repo}/releases/tags/v0.20.1`, { missing: true })
     if (tag !== null || release !== null) throw new Error("v0.20.1 recovery repair requires the reviewed absent tag and release state")

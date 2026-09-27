@@ -11,6 +11,7 @@ const files = [
   "scripts/changelog-repair-policy.mjs",
   "scripts/changelog-repair-policy.test.mjs",
   "scripts/changelog.mjs",
+  "scripts/changelog.test.mjs",
   "scripts/release-maintainer-review-0201.test.mjs",
   "scripts/release-maintainer-review.mjs",
   "scripts/release-repair-policy-0201.test.mjs",

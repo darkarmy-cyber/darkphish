@@ -413,7 +413,7 @@ async function publish() {
   await assertTagState(repo, tag, immutableTag, "immutable release tag ref object changed after recovery tag creation")
   await verifyStagingSet(immutableTag)
   await assertImmutableTagProtection(repo, tag)
-  let release = await api(`repos/${repo}/releases`, { method: "POST", body: { tag_name: tag, target_commitish: source, name: state.expected.name, body: state.expected.body, draft: true, prerelease: false, make_latest: "true" } })
+  let release = await api(`repos/${repo}/releases`, { method: "POST", body: { tag_name: tag, name: state.expected.name, body: state.expected.body, draft: true, prerelease: false, make_latest: "true" } })
   await assertImmutableTagProtection(repo, tag)
   await assertTagState(repo, tag, immutableTag, "immutable release tag ref object changed while creating recovery metadata")
   assertExactDraft(release, version, source, state.expected)

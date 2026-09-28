@@ -234,6 +234,13 @@ func pendingUpdate(root string) (bool, error) {
 
 // superviseUpdates keeps the systemd main PID alive across replacement. All
 // child processes and their workers are reaped before snapshot or rollback.
+func supervisorAcceptsTarget(requested, current string) bool {
+	comparison, err := update.Compare(requested, current)
+	// Reinstalling the currently running release is supported. Downgrades stay
+	// blocked until a separately verified compatibility policy exists.
+	return err == nil && comparison >= 0
+}
+
 func superviseUpdates(conf *config.Config) (bool, error) {
 	if os.Getenv(childEnvironment) == "1" {
 		return false, nil
@@ -360,8 +367,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			if request.Kind != "apply" {
 				continue
 			}
-			comparison, compareErr := update.Compare(request.Version, semanticVersion())
-			if compareErr != nil || comparison <= 0 {
+			if !supervisorAcceptsTarget(request.Version, semanticVersion()) {
 				continue
 			}
 			ctx, cancel := context.WithTimeout(stopContext, 3*time.Minute)

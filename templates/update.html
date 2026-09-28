@@ -11,9 +11,30 @@
         <p>After correcting the prerequisite, restart the DarkPhish service and reload this page. Check now refreshes release information; it does not restart the update supervisor.</p>
         <p>A release notification does not mean this installation supports one-click updates. See the <a href="https://docs.darkphish.sk/">DarkPhish documentation</a> for update requirements and manual upgrade guidance.</p>
     </div>
-    <dl><dt>Current version</dt><dd id="updateCurrent"></dd><dt>Latest stable version</dt><dd id="updateLatest"></dd><dt>Published</dt><dd id="updatePublished"></dd></dl>
-    <button type="button" class="btn btn-default" id="updateCheck">Check now</button>
-    <button type="button" class="btn btn-primary" id="updateApply" aria-describedby="updateApplyHint" disabled>Update now</button>
+
+    <div class="update-card" aria-labelledby="updateTargetLabel">
+        <div class="update-version-grid">
+            <div>
+                <span class="update-field-label">Current version</span>
+                <strong id="updateCurrent" class="update-version-value"></strong>
+            </div>
+            <div>
+                <label id="updateTargetLabel" for="updateTarget" class="update-field-label">Version to install</label>
+                <select id="updateTarget" class="form-control" aria-describedby="updateTargetHelp" disabled></select>
+                <p id="updateTargetHelp" class="help-block">Stable releases are verified by DarkPhish before installation.</p>
+            </div>
+            <div>
+                <span class="update-field-label">Published</span>
+                <span id="updatePublished" class="update-version-value"></span>
+            </div>
+        </div>
+        <div id="updateTargetWarning" class="alert alert-warning update-target-warning" role="status" hidden></div>
+    </div>
+
+    <div class="update-actions">
+        <button type="button" class="btn btn-default" id="updateCheck"><i class="fa fa-refresh" aria-hidden="true"></i> Check now</button>
+        <button type="button" class="btn btn-primary" id="updateApply" aria-describedby="updateApplyHint" disabled>Update now</button>
+    </div>
     <p id="updateApplyHint" role="status" aria-live="polite">Checking whether a verified update can be applied…</p>
     <p>A verified update stops the application, backs it up, and restarts it. External secrets must be restored from the authoritative secret store.</p>
     <h3>Release notes</h3><pre id="updateNotes"></pre>

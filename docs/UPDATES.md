@@ -198,10 +198,14 @@ Sigstore evidence produced by the trusted publication workflow.
 
 ## 0.21 bootstrap behavior
 
-Native and recovery publication paths pin new release metadata to the exact
-source commit SHA. This keeps the hardened 0.21 updater compatible with older
-installations whose pre-0.21 checker requires a SHA in `target_commitish`.
-Historical releases are not rewritten or re-signed merely to satisfy that old
-metadata assumption. An older supported installation can therefore bootstrap
-to 0.21 through the newly published release, after which immutable tag
-resolution handles historical `target_commitish=main` releases correctly.
+The normal native publication path pins new release metadata to the exact source
+commit SHA. This keeps the 0.21 release compatible with older installations whose
+pre-0.21 checker requires a SHA in `target_commitish`. Recovery publications for
+an already-existing immutable tag intentionally continue to derive trust from the
+protected tag object and may expose GitHub's default-branch `target_commitish`;
+that avoids weakening the historical recovery boundary.
+
+Historical releases are not rewritten or re-signed merely to satisfy the old
+metadata assumption. An older supported installation can bootstrap to the normal
+0.21 native release, after which immutable tag resolution handles historical
+`target_commitish=main` releases correctly.

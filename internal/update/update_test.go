@@ -25,6 +25,10 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 
 func TestCheckerIgnoresDraftAndPrereleaseWithoutToken(t *testing.T) {
 	r, _, _ := evidence(t)
+	source := r.Source
+	// Historical recovery releases may advertise target_commitish=main. The
+	// catalogue must resolve the immutable tag instead of trusting that field.
+	r.Source = "main"
 	draft := r
 	draft.ID = 2
 	draft.Draft = true
@@ -38,11 +42,20 @@ func TestCheckerIgnoresDraftAndPrereleaseWithoutToken(t *testing.T) {
 		if req.URL.Host != "api.github.com" || req.Header.Get("Authorization") != "" {
 			t.Fatal("checker sent credentials or used an unexpected host")
 		}
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
+		var response []byte
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/releases"):
+			response = body
+		case strings.HasSuffix(req.URL.Path, "/git/ref/tags/"+r.Tag):
+			response = []byte(`{"object":{"type":"commit","sha":"` + source + `"}}`)
+		default:
+			t.Fatalf("unexpected checker request: %s", req.URL.Path)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(response)), Header: make(http.Header)}, nil
 	})}}
 	got, err := c.Latest(context.Background())
-	if err != nil || got.Tag != r.Tag {
-		t.Fatalf("latest: %s %v", got.Tag, err)
+	if err != nil || got.Tag != r.Tag || got.Source != source {
+		t.Fatalf("latest: %+v %v", got, err)
 	}
 	for _, raw := range []string{`{"draft":false}`, `{"draft":null,"prerelease":false}`, `{"prerelease":false}`} {
 		var release Release

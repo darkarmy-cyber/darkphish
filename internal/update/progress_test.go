@@ -38,6 +38,7 @@ func TestAcceptedUpdateTargetIsIndependentOfReleaseFeed(t *testing.T) {
 	var submitted string
 	s := NewService("0.17.0", "", func(r Release) error { submitted = r.Version(); return nil })
 	s.release = Release{Tag: "v0.19.0"}
+	s.releases["0.19.0"] = s.release
 	s.status.Available, s.status.Checked, s.status.Latest = true, time.Now(), "0.19.0"
 	target, err := s.ApplyVersion()
 	if err != nil || target != "0.19.0" || submitted != target || s.Status().Target != target {
@@ -58,8 +59,54 @@ func TestAcceptedUpdateTargetIsIndependentOfReleaseFeed(t *testing.T) {
 func TestRejectedUpdateHasNoAcceptedTarget(t *testing.T) {
 	s := NewService("0.17.0", "", func(Release) error { return errors.New("not accepted") })
 	s.release = Release{Tag: "v0.19.0"}
-	s.status.Available, s.status.Checked = true, time.Now()
+	s.releases["0.19.0"] = s.release
+	s.status.Available, s.status.Checked, s.status.Latest = true, time.Now(), "0.19.0"
 	if target, err := s.ApplyVersion(); err == nil || target != "" || s.Status().Target != "" || s.Status().Applying {
 		t.Fatal("rejected submission claimed an accepted target")
+	}
+}
+
+
+func TestSelectedVersionPolicyAllowsUpgradeAndReinstallButBlocksDowngrade(t *testing.T) {
+	for _, tc := range []struct {
+		name, current, target string
+		wantErr               bool
+	}{
+		{name: "upgrade", current: "0.20.0", target: "0.21.0"},
+		{name: "reinstall", current: "0.20.0", target: "0.20.0"},
+		{name: "downgrade", current: "0.20.0", target: "0.19.0", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var submitted string
+			s := NewService(tc.current, "", func(r Release) error { submitted = r.Version(); return nil })
+			for _, version := range []string{"0.21.0", "0.20.0", "0.19.0"} {
+				s.releases[version] = Release{Tag: "v" + version}
+			}
+			s.status.Latest, s.status.Checked = "0.21.0", time.Now()
+			got, err := s.ApplyVersion(tc.target)
+			if tc.wantErr {
+				if err == nil || got != "" || submitted != "" || s.Status().Applying {
+					t.Fatalf("unsafe target accepted: %q %q %+v %v", got, submitted, s.Status(), err)
+				}
+				return
+			}
+			if err != nil || got != tc.target || submitted != tc.target || !s.Status().Applying {
+				t.Fatalf("target not accepted: %q %q %+v %v", got, submitted, s.Status(), err)
+			}
+		})
+	}
+}
+
+func TestSetResultTargetRestoresReinstallReceipt(t *testing.T) {
+	s := NewService("0.21.0", "", nil)
+	s.SetResultTarget("applied", "v0.21.0")
+	status := s.Status()
+	if status.ResultCode != "applied" || status.Target != "0.21.0" {
+		t.Fatalf("missing durable target receipt: %+v", status)
+	}
+	s = NewService("0.21.0", "", nil)
+	s.SetResultTarget("applied", "not-a-version")
+	if s.Status().Target != "" {
+		t.Fatal("accepted invalid durable target")
 	}
 }

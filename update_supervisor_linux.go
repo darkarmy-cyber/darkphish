@@ -641,15 +641,17 @@ func configureUpdates(conf *config.Config) *update.Service {
 		}
 	}
 	result := os.Getenv("DARKPHISH_UPDATE_RESULT")
+	resultTag := os.Getenv("DARKPHISH_UPDATE_TAG")
 	_ = os.Unsetenv("DARKPHISH_UPDATE_RESULT")
 	_ = os.Unsetenv("DARKPHISH_UPDATE_TAG")
 	service := update.NewService(semanticVersion(), reason, request)
 	if result == "" {
 		if saved, err := readUpdateCompletion(filepath.Join(".darkphish-updates", "last-result.json")); err == nil {
 			result = saved.Result
+			resultTag = saved.Tag
 		}
 	}
-	service.SetResult(result)
+	service.SetResultTarget(result, resultTag)
 	recordResult := func() {
 		state := ".darkphish-updates"
 		saved, err := readUpdateCompletion(filepath.Join(state, "last-result.json"))

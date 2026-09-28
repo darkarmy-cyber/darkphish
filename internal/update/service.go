@@ -69,6 +69,13 @@ func (s *Service) Status() Status { s.mu.Lock(); defer s.mu.Unlock(); return s.s
 // SetResult keeps the last transaction outcome separate from release-check
 // errors so a bell poll or automatic check cannot erase a rollback notice.
 func (s *Service) SetResult(result string) {
+	s.SetResultTarget(result, "")
+}
+
+// SetResultTarget restores the durable supervisor outcome and, when available,
+// the exact semantic-version target. This lets a browser distinguish a
+// successful reinstall from a stale success message after process restart.
+func (s *Service) SetResultTarget(result, target string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	switch result {
@@ -84,6 +91,13 @@ func (s *Service) SetResult(result string) {
 		return
 	}
 	s.status.ResultCode = result
+	version := target
+	if len(version) > 0 && version[0] == 'v' {
+		version = version[1:]
+	}
+	if _, err := Compare(version, version); err == nil {
+		s.status.Target = version
+	}
 }
 
 func optionFor(r Release, current, latest string) (ReleaseOption, error) {

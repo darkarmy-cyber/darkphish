@@ -318,7 +318,7 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
     const select = p.document.getElementById('updateTarget')
     assert.equal(select.options.length, 3)
     assert.equal(select.options[0].textContent, '0.16.0 — Latest stable')
-    assert.equal(select.options[2].disabled, true)
+    assert.equal(select.options[2].disabled, false)
     assert.equal(p.$('#updateApply').value, 'Update to 0.16.0')
     p.change('#updateTarget', '0.14.0')
     assert.equal(p.$('#updateNotes').value, 'current')

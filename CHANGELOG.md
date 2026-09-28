@@ -6,6 +6,7 @@
 
 - Recover the exact generated v0.20.2 release merge through a one-time audited provenance exception without weakening review requirements for any future release.
 - Fix release source verification for GitHub releases and add a server-validated target version selector for verified updates.
+- Fail closed when immutable release-tag lookup fails and verify an explicitly selected update by fetching only that release instead of rebuilding the full release catalogue.
 
 ## 0.20.2 - 2026-09-27
 

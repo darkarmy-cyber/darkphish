@@ -182,7 +182,7 @@ func (c *Client) Stable(ctx context.Context) ([]Release, error) {
 			}
 			source, err := c.resolveTagCommit(ctx, r.Tag)
 			if err != nil {
-				continue
+				return nil, err
 			}
 			r.Source = source
 			if err := ValidateRelease(r); err != nil {
@@ -216,16 +216,25 @@ func (c *Client) StableVersion(ctx context.Context, version string) (Release, er
 	if _, err := Compare(version, version); err != nil {
 		return Release{}, errors.New("invalid stable release version")
 	}
-	releases, err := c.Stable(ctx)
+	var release Release
+	if err := c.json(ctx, "/releases/tags/v"+version, &release); err != nil {
+		return Release{}, err
+	}
+	if release.Tag != "v"+version || release.Draft || release.Prerelease {
+		return Release{}, errors.New("selected stable release is unavailable")
+	}
+	if err := validateReleaseMetadata(release); err != nil {
+		return Release{}, err
+	}
+	source, err := c.resolveTagCommit(ctx, release.Tag)
 	if err != nil {
 		return Release{}, err
 	}
-	for _, release := range releases {
-		if release.Version() == version {
-			return release, nil
-		}
+	release.Source = source
+	if err := ValidateRelease(release); err != nil {
+		return Release{}, err
 	}
-	return Release{}, errors.New("selected stable release is unavailable")
+	return release, nil
 }
 
 func (c *Client) asset(ctx context.Context, r Release, name string, limit int64) ([]byte, error) {

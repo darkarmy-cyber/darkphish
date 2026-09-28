@@ -1,6 +1,9 @@
 package api
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -33,6 +36,26 @@ func (as *Server) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	JSONResponse(w, status, http.StatusOK)
 }
 
+func decodeUpdateTarget(w http.ResponseWriter, r *http.Request) (string, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
+	defer r.Body.Close()
+	var input struct {
+		Version string `json:"version"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		return "", errors.New("invalid update request")
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return "", errors.New("invalid update request")
+	}
+	if input.Version == "" {
+		return "", errors.New("target version is required")
+	}
+	return input.Version, nil
+}
+
 func (as *Server) UpdateApply(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	u := ctx.Get(r, "user").(models.User)
@@ -56,17 +79,22 @@ func (as *Server) UpdateApply(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, models.Response{Message: "Update service is unavailable"}, http.StatusServiceUnavailable)
 		return
 	}
+	version, err := decodeUpdateTarget(w, r)
+	if err != nil {
+		JSONResponse(w, models.Response{Message: err.Error()}, http.StatusBadRequest)
+		return
+	}
 	// Consume this privilege grant before handing work to the supervisor.
 	if err = models.RevokePrivilegedSession(binding); err != nil {
 		JSONResponse(w, models.Response{Message: "Unable to consume privileged session"}, http.StatusInternalServerError)
 		return
 	}
-	target, err := as.updates.ApplyVersion()
+	target, err := as.updates.ApplyVersion(version)
 	result := "requested"
 	if err != nil {
 		result = "failure"
 	}
-	audit.Record(r, u.Username, u.Id, "update.apply", "release", result, method)
+	audit.Record(r, u.Username, u.Id, "update.apply", "release:"+version, result, method)
 	if err != nil {
 		JSONResponse(w, models.Response{Message: err.Error()}, http.StatusConflict)
 		return

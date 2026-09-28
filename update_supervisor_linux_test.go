@@ -87,6 +87,25 @@ func TestRejectedPreparationReleasesStagingFiles(t *testing.T) {
 	}
 }
 
+func TestSupervisorAcceptsUpgradeAndReinstallButRejectsDowngrade(t *testing.T) {
+	for _, tc := range []struct {
+		name, requested, current string
+		want                     bool
+	}{
+		{name: "upgrade", requested: "0.21.0", current: "0.20.2", want: true},
+		{name: "reinstall", requested: "0.20.2", current: "0.20.2", want: true},
+		{name: "downgrade", requested: "0.20.1", current: "0.20.2", want: false},
+		{name: "invalid requested", requested: "latest", current: "0.20.2", want: false},
+		{name: "invalid current", requested: "0.21.0", current: "dev", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := supervisorAcceptsTarget(tc.requested, tc.current); got != tc.want {
+				t.Fatalf("supervisorAcceptsTarget(%q, %q) = %v, want %v", tc.requested, tc.current, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestPreInstallFailureDoesNotReportRollback(t *testing.T) {
 	state := t.TempDir()
 	transaction := update.Transaction{Directory: t.TempDir()}

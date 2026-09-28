@@ -51,3 +51,24 @@ body.auth-login {
     .enterprise-ui .sidebar .sidebar-credit { padding: 18px 10px 0; margin-top: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .update-progress-track::after { animation: none; width: 100%; opacity: .65; } }
+
+/* Verified update selector. */
+.enterprise-ui .update-card {
+    max-width: 860px; margin: 22px 0; padding: 24px;
+    background: var(--dp-paper); border: 1px solid var(--dp-line); border-radius: 12px;
+}
+.enterprise-ui .update-version-grid {
+    display: grid; grid-template-columns: minmax(140px, .7fr) minmax(260px, 1.4fr) minmax(180px, 1fr);
+    gap: 22px; align-items: start;
+}
+.enterprise-ui .update-field-label {
+    display: block; margin: 0 0 8px; color: var(--dp-muted); font-size: 12px; font-weight: 600;
+}
+.enterprise-ui .update-version-value { display: block; min-height: 44px; padding: 10px 0; font-size: 15px; }
+.enterprise-ui .update-card .help-block { margin: 8px 0 0; font-size: 12px; }
+.enterprise-ui .update-target-warning { margin: 18px 0 0; }
+.enterprise-ui .update-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 10px; }
+.enterprise-ui .update-actions .fa { margin-right: 6px; }
+@media (max-width: 900px) {
+    .enterprise-ui .update-version-grid { grid-template-columns: 1fr; gap: 14px; }
+}

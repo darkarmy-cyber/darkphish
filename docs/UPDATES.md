@@ -7,8 +7,18 @@ only to these administrators and links to `/settings?tab=update`.
 
 The checker reads public GitHub Releases from `darkarmy-cyber/darkphish` without
 a token. It compares all three stable SemVer components, excludes drafts and
-prereleases, caches automatic checks for an hour and offers Check now. Release
-notes are rendered as text. A newer trusted release produces one notification.
+prereleases, resolves every displayed release tag to an immutable commit, caches
+automatic checks for an hour and offers Check now. Release notes are rendered as
+text. A newer trusted release produces one notification.
+
+The Update tab exposes a server-built stable-release catalogue. Administrators
+can select a newer release or reinstall the currently running stable release.
+The browser submits only the selected semantic version; the server resolves the
+release, tag, assets and provenance again from its own catalogue. Older releases
+remain visible for operator context but are disabled until DarkPhish has an
+explicit database and configuration compatibility proof for that downgrade.
+Changing the selector updates the publication date and release notes without
+weakening the apply checks.
 
 ## First-iteration apply support
 
@@ -87,7 +97,11 @@ accepted. The supervisor independently checks the requested release again.
 The trust boundary requires the canonical GitHub Actions bot identity, the
 complete expected native artifact set, GitHub SHA-256 digests, SHA256SUMS,
 and the publication receipt binding the checksum manifest, tag and immutable
-source commit. The tag must resolve to that commit before and after download.
+source commit. GitHub's `target_commitish` field is treated as informational:
+historical releases may report `main`, while the updater independently resolves
+the immutable tag and uses that commit for receipt, attestation and native-build
+identity verification. The tag must resolve to the same commit before and after
+download.
 Before downloading or probing the replacement executable, the publication receipt
 must pass Sigstore signature, certificate transparency, Rekor log and timestamp
 verification. Certificate policy pins the GitHub OIDC issuer, this repository's
@@ -180,3 +194,18 @@ against this SQLite installation. Update backups and results remain under
 No release, CI, CodeQL, branch protection or PR review gate is relaxed by this
 feature. Runtime verification requires both publication metadata and independent
 Sigstore evidence produced by the trusted publication workflow.
+
+
+## 0.21 bootstrap behavior
+
+The normal native publication path pins new release metadata to the exact source
+commit SHA. This keeps the 0.21 release compatible with older installations whose
+pre-0.21 checker requires a SHA in `target_commitish`. Recovery publications for
+an already-existing immutable tag intentionally continue to derive trust from the
+protected tag object and may expose GitHub's default-branch `target_commitish`;
+that avoids weakening the historical recovery boundary.
+
+Historical releases are not rewritten or re-signed merely to satisfy the old
+metadata assumption. An older supported installation can bootstrap to the normal
+0.21 native release, after which immutable tag resolution handles historical
+`target_commitish=main` releases correctly.

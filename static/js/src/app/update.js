@@ -1,41 +1,112 @@
 $(function () {
     var currentStatus = null, busy = false, watching = false;
-    var dialogStage = "closed", targetVersion = "", previous = {}, accepted = false, observedApplying = false;
+    var dialogStage = "closed", targetVersion = "", selectedVersion = "", previous = {}, accepted = false, observedApplying = false;
     var diagnostics = {
         verification_failed: "Release download, authenticity or archive verification failed. No application files were changed.",
         backup_failed: "The pre-update backup failed. No application files were changed. Check available disk space and filesystem permissions.",
         apply_failed: "Installation could not start. The backup completed and no application files were changed.",
         rollback: "Installation or startup failed. The previous application and database were restored."
     };
+
     function request(url, method, data) {
         return $.ajax({url: "/api" + url, method: method, data: data === undefined ? undefined : JSON.stringify(data),
-            // Release lookups allow 45 seconds on the server; leave room for the
-            // response instead of cancelling a valid slow check at 15 seconds.
             dataType: "json", contentType: "application/json", timeout: url === "/updates" || url === "/updates/check" ? 60000 : 15000});
     }
+
+    function releases() {
+        return currentStatus && Array.isArray(currentStatus.releases) ? currentStatus.releases : [];
+    }
+
+    function releaseFor(version) {
+        var list = releases();
+        for (var i = 0; i < list.length; i++) if (list[i].version === version) return list[i];
+        return null;
+    }
+
+    function selectedRelease() {
+        var select = document.getElementById("updateTarget");
+        var value = select && select.value ? select.value : selectedVersion;
+        return releaseFor(value);
+    }
+
+    function actionLabel(release) {
+        if (!release) return "Update now";
+        if (release.action === "reinstall") return "Reinstall " + release.version;
+        if (release.action === "downgrade") return "Downgrade to " + release.version;
+        return "Update to " + release.version;
+    }
+
+    function renderSelectedRelease() {
+        var release = selectedRelease();
+        if (!release) {
+            $("#updatePublished").text("—");
+            $("#updateNotes").text("");
+            $("#updateTargetWarning").prop("hidden", true).text("");
+            $("#updateApply").text("Update now");
+            return;
+        }
+        selectedVersion = release.version;
+        $("#updatePublished").text(release.published_at || "—");
+        $("#updateNotes").text(release.release_notes || "");
+        $("#updateApply").text(actionLabel(release));
+        var warning = release.compatible ? "" : (release.disabled_reason || "This version cannot be installed on the current system.");
+        $("#updateTargetWarning").prop("hidden", !warning).text(warning);
+    }
+
+    function renderSelector(status) {
+        var select = document.getElementById("updateTarget");
+        if (!select) return;
+        while (select.firstChild) select.removeChild(select.firstChild);
+        var list = Array.isArray(status.releases) ? status.releases : [];
+        for (var i = 0; i < list.length; i++) {
+            var release = list[i];
+            var option = document.createElement("option");
+            option.value = release.version;
+            var suffix = release.latest ? " — Latest stable" : release.current ? " — Current" : "";
+            option.textContent = release.version + suffix;
+            // Keep incompatible historical releases selectable so operators can
+            // inspect their publication date and notes. The apply control remains
+            // disabled until the server marks that target compatible.
+            select.appendChild(option);
+        }
+        var preferred = selectedVersion && releaseFor(selectedVersion) ? selectedVersion : status.selected_version || status.latest_version || "";
+        select.value = preferred;
+        if (!select.value && select.options && select.options.length) select.value = select.options[0].value;
+        selectedVersion = select.value || "";
+        renderSelectedRelease();
+    }
+
     function controls() {
-        var reason = busy || watching ? "An update operation is in progress." :
-            !currentStatus ? "Check release information before updating." :
-            currentStatus.applying ? "Waiting for DarkPhish to restart. Do not start another update." :
-            currentStatus.unsupported_reason || currentStatus.error ||
-            (!currentStatus.available ? "No newer stable release is available." : "");
+        var release = selectedRelease();
+        var reason = "";
+        if (busy || watching) reason = "An update operation is in progress.";
+        else if (!currentStatus) reason = "Check release information before updating.";
+        else if (currentStatus.applying) reason = "Waiting for DarkPhish to restart. Do not start another update.";
+        else if (currentStatus.unsupported_reason) reason = currentStatus.unsupported_reason;
+        else if (currentStatus.error) reason = currentStatus.error;
+        else if (!release) reason = "No verified stable release is selected.";
+        else if (release.compatible === false) reason = release.disabled_reason || "The selected version is not compatible with this installation.";
         $("#updateApply").prop("disabled", !!reason);
         $("#updateCheck").prop("disabled", busy || watching || !!(currentStatus && currentStatus.applying));
-        $("#updateApplyHint").text(reason || "Ready. Update now requires password confirmation and a verified backup.");
+        $("#updateTarget").prop("disabled", busy || watching || !!(currentStatus && currentStatus.applying) || releases().length === 0);
+        if (reason) $("#updateApplyHint").text(reason);
+        else if (release.action === "reinstall") $("#updateApplyHint").text("Ready to reinstall " + release.version + ". Password confirmation and a verified backup are required.");
+        else $("#updateApplyHint").text("Ready to install " + release.version + ". Password confirmation and a verified backup are required.");
     }
+
     function render(status) {
         currentStatus = status;
         $("#updateCurrent").text(status.current_version);
-        $("#updateLatest").text(status.latest_version || "Unavailable");
-        $("#updatePublished").text(status.latest_version ? status.published_at : "—");
-        $("#updateNotes").text(status.release_notes || "");
-        $("#updateStatus").text(status.result || status.error || (status.applying ? "Update in progress" : status.available ? "A new stable release is available" : "You are up to date"));
+        if (status.applying && status.target_version) selectedVersion = status.target_version;
+        renderSelector(status);
+        $("#updateStatus").text(status.result || status.error || (status.applying ? "Update in progress" : status.available ? "A new stable release is available" : "Stable release information is current"));
         $("#updateBlocked").prop("hidden", !status.unsupported_reason);
         $("#updateBlockedReason").text(status.unsupported_reason || "");
         $("#updateVerifierHelp").prop("hidden", !/\/usr\/bin\/gh|GitHub CLI|attestation verifier/i.test(status.unsupported_reason || ""));
         controls();
         renderAdminNotification(status);
     }
+
     function openProgress() {
         if (dialogStage === "closed") {
             Swal.fire({title: "Updating DarkPhish", customClass: "update-progress-dialog", showConfirmButton: false,
@@ -45,6 +116,7 @@ $(function () {
         }
         dialogStage = "progress";
     }
+
     function progress(message) {
         openProgress();
         var input = Swal.getInput();
@@ -54,33 +126,34 @@ $(function () {
         $("#updateDialogMessage").text(message);
         $("#updateStatus").text(message);
     }
+
     function finish(kind, message, detail) {
         watching = false; busy = false;
         openProgress(); dialogStage = "finished";
         Swal.update({title: kind === "success" ? "Update successful" : kind === "error" ? "Update failed" : "Update not confirmed",
             type: kind, showConfirmButton: true, showCancelButton: false, confirmButtonText: "Close",
             html: '<p id="updateDialogMessage" role="status" aria-live="polite"></p><pre id="updateDialogDiagnostics" class="update-progress-diagnostics"></pre>'});
-        // Server-supplied content is text, never interpolated into dialog HTML.
         $("#updateDialogMessage").text(message);
         $("#updateDialogDiagnostics").text(detail || "").prop("hidden", !detail);
-        // SweetAlert2 8 hides the actions container during progress but does not
-        // restore the container when showConfirmButton is updated back to true.
         Swal.getActions().style.display = "flex";
         Swal.enableButtons();
         $("#updateStatus").text(message);
         controls();
     }
+
     function unknown(message) {
         currentStatus = null;
         finish("info", message, "The result is not known. Do not repeat the update blindly. Reconnect or sign in again, then open Settings > Update. If the service is unavailable, an administrator can inspect the DarkPhish service log (for systemd: journalctl -u darkphish.service -n 100 --no-pager). Remove secrets before sharing logs.");
     }
+
     function outcome(status) {
         if (status.applying) { observedApplying = true; targetVersion = status.target_version || targetVersion; return false; }
         var fresh = accepted || observedApplying || status.result !== previous.result || status.current_version !== previous.current_version;
         if (!fresh) return false;
-        // An accepted request or a stale previous success is not a completed update.
-        if ((status.result_code === "applied" || /^Update completed successfully\.?$/.test(status.result || "")) &&
-            targetVersion && status.current_version === targetVersion && status.current_version !== previous.current_version) {
+        var applied = status.result_code === "applied" || /^Update completed successfully\.?$/.test(status.result || "");
+        var targetReceipt = status.target_version === targetVersion;
+        var versionChanged = status.current_version !== previous.current_version;
+        if (applied && targetVersion && status.current_version === targetVersion && (observedApplying || targetReceipt || versionChanged)) {
             finish("success", "DarkPhish " + status.current_version + " is running. " + status.result);
             return true;
         }
@@ -94,6 +167,7 @@ $(function () {
         }
         return false;
     }
+
     function watchRestart(remaining) {
         if (remaining <= 0) { unknown("The update is taking longer than expected. Its outcome could not be confirmed."); return; }
         watching = true; controls();
@@ -110,14 +184,13 @@ $(function () {
             });
         }, 3000);
     }
+
     function failureMessage(xhr) { return xhr.responseJSON && xhr.responseJSON.message || "Unable to complete the update operation"; }
+
     function recover(xhr, mayHaveApplied) {
-        // GET only: an interrupted POST may have reached the supervisor. Never replay it.
         request("/updates", "GET").done(function (status) {
             render(status);
-            // Another tab/admin may have won the apply race. Its authoritative
-            // in-progress state still needs monitoring, even after our 409.
-            if (status.applying) { observedApplying = true; targetVersion = status.target_version || status.latest_version; progress("An update is already running. Monitoring its result…"); watchRestart(240); return; }
+            if (status.applying) { observedApplying = true; targetVersion = status.target_version || targetVersion; progress("An update is already running. Monitoring its result…"); watchRestart(240); return; }
             if (mayHaveApplied) {
                 if (outcome(status)) return;
                 unknown(status.error || "The update request was interrupted. Its outcome could not be confirmed.");
@@ -129,12 +202,14 @@ $(function () {
             else { currentStatus = null; finish("error", failureMessage(xhr), "The request was rejected. Check the connection and sign in again if necessary."); }
         });
     }
+
     function check(force) {
         busy = true; controls();
         return request(force ? "/updates/check" : "/updates", force ? "POST" : "GET").done(render).fail(function (xhr) {
             currentStatus = null; $("#updateStatus").text(failureMessage(xhr));
         }).always(function () { busy = false; controls(); });
     }
+
     function begin(password) {
         progress("Verifying administrator access…");
         var proof = {method: "password", password: password};
@@ -142,7 +217,7 @@ $(function () {
         proof.password = "";
         auth.done(function () {
             progress("Requesting a verified update…");
-            request("/updates/apply", "POST", {}).done(function (response) {
+            request("/updates/apply", "POST", {version: targetVersion}).done(function (response) {
                 targetVersion = response.target_version || targetVersion;
                 accepted = true; currentStatus.applying = true;
                 progress("Verifying the release and preparing the update…");
@@ -150,29 +225,41 @@ $(function () {
             }).fail(function (xhr) { recover(xhr, !(xhr.status >= 400 && xhr.status < 500)); });
         }).fail(function (xhr) { recover(xhr, false); });
     }
+
+    $("#updateTarget").on("change", function () {
+        selectedVersion = this.value || "";
+        renderSelectedRelease();
+        controls();
+    });
+
     $("#updateCheck").on("click", function () {
         if (busy || watching || (currentStatus && currentStatus.applying)) return;
         check(true).done(function (status) {
             if (status.applying) { previous = {}; targetVersion = status.target_version || status.latest_version; progress("Resuming update monitoring…"); watchRestart(240); }
         });
     });
+
     $("#updateApply").on("click", function () {
-        if (busy || watching || !currentStatus || !currentStatus.available || currentStatus.unsupported_reason || currentStatus.error || currentStatus.applying) return;
-        previous = Object.assign({}, currentStatus); targetVersion = currentStatus.latest_version;
+        var release = selectedRelease();
+        if (busy || watching || !currentStatus || !release || release.compatible === false || currentStatus.unsupported_reason || currentStatus.error || currentStatus.applying) return;
+        previous = Object.assign({}, currentStatus); targetVersion = release.version;
         accepted = false; observedApplying = false; busy = true; dialogStage = "confirm"; controls();
-        Swal.fire({title: "Confirm privileged access", text: "Enter your password to back up and update DarkPhish. The application will restart.",
+        var verb = release.action === "reinstall" ? "reinstall" : release.action === "downgrade" ? "downgrade to" : "update to";
+        Swal.fire({title: "Install DarkPhish " + release.version + "?",
+            text: "Current version: " + currentStatus.current_version + ". Target version: " + release.version + ". Enter your password to " + verb + " this verified release. DarkPhish will create a backup and restart.",
             input: "password", inputAttributes: {autocomplete: "current-password"}, customClass: "update-progress-dialog",
-            showCancelButton: true, confirmButtonText: "Verify and update",
+            showCancelButton: true, confirmButtonText: release.action === "reinstall" ? "Verify and reinstall" : "Verify and update",
             allowOutsideClick: function () { return dialogStage !== "progress"; },
             allowEscapeKey: function () { return dialogStage !== "progress"; },
             preConfirm: function (password) {
                 if (dialogStage === "finished") return true;
                 if (dialogStage !== "confirm" || !password) return false;
-                begin(password); return false; // Retain this dialog through restart and completion.
+                begin(password); return false;
             },
             onClose: function () { dialogStage = "closed"; }
         }).then(function () { if (!watching && dialogStage !== "progress") { busy = false; controls(); } });
     });
+
     check(false).done(function (status) {
         if (status.applying) { previous = Object.assign({}, status); targetVersion = status.target_version || status.latest_version; progress("Resuming update monitoring…"); watchRestart(240); }
     });

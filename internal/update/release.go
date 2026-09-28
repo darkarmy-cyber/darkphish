@@ -212,6 +212,22 @@ func (c *Client) Latest(ctx context.Context) (Release, error) {
 	return releases[0], nil
 }
 
+func (c *Client) StableVersion(ctx context.Context, version string) (Release, error) {
+	if _, err := Compare(version, version); err != nil {
+		return Release{}, errors.New("invalid stable release version")
+	}
+	releases, err := c.Stable(ctx)
+	if err != nil {
+		return Release{}, err
+	}
+	for _, release := range releases {
+		if release.Version() == version {
+			return release, nil
+		}
+	}
+	return Release{}, errors.New("selected stable release is unavailable")
+}
+
 func (c *Client) asset(ctx context.Context, r Release, name string, limit int64) ([]byte, error) {
 	for _, a := range r.Assets {
 		if a.Name == name {

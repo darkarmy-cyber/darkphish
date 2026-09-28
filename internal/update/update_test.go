@@ -65,6 +65,42 @@ func TestCheckerIgnoresDraftAndPrereleaseWithoutToken(t *testing.T) {
 	}
 }
 
+
+func TestStableVersionSelectsRequestedRelease(t *testing.T) {
+	latest, _, _ := evidence(t)
+	older := latest
+	older.ID = 2
+	older.Tag = "v0.7.0"
+	older.Source = strings.Repeat("c", 40)
+	for i := range older.Assets {
+		older.Assets[i].ID += 100
+		older.Assets[i].Name = strings.ReplaceAll(older.Assets[i].Name, "v0.8.0", "v0.7.0")
+		older.Assets[i].URL = downloadRoot + older.Tag + "/" + older.Assets[i].Name
+	}
+	body, _ := json.Marshal([]Release{latest, older})
+	c := &Client{http: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var response []byte
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/releases"):
+			response = body
+		case strings.HasSuffix(req.URL.Path, "/git/ref/tags/"+latest.Tag):
+			response = []byte(`{"object":{"type":"commit","sha":"` + latest.Source + `"}}`)
+		case strings.HasSuffix(req.URL.Path, "/git/ref/tags/"+older.Tag):
+			response = []byte(`{"object":{"type":"commit","sha":"` + older.Source + `"}}`)
+		default:
+			t.Fatalf("unexpected release request: %s", req.URL.Path)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(response)), Header: make(http.Header)}, nil
+	})}}
+	got, err := c.StableVersion(context.Background(), "0.7.0")
+	if err != nil || got.Version() != "0.7.0" || got.Source != older.Source {
+		t.Fatalf("selected wrong stable release: %+v %v", got, err)
+	}
+	if _, err = c.StableVersion(context.Background(), "0.6.0"); err == nil {
+		t.Fatal("accepted unavailable stable release")
+	}
+}
+
 func TestUpdateOutcomeSurvivesReleaseChecks(t *testing.T) {
 	r, _, _ := evidence(t)
 	body, _ := json.Marshal([]Release{r})

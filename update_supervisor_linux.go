@@ -366,10 +366,10 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			}
 			ctx, cancel := context.WithTimeout(stopContext, 3*time.Minute)
 			client := update.NewClient()
-			latest, checkErr := client.Latest(ctx)
+			selected, checkErr := client.StableVersion(ctx, request.Version)
 			var archive []byte
-			if checkErr == nil && latest.Version() == request.Version && latest.Source == request.Source {
-				archive, checkErr = client.VerifiedArchive(ctx, latest, runtime.GOARCH)
+			if checkErr == nil && selected.Source == request.Source {
+				archive, checkErr = client.VerifiedArchive(ctx, selected, runtime.GOARCH)
 			} else if checkErr == nil {
 				checkErr = errors.New("requested release changed")
 			}
@@ -386,7 +386,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			}
 			stage := filepath.Join(active, "stage")
 			if err = os.Mkdir(stage, 0700); err == nil {
-				err = update.ExtractContext(stopContext, archive, stage, latest.Version(), runtime.GOARCH)
+				err = update.ExtractContext(stopContext, archive, stage, selected.Version(), runtime.GOARCH)
 			}
 			if err == nil {
 				err = update.ValidateReplacement(stopContext, l.Root, stage)
@@ -395,7 +395,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 				probeContext, stopProbe := context.WithTimeout(stopContext, 10*time.Second)
 				output, probeErr := exec.CommandContext(probeContext, filepath.Join(stage, "darkphish"), "version").Output()
 				stopProbe()
-				if probeErr != nil || !strings.Contains(string(output), "version "+latest.Version()+",") || !strings.Contains(string(output), "commit "+latest.Source+",") {
+				if probeErr != nil || !strings.Contains(string(output), "version "+selected.Version()+",") || !strings.Contains(string(output), "commit "+selected.Source+",") {
 					err = errors.New("native binary build identity does not match release evidence")
 				}
 			}
@@ -417,7 +417,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 			if err = models.Setup(conf); err != nil {
 				return true, err
 			}
-			audit.RecordSystem("update.backup", "release", latest.Tag, "started")
+			audit.RecordSystem("update.backup", "release", selected.Tag, "started")
 			if err = models.Close(); err != nil {
 				return true, err
 			}
@@ -451,7 +451,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 				if stopContext.Err() != nil {
 					return true, nil
 				}
-				child, err = startSupervised(binary, outcome, latest.Tag)
+				child, err = startSupervised(binary, outcome, selected.Tag)
 				if err != nil {
 					return true, err
 				}
@@ -464,10 +464,10 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 				return true, stopErr
 			}
 			// Outcome remains durable in the retained backup directory, without secrets.
-			if err = durableUpdateResult(filepath.Join(active, "completed.json"), outcome, latest.Tag); err != nil {
+			if err = durableUpdateResult(filepath.Join(active, "completed.json"), outcome, selected.Tag); err != nil {
 				return true, errors.Join(err, child.stop())
 			}
-			if err = persistUpdateResult(state, updateCompletion{Result: outcome, Tag: latest.Tag}); err != nil {
+			if err = persistUpdateResult(state, updateCompletion{Result: outcome, Tag: selected.Tag}); err != nil {
 				return true, errors.Join(err, child.stop())
 			}
 			retained := filepath.Join(state, "backup-"+time.Now().UTC().Format("20060102T150405.000000000"))
@@ -486,7 +486,7 @@ func superviseUpdates(conf *config.Config) (bool, error) {
 				if stopContext.Err() != nil {
 					return true, nil
 				}
-				if err = syscall.Exec(binary, os.Args, updateResultEnvironment("applied", latest.Tag)); err != nil {
+				if err = syscall.Exec(binary, os.Args, updateResultEnvironment("applied", selected.Tag)); err != nil {
 					// Reactivate the journal before rollback so a second interruption
 					// cannot leave a completed marker over a partial restoration.
 					if journalErr := os.Rename(retained, active); journalErr != nil {

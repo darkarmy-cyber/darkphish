@@ -76,12 +76,14 @@ $(function () {
 
     function controls() {
         var release = selectedRelease();
-        var reason = busy || watching ? "An update operation is in progress." :
-            !currentStatus ? "Check release information before updating." :
-            currentStatus.applying ? "Waiting for DarkPhish to restart. Do not start another update." :
-            currentStatus.unsupported_reason || currentStatus.error ||
-            !release ? "No verified stable release is selected." :
-            release.compatible === false ? (release.disabled_reason || "The selected version is not compatible with this installation.") : "";
+        var reason = "";
+        if (busy || watching) reason = "An update operation is in progress.";
+        else if (!currentStatus) reason = "Check release information before updating.";
+        else if (currentStatus.applying) reason = "Waiting for DarkPhish to restart. Do not start another update.";
+        else if (currentStatus.unsupported_reason) reason = currentStatus.unsupported_reason;
+        else if (currentStatus.error) reason = currentStatus.error;
+        else if (!release) reason = "No verified stable release is selected.";
+        else if (release.compatible === false) reason = release.disabled_reason || "The selected version is not compatible with this installation.";
         $("#updateApply").prop("disabled", !!reason);
         $("#updateCheck").prop("disabled", busy || watching || !!(currentStatus && currentStatus.applying));
         $("#updateTarget").prop("disabled", busy || watching || !!(currentStatus && currentStatus.applying) || releases().length === 0);

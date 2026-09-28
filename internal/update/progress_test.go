@@ -66,7 +66,6 @@ func TestRejectedUpdateHasNoAcceptedTarget(t *testing.T) {
 	}
 }
 
-
 func TestSelectedVersionPolicyAllowsUpgradeAndReinstallButBlocksDowngrade(t *testing.T) {
 	for _, tc := range []struct {
 		name, current, target string

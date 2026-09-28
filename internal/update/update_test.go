@@ -65,7 +65,6 @@ func TestCheckerIgnoresDraftAndPrereleaseWithoutToken(t *testing.T) {
 	}
 }
 
-
 func TestStableVersionSelectsRequestedRelease(t *testing.T) {
 	latest, _, _ := evidence(t)
 	older := latest

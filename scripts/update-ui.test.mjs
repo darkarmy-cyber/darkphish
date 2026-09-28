@@ -24,15 +24,40 @@ function deferred() {
 function page(path) {
   const elements = new Map(), requests = [], timers = [], prompts = [], notifications = [], dialogs = []
   const input = {value: '', style: {}}
+
+  function element() {
+    return {
+      value: '', textContent: '', style: {}, children: [], hidden: false, disabled: false,
+      text(value) { this.value = value; this.textContent = value; return this },
+      prop(key, value) { this[key] = value; return this },
+      on(event, fn) { this[event] = fn; return this },
+      val(value) { if (arguments.length) { this.value = value; return this } return this.value },
+      appendChild(child) {
+        this.children.push(child)
+        if (!this.value && !child.disabled) this.value = child.value
+        return child
+      },
+      removeChild(child) {
+        const index = this.children.indexOf(child)
+        if (index >= 0) this.children.splice(index, 1)
+        if (this.value === child.value) this.value = this.children.find(item => !item.disabled)?.value || ''
+        return child
+      },
+      get firstChild() { return this.children[0] || null },
+      get options() { return this.children }
+    }
+  }
+
   const $ = selector => {
     if (typeof selector === 'function') return selector()
-    if (!elements.has(selector)) elements.set(selector, {
-      text(value) { this.value = value; return this },
-      prop(key, value) { this[key] = value; return this },
-      on(event, fn) { this[event] = fn; return this }
-    })
+    if (!elements.has(selector)) elements.set(selector, element())
     return elements.get(selector)
   }
+  const document = {
+    getElementById(id) { const el = $('#' + id); if (id === 'updateTarget') el.tagName = 'SELECT'; return el },
+    createElement(tag) { const el = element(); el.tagName = tag.toUpperCase(); return el }
+  }
+
   $.ajax = options => {
     assert.equal(options.timeout, ['/api/updates','/api/updates/check'].includes(options.url) ? 60000 : 15000)
     assert.ok(options.url.startsWith('/api/'))
@@ -40,16 +65,40 @@ function page(path) {
       body: options.data && JSON.parse(options.data), session: true})
     requests.push(request); return request
   }
-  const context = vm.createContext({$, renderAdminNotification: status => notifications.push(status),
+
+  const context = vm.createContext({$, document, renderAdminNotification: status => notifications.push(status),
     setTimeout: fn => timers.push(fn),
     Swal: {fire: options => { const prompt = {options}; prompts.push(prompt); return {then: fn => { prompt.answer = fn }} },
       update: options => dialogs.push(options), getInput: () => input,
       getActions: () => ({style: {}}), enableButtons: () => {}}
   })
   vm.runInContext(readFileSync(new URL(path, import.meta.url), 'utf8'), context)
-  return {$, requests, timers, prompts, notifications, dialogs, input,
-    status: extra => requests.at(-1).resolve({current_version: '0.14.0', latest_version: '0.15.0', available: true, ...extra}),
+
+  function normalizedStatus(extra = {}) {
+    const current = extra.current_version ?? '0.14.0'
+    const available = extra.available ?? true
+    const latest = extra.latest_version !== undefined ? extra.latest_version : (available ? '0.15.0' : current)
+    let releases = extra.releases
+    if (releases === undefined) {
+      releases = []
+      if (latest) releases.push({
+        version: latest, published_at: '2026-09-28T10:00:00Z', release_notes: 'Release ' + latest,
+        current: latest === current, latest: true, compatible: true, action: latest === current ? 'reinstall' : 'upgrade'
+      })
+      if (current && current !== latest) releases.push({
+        version: current, published_at: '2026-09-27T10:00:00Z', release_notes: 'Release ' + current,
+        current: true, latest: false, compatible: true, action: 'reinstall'
+      })
+    }
+    const selected = extra.selected_version !== undefined ? extra.selected_version : latest
+    return {current_version: current, latest_version: latest, selected_version: selected, available,
+      releases, applying: false, ...extra}
+  }
+
+  return {$, document, requests, timers, prompts, notifications, dialogs, input,
+    status: extra => requests.at(-1).resolve(normalizedStatus(extra)),
     click: id => $(id).click(),
+    change: (id, value) => { const el = $(id); el.value = value; el.change.call(el) },
     confirm: () => { $('#updateApply').click(); prompts.at(-1).options.preConfirm('test-password') }
   }
 }
@@ -78,7 +127,7 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
   test(`${path}: no release, check failures and applying state cannot enable apply`, () => {
     const p = page(path)
     assert.equal(p.$('#updateApply').disabled, true)
-    p.status({available: false})
+    p.status({available: false, latest_version: '', selected_version: '', releases: []})
     assert.equal(p.$('#updateApply').disabled, true)
     p.click('#updateCheck'); p.status({error: 'Release check failed'})
     assert.equal(p.$('#updateApply').disabled, true)
@@ -146,7 +195,7 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
     p.requests.at(-1).reject({status: 0})
     p.status({current_version: '0.15.0', available: false, result})
     assert.equal(p.$('#updateStatus').value, 'DarkPhish 0.15.0 is running. ' + result)
-    assert.equal(p.$('#updateApply').disabled, true)
+    assert.equal(p.$('#updateApply').disabled, false)
     assert.equal(p.requests.filter(r => r.url === '/updates/apply').length, 1)
   })
 
@@ -154,6 +203,7 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
     const p = page(path)
     p.status({}); p.confirm(); p.requests.at(-1).resolve({})
     assert.equal(p.requests.at(-1).url, '/updates/apply')
+    assert.deepEqual(p.requests.at(-1).body, {version: '0.15.0'})
     p.requests.at(-1).reject({})
     assert.equal(p.requests.at(-1).url, '/updates')
     p.status({applying: true})
@@ -180,7 +230,7 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
       p.status({applying: false, ...outcome})
       assert.equal(p.$('#updateStatus').value, outcome.error || (outcome.current_version ? 'DarkPhish 0.15.0 is running. ' : '') + outcome.result)
       assert.equal(p.$('#updateCheck').disabled, false)
-      assert.equal(p.$('#updateApply').disabled, !!outcome.error || !outcome.available)
+      assert.equal(p.$('#updateApply').disabled, !!outcome.error)
       assert.equal(p.timers.length, 0)
       assert.equal(p.requests.filter(r => r.url === '/updates/apply').length, 1)
     }
@@ -232,9 +282,12 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
 
   test(`${path}: accepted apply waits through a disconnect and renders untrusted strings as text`, () => {
     const p = page(path), text = '<img src=x onerror=alert(1)>'
-    p.status({release_notes: text, latest_version: text})
+    p.status({releases: [
+      {version: '0.15.0', published_at: '2026-09-28T10:00:00Z', release_notes: text, latest: true, compatible: true, action: 'upgrade'},
+      {version: '0.14.0', published_at: '2026-09-27T10:00:00Z', release_notes: 'current', current: true, compatible: true, action: 'reinstall'}
+    ]})
     assert.equal(p.$('#updateNotes').value, text)
-    assert.equal(p.$('#updateLatest').value, text)
+    assert.equal(p.document.getElementById('updateTarget').options[0].textContent, '0.15.0 — Latest stable')
     p.confirm(); p.requests.at(-1).resolve({}); p.requests.at(-1).resolve({message: 'Restarting'})
     assert.equal(p.$('#updateCheck').disabled, true)
     p.timers.shift()(); p.requests.at(-1).reject({})
@@ -254,6 +307,38 @@ for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/upd
     assert.equal(p.$('#updateCheck').disabled, false)
     assert.equal(p.requests.filter(r => r.method === 'POST').length, 0)
   })
+
+  test(`${path}: selector exposes stable targets, updates notes and blocks downgrade`, () => {
+    const p = page(path)
+    p.status({releases: [
+      {version:'0.16.0', published_at:'2026-09-29T10:00:00Z', release_notes:'next', latest:true, compatible:true, action:'upgrade'},
+      {version:'0.14.0', published_at:'2026-09-27T10:00:00Z', release_notes:'current', current:true, compatible:true, action:'reinstall'},
+      {version:'0.13.0', published_at:'2026-09-20T10:00:00Z', release_notes:'old', compatible:false, action:'downgrade', disabled_reason:'Downgrade blocked'}
+    ], latest_version:'0.16.0', selected_version:'0.16.0'})
+    const select = p.document.getElementById('updateTarget')
+    assert.equal(select.options.length, 3)
+    assert.equal(select.options[0].textContent, '0.16.0 — Latest stable')
+    assert.equal(select.options[2].disabled, true)
+    assert.equal(p.$('#updateApply').value, 'Update to 0.16.0')
+    p.change('#updateTarget', '0.14.0')
+    assert.equal(p.$('#updateNotes').value, 'current')
+    assert.equal(p.$('#updateApply').value, 'Reinstall 0.14.0')
+    assert.equal(p.$('#updateApply').disabled, false)
+    p.change('#updateTarget', '0.13.0')
+    assert.equal(p.$('#updateApply').disabled, true)
+    assert.equal(p.$('#updateTargetWarning').value, 'Downgrade blocked')
+  })
+
+  test(`${path}: selected version is the only update target sent by the browser`, () => {
+    const p = page(path)
+    p.status({})
+    p.change('#updateTarget', '0.14.0')
+    p.confirm()
+    p.requests.at(-1).resolve({})
+    assert.equal(p.requests.at(-1).url, '/updates/apply')
+    assert.deepEqual(p.requests.at(-1).body, {version: '0.14.0'})
+  })
+
 }
 
 for (const path of ['../static/js/src/app/update.js', '../static/js/dist/app/update.min.js']) {

@@ -76,20 +76,22 @@ func TestStableVersionSelectsRequestedRelease(t *testing.T) {
 		older.Assets[i].Name = strings.ReplaceAll(older.Assets[i].Name, "v0.8.0", "v0.7.0")
 		older.Assets[i].URL = downloadRoot + older.Tag + "/" + older.Assets[i].Name
 	}
-	body, _ := json.Marshal([]Release{latest, older})
+	olderBody, _ := json.Marshal(older)
 	c := &Client{http: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		var response []byte
+		status := http.StatusOK
 		switch {
-		case strings.HasSuffix(req.URL.Path, "/releases"):
-			response = body
-		case strings.HasSuffix(req.URL.Path, "/git/ref/tags/"+latest.Tag):
-			response = []byte(`{"object":{"type":"commit","sha":"` + latest.Source + `"}}`)
+		case strings.HasSuffix(req.URL.Path, "/releases/tags/"+older.Tag):
+			response = olderBody
 		case strings.HasSuffix(req.URL.Path, "/git/ref/tags/"+older.Tag):
 			response = []byte(`{"object":{"type":"commit","sha":"` + older.Source + `"}}`)
+		case strings.HasSuffix(req.URL.Path, "/releases/tags/v0.6.0"):
+			status = http.StatusNotFound
+			response = []byte(`{"message":"Not Found"}`)
 		default:
 			t.Fatalf("unexpected release request: %s", req.URL.Path)
 		}
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(response)), Header: make(http.Header)}, nil
+		return &http.Response{StatusCode: status, Body: io.NopCloser(bytes.NewReader(response)), Header: make(http.Header)}, nil
 	})}}
 	got, err := c.StableVersion(context.Background(), "0.7.0")
 	if err != nil || got.Version() != "0.7.0" || got.Source != older.Source {

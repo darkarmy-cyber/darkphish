@@ -182,6 +182,36 @@ async function verifyAuditedRelease0201Merge(get, repo, pr, files) {
   return { head: pr.head.sha, base: pr.base.sha, auditedRelease0201: true, mergeCommit: pr.merge_commit_sha }
 }
 
+async function verifyAuditedRelease0202Merge(get, repo, pr, files) {
+  requireReview(pr.state === "closed" && pr.merged_at && /^[a-f0-9]{40}$/.test(pr.merge_commit_sha || ""),
+    "Audited v0.20.2 release PR lacks immutable merge provenance")
+  requireReview(repo === "darkarmy-cyber/darkphish" && pr.number === 119 &&
+    pr.head.ref === "release/v0.20.2" && pr.head.sha === "64241df5e4225693105e1a5989c12d453f76f8ba" &&
+    pr.base.sha === "eef3789a3f7f23b03fd233716a7e0c5209a8c4c9" &&
+    pr.merge_commit_sha === "4be0bc0d1a6a2f158da5aaed996dcd87bab3bd80" &&
+    pr.merged_at === "2026-09-27T21:50:12Z" && trustedReleaseReviewer(pr.merged_by),
+  "Release is not the audited v0.20.2 generated-only merge")
+  const expected = [
+    ["CHANGELOG.md", "modified", "245ae453bed0ef41f389cd27f26a99b97621eb8d", 7, 0],
+    ["VERSION", "modified", "727d97b9bb2cf88ce2d1b361bb071b4d13f10f4e", 1, 1],
+    ["changes/recover-v0-20-1-review-provenance.md", "removed", "8e179a33aab5dc1a522acfe2b4b6a98d67d54935", 0, 6],
+    ["changes/recover-v0-20-1-run-manifest.md", "removed", "517fe97122ccfd49b5316e64705b6485eb89d265", 0, 5],
+  ].sort((left, right) => left[0].localeCompare(right[0]))
+  const actual = files.map(file => [file.filename, file.status, file.sha, file.additions, file.deletions])
+    .sort((left, right) => left[0].localeCompare(right[0]))
+  requireReview(JSON.stringify(actual) === JSON.stringify(expected),
+    "Audited v0.20.2 generated file manifest changed")
+  await verifyResolvedThreads(get, repo, pr)
+  const finalPR = await get(`repos/${repo}/pulls/${pr.number}`)
+  requireReview(finalPR.number === pr.number && trustedActionsActor(finalPR.user) && finalPR.draft === false &&
+    finalPR.head?.repo?.full_name === repo && finalPR.head?.ref === pr.head.ref && finalPR.head?.sha === pr.head.sha &&
+    finalPR.base?.ref === "main" && finalPR.base?.sha === pr.base.sha && finalPR.title === pr.title &&
+    finalPR.state === pr.state && finalPR.merged_at === pr.merged_at && finalPR.merge_commit_sha === pr.merge_commit_sha &&
+    trustedReleaseReviewer(finalPR.merged_by),
+  "Audited v0.20.2 release PR changed during provenance verification")
+  return { head: pr.head.sha, base: pr.base.sha, auditedRelease0202: true, mergeCommit: pr.merge_commit_sha }
+}
+
 export function releaseReviewBody(repo, pr) {
   requireReview(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) && Number.isSafeInteger(pr?.number) && pr.number > 0 &&
     /^[a-f0-9]{40}$/.test(pr?.head?.sha || "") && /^[a-f0-9]{40}$/.test(pr?.base?.sha || ""), "Invalid release review body target")
@@ -224,6 +254,7 @@ export async function verifyReleaseMaintainerReview(repo, pr, { get }) {
   if (trusted.length === 0) {
     if (repo === "darkarmy-cyber/darkphish" && pr.number === 20) return verifyLegacyProtectedAutoMerge(get, repo, pr)
     if (repo === "darkarmy-cyber/darkphish" && pr.number === 116) return verifyAuditedRelease0201Merge(get, repo, pr, files)
+    if (repo === "darkarmy-cyber/darkphish" && pr.number === 119) return verifyAuditedRelease0202Merge(get, repo, pr, files)
     throw new ReleaseMaintainerReviewError(
       `Release PR #${pr.number} is missing the required exact-head generated-release attestation from oliverkko (309485696) before merge; publication remains blocked`)
   }

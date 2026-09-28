@@ -47,6 +47,22 @@ test("only PR118 may stage the exact run-manifest follow-up", () => {
   assert.equal(auditedPendingPatchRepair(value), true)
 })
 
+test("only PR120 may stage its 0.20.3 fragment while v0.20.2 recovery is pending", () => {
+  const repairBase = "4be0bc0d1a6a2f158da5aaed996dcd87bab3bd80"
+  const repairFiles = [
+    ".github/scripts/release-recover-0202-policy.mjs", ".github/scripts/release-recover-0202-policy.test.mjs",
+    ".github/scripts/release-recover.mjs", "changes/recover-v0-20-2-review-provenance.md",
+    "docs/RELEASE_REPAIR_0202.md", "scripts/changelog-repair-policy.mjs",
+    "scripts/changelog-repair-policy.test.mjs", "scripts/release-maintainer-review-0202.test.mjs",
+    "scripts/release-maintainer-review.mjs", "scripts/release-repair-policy-0202.test.mjs",
+    "scripts/release-repair-policy.mjs",
+  ]
+  const value = { repository, eventName: "pull_request", current: "0.20.2", target: "0.20.3",
+    baseSHA: repairBase, files: repairFiles, event: { pull_request: { number: 120, state: "open", draft: false,
+      base: { ref: "main", sha: repairBase }, head: { ref: "fix/recover-v0.20.2-review-provenance", repo: { full_name: repository } } } } }
+  assert.equal(auditedPendingPatchRepair(value), true)
+})
+
 test("only the immediate reviewed squash merge may keep pending patch validation green", () => {
   const headSHA = "d".repeat(40)
   const value = {

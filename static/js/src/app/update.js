@@ -64,7 +64,9 @@ $(function () {
             option.value = release.version;
             var suffix = release.latest ? " — Latest stable" : release.current ? " — Current" : "";
             option.textContent = release.version + suffix;
-            option.disabled = release.compatible === false;
+            // Keep incompatible historical releases selectable so operators can
+            // inspect their publication date and notes. The apply control remains
+            // disabled until the server marks that target compatible.
             select.appendChild(option);
         }
         var preferred = selectedVersion && releaseFor(selectedVersion) ? selectedVersion : status.selected_version || status.latest_version || "";

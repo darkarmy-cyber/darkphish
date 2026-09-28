@@ -180,6 +180,14 @@ func (c *Client) Stable(ctx context.Context) ([]Release, error) {
 			if err := validateReleaseMetadata(r); err != nil {
 				continue
 			}
+			source, err := c.resolveTagCommit(ctx, r.Tag)
+			if err != nil {
+				continue
+			}
+			r.Source = source
+			if err := ValidateRelease(r); err != nil {
+				continue
+			}
 			stable = append(stable, r)
 		}
 		if len(releases) < 100 {

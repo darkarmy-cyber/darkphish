@@ -2,12 +2,12 @@ package api
 
 import (
 	"fmt"
-	"github.com/darkarmy-cyber/darkphish/auth"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/darkarmy-cyber/darkphish/auth"
 	ctx "github.com/darkarmy-cyber/darkphish/context"
 	"github.com/darkarmy-cyber/darkphish/models"
 )
@@ -59,7 +59,6 @@ func TestUpdateRBAC(t *testing.T) {
 		}
 	}
 }
-
 
 func TestDecodeUpdateTargetAcceptsOnlyVersion(t *testing.T) {
 	for _, tc := range []struct {

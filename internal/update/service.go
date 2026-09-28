@@ -3,9 +3,10 @@ package update
 import (
 	"context"
 	"errors"
-	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	"sync"
 	"time"
+
+	"github.com/darkarmy-cyber/darkphish/internal/audit"
 )
 
 // ListenerReady is installed before listeners start in a supervised child.

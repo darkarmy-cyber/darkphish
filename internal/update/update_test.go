@@ -75,8 +75,17 @@ func TestUpdateOutcomeSurvivesReleaseChecks(t *testing.T) {
 		if message == "" || s.Status().ResultCode != result {
 			t.Fatal("missing transaction outcome")
 		}
-		s.client.http.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
-			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
+		s.client.http.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			var response []byte
+			switch {
+			case strings.HasSuffix(req.URL.Path, "/releases"):
+				response = body
+			case strings.HasSuffix(req.URL.Path, "/git/ref/tags/"+r.Tag):
+				response = []byte(`{"object":{"type":"commit","sha":"` + r.Source + `"}}`)
+			default:
+				t.Fatalf("unexpected update check request: %s", req.URL.Path)
+			}
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(response)), Header: make(http.Header)}, nil
 		})
 		status, err := s.Check(context.Background(), true)
 		if err != nil || status.Result != message {

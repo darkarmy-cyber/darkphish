@@ -14,6 +14,7 @@ import { assertNoUnstagedRelease } from "../../scripts/release-pending.mjs"
 import { uploadReleaseAsset } from "../../scripts/release-upload.mjs"
 import { successfulTrustedSBOMStep } from "./release-sbom-step.mjs"
 import { audited0201MetadataFailure, auditedTagless0201Source } from "./release-recover-0201-policy.mjs"
+import { audited0202MetadataFailure, auditedTagless0202Source } from "./release-recover-0202-policy.mjs"
 
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
@@ -130,6 +131,7 @@ async function verifyOriginalNativeRelease(repo, source) {
   for (const run of runs.filter((item) => item.name === "Native release" && item.path === ".github/workflows/release.yml" && item.event === "workflow_run" && item.head_branch === "main" && item.head_sha === source && item.status === "completed" && item.conclusion === "failure")) {
     const jobs = await pages(`repos/${repo}/actions/runs/${run.id}/jobs`, "jobs")
     if (audited0201MetadataFailure({ repository: repo, source, run, jobs })) { candidates.push(run); continue }
+    if (audited0202MetadataFailure({ repository: repo, source, run, jobs })) { candidates.push(run); continue }
     const metadata = jobs.find((job) => job.name === "metadata"), verify = jobs.find((job) => job.name === "verify"), smoke = jobs.find((job) => job.name === "audit-smoke"), publish = jobs.find((job) => job.name === "publish"), binaries = jobs.filter((job) => job.name?.startsWith("binaries ("))
     if (metadata?.conclusion !== "success" || verify?.conclusion !== "success" || smoke?.conclusion !== "success" || publish?.conclusion !== "failure" || binaries.length !== 5 || binaries.some((job) => job.conclusion !== "success")) continue
     if (!successfulStep(metadata, "Run node scripts/release-publish.mjs metadata") || !successfulStep(publish, "Run actions/download-artifact@v8") || !successfulTrustedSBOMStep(publish) || !successfulStep(publish, "Generate checksums")) continue
@@ -306,10 +308,12 @@ async function recoveryState(repo, version, main) {
   const tagSHA = tagState?.commit || null, draftSource = drafts.length ? [...draftSources][0] : null
   let source = tagSHA || draftSource
   if (!source) {
-    const pr = await api(`repos/${repo}/pulls/116`, { missing: true })
-    source = auditedTagless0201Source({ repository: repo, version, tag, pr })
-    if (source) await verifyReleaseMaintainerReview(repo, pr, { get: api })
-    else { await assertNoUnstagedRelease(repo, version); return null }
+    const audited = version === "0.20.1" ? { number: 116, select: auditedTagless0201Source }
+      : version === "0.20.2" ? { number: 119, select: auditedTagless0202Source } : null
+    const pr = audited ? await api(`repos/${repo}/pulls/${audited.number}`, { missing: true }) : null
+    source = audited?.select({ repository: repo, version, tag, pr }) || null
+    if (!source) { await assertNoUnstagedRelease(repo, version); return null }
+    await verifyReleaseMaintainerReview(repo, pr, { get: api })
   }
   if (!sha40(source)) throw new Error("pending release source is malformed")
   if (tagSHA && tagSHA !== source) throw new Error("release tag already exists at an unexpected commit; tags are immutable")

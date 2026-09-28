@@ -26,18 +26,32 @@ const files118 = [
   "scripts/release-repair-policy-0201.test.mjs",
   "scripts/release-repair-policy.mjs",
 ].sort()
+const files120 = [
+  ".github/scripts/release-recover-0202-policy.mjs",
+  ".github/scripts/release-recover-0202-policy.test.mjs",
+  ".github/scripts/release-recover.mjs",
+  "changes/recover-v0-20-2-review-provenance.md",
+  "docs/RELEASE_REPAIR_0202.md",
+  "scripts/changelog-repair-policy.mjs",
+  "scripts/changelog-repair-policy.test.mjs",
+  "scripts/release-maintainer-review-0202.test.mjs",
+  "scripts/release-maintainer-review.mjs",
+  "scripts/release-repair-policy-0202.test.mjs",
+  "scripts/release-repair-policy.mjs",
+].sort()
 const repairs = [
-  { number: 117, base, branch, files: files117, title: "fix(release): recover v0.20.1 review provenance (#117)" },
-  { number: 118, base: "3cc011581698b73c76512f155f7fd78399345efd", branch: "fix/recover-v0.20.1-run-manifest", files: files118,
+  { number: 117, current: "0.20.1", target: "0.20.2", base, branch, files: files117, title: "fix(release): recover v0.20.1 review provenance (#117)" },
+  { number: 118, current: "0.20.1", target: "0.20.2", base: "3cc011581698b73c76512f155f7fd78399345efd", branch: "fix/recover-v0.20.1-run-manifest", files: files118,
     title: "fix(release): correct v0.20.1 run manifest (#118)" },
+  { number: 120, current: "0.20.2", target: "0.20.3", base: "4be0bc0d1a6a2f158da5aaed996dcd87bab3bd80", branch: "fix/recover-v0.20.2-review-provenance", files: files120,
+    title: "fix(release): recover v0.20.2 review provenance (#120)" },
 ]
 
 export function auditedPendingPatchRepair(candidate) {
   const pull = candidate?.event?.pull_request
-  if (candidate?.repository !== repository || candidate.current !== "0.20.1" ||
-    candidate.target !== "0.20.2" || !Array.isArray(candidate.files)) return false
+  if (candidate?.repository !== repository || !Array.isArray(candidate.files)) return false
   const repair = repairs.find((item) => item.base === candidate.baseSHA && item.files.length === candidate.files.length)
-  if (!repair) return false
+  if (!repair || candidate.current !== repair.current || candidate.target !== repair.target) return false
   const actual = [...candidate.files].sort()
   if (!actual.every((path, index) => path === repair.files[index])) return false
   if (candidate.eventName === "pull_request") {

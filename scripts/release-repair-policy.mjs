@@ -40,13 +40,25 @@ const release0201FollowupAllowed = new Set([
   "scripts/release-repair-policy.mjs", "scripts/release-repair-policy-0201.test.mjs",
   "changes/recover-v0-20-1-run-manifest.md", "docs/RELEASE_REPAIR_0201.md",
 ])
+const release0202Allowed = new Set([
+  ".github/scripts/release-recover-0202-policy.mjs", ".github/scripts/release-recover-0202-policy.test.mjs", ".github/scripts/release-recover.mjs",
+  "scripts/changelog-repair-policy.mjs", "scripts/changelog-repair-policy.test.mjs",
+  "scripts/release-maintainer-review.mjs", "scripts/release-maintainer-review-0202.test.mjs",
+  "scripts/release-repair-policy.mjs", "scripts/release-repair-policy-0202.test.mjs",
+  "changes/recover-v0-20-2-review-provenance.md", "docs/RELEASE_REPAIR_0202.md",
+])
+const release0202Added = new Set([
+  ".github/scripts/release-recover-0202-policy.mjs", ".github/scripts/release-recover-0202-policy.test.mjs",
+  "scripts/release-maintainer-review-0202.test.mjs", "scripts/release-repair-policy-0202.test.mjs",
+  "changes/recover-v0-20-2-review-provenance.md", "docs/RELEASE_REPAIR_0202.md",
+])
 
 export async function verifyReleaseRepair(repo, pr, request) {
-  const resume = pr.number === 58, timestamp = pr.number === 59, release0201 = pr.number === 117, release0201Followup = pr.number === 118
-  const expectedBase = release0201Followup ? "3cc011581698b73c76512f155f7fd78399345efd" : release0201 ? "cafdcc08b9d968931cb1446891055e3256d0caec" : timestamp ? "697fe42eb20f3f5197be9545ed5b3bf835b730c0" : resume ? "88377d6951ede7352acb257777250bdfecd2052b" : base
-  const paths = release0201Followup ? release0201FollowupAllowed : release0201 ? release0201Allowed : timestamp ? timestampAllowed : resume ? resumeAllowed : allowed
-  const branch = release0201Followup ? "fix/recover-v0.20.1-run-manifest" : release0201 ? "fix/recover-v0.20.1-review-provenance" : timestamp ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-timestamp" : resume ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-finalize" : "fix/historical-release-review-provenance"
-  if (repo !== repository || ![56, 58, 59, 117, 118].includes(pr.number) || pr.base?.sha !== expectedBase || pr.base.ref !== "main" ||
+  const resume = pr.number === 58, timestamp = pr.number === 59, release0201 = pr.number === 117, release0201Followup = pr.number === 118, release0202 = pr.number === 120
+  const expectedBase = release0202 ? "4be0bc0d1a6a2f158da5aaed996dcd87bab3bd80" : release0201Followup ? "3cc011581698b73c76512f155f7fd78399345efd" : release0201 ? "cafdcc08b9d968931cb1446891055e3256d0caec" : timestamp ? "697fe42eb20f3f5197be9545ed5b3bf835b730c0" : resume ? "88377d6951ede7352acb257777250bdfecd2052b" : base
+  const paths = release0202 ? release0202Allowed : release0201Followup ? release0201FollowupAllowed : release0201 ? release0201Allowed : timestamp ? timestampAllowed : resume ? resumeAllowed : allowed
+  const branch = release0202 ? "fix/recover-v0.20.2-review-provenance" : release0201Followup ? "fix/recover-v0.20.1-run-manifest" : release0201 ? "fix/recover-v0.20.1-review-provenance" : timestamp ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-timestamp" : resume ? "codex/threads/019fb3b4-63f2-7180-8a29-babee7e6a51b/release071-finalize" : "fix/historical-release-review-provenance"
+  if (repo !== repository || ![56, 58, 59, 117, 118, 120].includes(pr.number) || pr.base?.sha !== expectedBase || pr.base.ref !== "main" ||
     pr.head?.repo?.full_name !== repository || pr.head.ref !== branch ||
     !/^[a-f0-9]{40}$/.test(pr.head.sha || "") || pr.state !== "open" || pr.draft !== false ||
     !["OWNER", "MEMBER", "COLLABORATOR"].includes(pr.author_association)) throw new Error("Not the authorized release repair")
@@ -56,16 +68,22 @@ export async function verifyReleaseRepair(repo, pr, request) {
     files.some(f => !paths.has(f.filename) || (!(resume && f.filename === ".github/release-normalization-hold.json" && f.status === "removed") && !["added", "modified"].includes(f.status)) || f.previous_filename)) {
     throw new Error("Release repair includes unauthorized paths or file operations")
   }
-  if ((release0201 || release0201Followup) && (files.length !== paths.size || files.some(file =>
-    file.status !== ((release0201 ? release0201Added : new Set(["changes/recover-v0-20-1-run-manifest.md"])).has(file.filename) ? "added" : "modified")))) {
-    throw new Error("v0.20.1 release repair does not match its exact reviewed file set")
+  if ((release0201 || release0201Followup || release0202) && (files.length !== paths.size || files.some(file =>
+    file.status !== ((release0202 ? release0202Added : release0201 ? release0201Added : new Set(["changes/recover-v0-20-1-run-manifest.md"])).has(file.filename) ? "added" : "modified")))) {
+    throw new Error("Release recovery repair does not match its exact reviewed file set")
   }
   const read = async (path, ref = pr.head.sha) => {
     const file = await request(`repos/${repo}/contents/${path}?ref=${ref}`)
     if (file?.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") throw new Error("Missing release repair boundary")
     return Buffer.from(file.content, "base64").toString("utf8")
   }
-  if ((await read("VERSION")).trim() !== (release0201 || release0201Followup ? "0.20.1" : "0.7.1")) throw new Error("Release repair VERSION changed")
+  if ((await read("VERSION")).trim() !== (release0202 ? "0.20.2" : release0201 || release0201Followup ? "0.20.1" : "0.7.1")) throw new Error("Release repair VERSION changed")
+  if (release0202) {
+    const tag = await request(`repos/${repo}/git/ref/tags/v0.20.2`, { missing: true })
+    const release = await request(`repos/${repo}/releases/tags/v0.20.2`, { missing: true })
+    if (tag !== null || release !== null) throw new Error("v0.20.2 recovery repair requires the reviewed absent tag and release state")
+    return
+  }
   if (release0201 || release0201Followup) {
     const tag = await request(`repos/${repo}/git/ref/tags/v0.20.1`, { missing: true })
     const release = await request(`repos/${repo}/releases/tags/v0.20.1`, { missing: true })

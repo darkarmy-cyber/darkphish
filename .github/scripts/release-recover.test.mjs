@@ -176,7 +176,7 @@ test("duplicate staging drafts are never deleted or used as artifact inputs", ()
   assert.match(publish, /for \(const candidate of tagged\) assertExactDraft\(candidate, version, source, state\.expected\)/)
   assert.match(publish, /release staging set changed during recovery/)
   assert.match(publish, /let release = await api\(`repos\/\$\{repo\}\/releases`, \{ method: "POST"/)
-  assert.doesNotMatch(publish, /method: "POST", body: \{ tag_name: tag, target_commitish:/)
+  assert.match(publish, /method: "POST", body: \{ tag_name: tag, target_commitish: source,/)
   assert.match(script, /function assertExactDraft[\s\S]*?trustedReleaseTarget\(release, source\)/)
   const protectionChecks = publish.match(/await assertImmutableTagProtection\(repo, tag\)/g) || []
   assert.ok(protectionChecks.length >= 3)

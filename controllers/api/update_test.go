@@ -5,6 +5,7 @@ import (
 	"github.com/darkarmy-cyber/darkphish/auth"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	ctx "github.com/darkarmy-cyber/darkphish/context"
@@ -56,5 +57,34 @@ func TestUpdateRBAC(t *testing.T) {
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("%s: %d", tc.path, w.Code)
 		}
+	}
+}
+
+
+func TestDecodeUpdateTargetAcceptsOnlyVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, want string
+		wantErr          bool
+	}{
+		{name: "valid", body: `{"version":"0.21.0"}`, want: "0.21.0"},
+		{name: "missing", body: `{}`, wantErr: true},
+		{name: "unknown field", body: `{"version":"0.21.0","url":"https://example.invalid"}`, wantErr: true},
+		{name: "multiple objects", body: `{"version":"0.21.0"}{"version":"0.22.0"}`, wantErr: true},
+		{name: "oversized", body: `{"version":"` + strings.Repeat("1", 2048) + `"}`, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodPost, "/api/updates/apply", strings.NewReader(tc.body))
+			got, err := decodeUpdateTarget(w, r)
+			if tc.wantErr {
+				if err == nil || got != "" {
+					t.Fatalf("invalid target accepted: %q %v", got, err)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("target mismatch: %q %v", got, err)
+			}
+		})
 	}
 }

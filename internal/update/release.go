@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -123,8 +124,11 @@ func (c *Client) json(ctx context.Context, path string, v any) error {
 	return json.Unmarshal(b, v)
 }
 
-func ValidateRelease(r Release) error {
-	if r.ID <= 0 || r.Tag != "v"+r.Version() || r.Draft || r.Prerelease || r.Published.IsZero() || r.Published.After(time.Now().Add(time.Minute)) || !sourceSHA.MatchString(r.Source) || !r.Author.trusted() {
+func validateReleaseMetadata(r Release) error {
+	// target_commitish is informational. Older GitHub releases may expose
+	// "main" even though their immutable tag resolves to the exact released
+	// commit. Trust is established from that tag before evidence verification.
+	if r.ID <= 0 || r.Tag != "v"+r.Version() || r.Draft || r.Prerelease || r.Published.IsZero() || r.Published.After(time.Now().Add(time.Minute)) || !r.Author.trusted() {
 		return errors.New("untrusted release metadata")
 	}
 	if _, err := Compare(r.Version(), r.Version()); err != nil {
@@ -148,44 +152,56 @@ func ValidateRelease(r Release) error {
 	return nil
 }
 
-func (c *Client) Latest(ctx context.Context) (Release, error) {
-	var latest Release
+func ValidateRelease(r Release) error {
+	if err := validateReleaseMetadata(r); err != nil {
+		return err
+	}
+	if !sourceSHA.MatchString(r.Source) {
+		return errors.New("untrusted release source")
+	}
+	return nil
+}
+
+func (c *Client) Stable(ctx context.Context) ([]Release, error) {
+	var stable []Release
 	// Do not use /latest: published order need not equal SemVer order.
 	for page := 1; page <= 20; page++ {
 		var releases []Release
 		if err := c.json(ctx, fmt.Sprintf("/releases?per_page=100&page=%d", page), &releases); err != nil {
-			return Release{}, err
+			return nil, err
 		}
 		for _, r := range releases {
-			if r.Draft || r.Prerelease {
+			if r.Draft || r.Prerelease || r.Tag != "v"+r.Version() {
 				continue
 			}
 			if _, err := Compare(r.Version(), r.Version()); err != nil {
 				continue
 			}
-			if r.Tag != "v"+r.Version() {
+			if err := validateReleaseMetadata(r); err != nil {
 				continue
 			}
-			if latest.ID == 0 {
-				latest = r
-				continue
-			}
-			cmp, _ := Compare(r.Version(), latest.Version())
-			if cmp > 0 {
-				latest = r
-			}
+			stable = append(stable, r)
 		}
 		if len(releases) < 100 {
-			if latest.ID == 0 {
-				return Release{}, errors.New("no stable release available")
+			if len(stable) == 0 {
+				return nil, errors.New("no stable release available")
 			}
-			if err := ValidateRelease(latest); err != nil {
-				return Release{}, err
-			}
-			return latest, nil
+			sort.Slice(stable, func(i, j int) bool {
+				cmp, _ := Compare(stable[i].Version(), stable[j].Version())
+				return cmp > 0
+			})
+			return stable, nil
 		}
 	}
-	return Release{}, errors.New("release listing exceeds limit")
+	return nil, errors.New("release listing exceeds limit")
+}
+
+func (c *Client) Latest(ctx context.Context) (Release, error) {
+	releases, err := c.Stable(ctx)
+	if err != nil {
+		return Release{}, err
+	}
+	return releases[0], nil
 }
 
 func (c *Client) asset(ctx context.Context, r Release, name string, limit int64) ([]byte, error) {
@@ -247,35 +263,44 @@ func VerifyEvidence(r Release, manifest, receipt []byte) error {
 	return nil
 }
 
-// VerifiedArchive returns bytes only after all trust checks, including a second
-// immutable release snapshot. The caller must still validate archive entries.
-func (c *Client) VerifiedArchive(ctx context.Context, r Release, arch string) ([]byte, error) {
-	if arch != "amd64" && arch != "arm64" {
-		return nil, errors.New("unsupported architecture")
-	}
-	if err := ValidateRelease(r); err != nil {
-		return nil, err
-	}
+func (c *Client) resolveTagCommit(ctx context.Context, tag string) (string, error) {
 	var ref struct {
 		Object struct {
 			Type string `json:"type"`
 			SHA  string `json:"sha"`
 		} `json:"object"`
 	}
-	if err := c.json(ctx, "/git/ref/tags/"+r.Tag, &ref); err != nil {
-		return nil, err
+	if err := c.json(ctx, "/git/ref/tags/"+tag, &ref); err != nil {
+		return "", err
 	}
 	for depth := 0; ref.Object.Type == "tag" && depth < 8; depth++ {
 		if !sourceSHA.MatchString(ref.Object.SHA) {
-			return nil, errors.New("invalid tag object")
+			return "", errors.New("invalid tag object")
 		}
 		if err := c.json(ctx, "/git/tags/"+ref.Object.SHA, &ref); err != nil {
-			return nil, err
+			return "", err
 		}
 	}
-	if ref.Object.Type != "commit" || ref.Object.SHA != r.Source {
-		return nil, errors.New("immutable source mismatch")
+	if ref.Object.Type != "commit" || !sourceSHA.MatchString(ref.Object.SHA) {
+		return "", errors.New("invalid release tag")
 	}
+	return ref.Object.SHA, nil
+}
+
+// VerifiedArchive returns bytes only after all trust checks, including a second
+// immutable release snapshot. The caller must still validate archive entries.
+func (c *Client) VerifiedArchive(ctx context.Context, r Release, arch string) ([]byte, error) {
+	if arch != "amd64" && arch != "arm64" {
+		return nil, errors.New("unsupported architecture")
+	}
+	if err := validateReleaseMetadata(r); err != nil {
+		return nil, err
+	}
+	source, err := c.resolveTagCommit(ctx, r.Tag)
+	if err != nil {
+		return nil, err
+	}
+	r.Source = source
 	manifest, err := c.asset(ctx, r, "SHA256SUMS", 65536)
 	if err != nil {
 		return nil, err
@@ -301,29 +326,20 @@ func (c *Client) VerifiedArchive(ctx context.Context, r Release, arch string) ([
 	if err = c.json(ctx, fmt.Sprintf("/releases/%d", r.ID), &after); err != nil {
 		return nil, err
 	}
+	if err = validateReleaseMetadata(after); err != nil {
+		return nil, err
+	}
+	after.Source = r.Source
 	x, _ := json.Marshal(r)
 	y, _ := json.Marshal(after)
 	if string(x) != string(y) {
 		return nil, errors.New("release changed during verification")
 	}
-	var closing struct {
-		Object struct {
-			Type string `json:"type"`
-			SHA  string `json:"sha"`
-		} `json:"object"`
-	}
-	if err = c.json(ctx, "/git/ref/tags/"+r.Tag, &closing); err != nil {
+	closing, err := c.resolveTagCommit(ctx, r.Tag)
+	if err != nil {
 		return nil, err
 	}
-	for depth := 0; closing.Object.Type == "tag" && depth < 8; depth++ {
-		if !sourceSHA.MatchString(closing.Object.SHA) {
-			return nil, errors.New("invalid closing tag object")
-		}
-		if err = c.json(ctx, "/git/tags/"+closing.Object.SHA, &closing); err != nil {
-			return nil, err
-		}
-	}
-	if closing.Object.Type != "commit" || closing.Object.SHA != r.Source {
+	if closing != r.Source {
 		return nil, errors.New("release tag changed during verification")
 	}
 	return b, nil

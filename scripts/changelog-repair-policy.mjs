@@ -51,6 +51,15 @@ const files129 = [
   "scripts/release-repair-policy-0211.test.mjs",
   "scripts/release-repair-policy.mjs",
 ].sort()
+const files135 = [
+  ".github/scripts/release-recover.mjs",
+  ".github/scripts/release-recover.test.mjs",
+  "changes/harden-v0-21-1-recovery.md",
+  "scripts/changelog-repair-policy.mjs",
+  "scripts/changelog-repair-policy.test.mjs",
+  "scripts/release-repair-policy-0211.test.mjs",
+  "scripts/release-repair-policy.mjs",
+].sort()
 const repairs = [
   { number: 117, current: "0.20.1", target: "0.20.2", base, branch, files: files117, title: "fix(release): recover v0.20.1 review provenance (#117)" },
   { number: 118, current: "0.20.1", target: "0.20.2", base: "3cc011581698b73c76512f155f7fd78399345efd", branch: "fix/recover-v0.20.1-run-manifest", files: files118,
@@ -59,6 +68,8 @@ const repairs = [
     title: "fix(release): recover v0.20.2 review provenance (#120)" },
   { number: 129, current: "0.21.1", target: "0.22.0", base: "d58b43260b1b94a8a7ad6897636f9d0fb9ee06d4", branch: "fix/v0.21.1-review-recovery", files: files129,
     title: "fix(release): audit v0.21.1 review recovery (#129)" },
+  { number: 135, current: "0.21.1", target: "0.22.0", base: "69355444d01c7ef29709ec398fdbacfc4d9b4753", branch: "fix/v0.21.1-recovery-hardening", files: files135,
+    title: "fix(release): close v0.21.1 recovery review gaps (#135)" },
 ]
 
 export function auditedPendingPatchRepair(candidate) {

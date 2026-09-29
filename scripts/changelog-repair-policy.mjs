@@ -40,6 +40,9 @@ const files120 = [
   "scripts/release-repair-policy.mjs",
 ].sort()
 const files129 = [
+  ".github/scripts/release-recover-0211-policy.mjs",
+  ".github/scripts/release-recover-0211-policy.test.mjs",
+  ".github/scripts/release-recover.mjs",
   "changes/recover-v0-21-1-review-provenance.md",
   "scripts/changelog-repair-policy.mjs",
   "scripts/changelog-repair-policy.test.mjs",

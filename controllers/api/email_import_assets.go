@@ -32,15 +32,17 @@ const (
 var emailCSSURL = regexp.MustCompile(`(?i)url\(\s*['"]?([^'")]+)['"]?\s*\)`)
 
 type importedEmailAssets struct {
-	Attachments []models.Attachment
-	CIDNames    map[string]string
-	Warnings    []string
+	Attachments  []models.Attachment
+	CIDNames     map[string]string
+	ResourceNames map[string]string
+	Warnings     []string
 }
 
 type emailAssetLocalizer struct {
 	ctx         context.Context
 	attachments []models.Attachment
 	cidNames    map[string]string
+	resourceNames map[string]string
 	cached      map[string]string
 	attempted   map[string]bool
 	usedNames   map[string]bool
@@ -140,7 +142,7 @@ func readImportedPart(body io.Reader) ([]byte, error) {
 }
 
 func collectImportedEmailAssets(raw string) importedEmailAssets {
-	result := importedEmailAssets{CIDNames: map[string]string{}}
+	result := importedEmailAssets{CIDNames: map[string]string{}, ResourceNames: map[string]string{}}
 	reader, err := messagemail.CreateReader(strings.NewReader(raw))
 	if reader == nil {
 		result.Warnings = append(result.Warnings, "Embedded MIME resources could not be parsed.")
@@ -173,6 +175,7 @@ func collectImportedEmailAssets(raw string) importedEmailAssets {
 			filename = params["name"]
 		}
 		cid := normalizeContentID(part.Header.Get("Content-ID"))
+		location := strings.TrimSpace(part.Header.Get("Content-Location"))
 
 		isBody := (contentType == "text/plain" || contentType == "text/html") && disposition != "attachment" && cid == ""
 		if isBody {
@@ -195,7 +198,7 @@ func collectImportedEmailAssets(raw string) importedEmailAssets {
 			break
 		}
 
-		inlineImage := cid != "" && strings.HasPrefix(strings.ToLower(contentType), "image/")
+		inlineImage := (cid != "" || location != "") && strings.HasPrefix(strings.ToLower(contentType), "image/")
 		if inlineImage {
 			preview, previewErr := rasterPreview(data)
 			if previewErr != nil {
@@ -213,8 +216,13 @@ func collectImportedEmailAssets(raw string) importedEmailAssets {
 		var name string
 		if inlineImage {
 			name = generatedInlineName("inline", contentType, data, used)
-			result.CIDNames[cid] = name
-			result.CIDNames[strings.ToLower(cid)] = name
+			if cid != "" {
+				result.CIDNames[cid] = name
+				result.CIDNames[strings.ToLower(cid)] = name
+			}
+			if location != "" {
+				result.ResourceNames[location] = name
+			}
 		} else {
 			if filename == "" {
 				// Ignore unnamed non-body MIME parts that cannot be represented
@@ -245,8 +253,9 @@ func newEmailAssetLocalizer(ctx context.Context, imported importedEmailAssets, f
 	return &emailAssetLocalizer{
 		ctx:         ctx,
 		attachments: append([]models.Attachment(nil), imported.Attachments...),
-		cidNames:    imported.CIDNames,
-		cached:      map[string]string{},
+		cidNames:      imported.CIDNames,
+		resourceNames: imported.ResourceNames,
+		cached:        map[string]string{},
 		attempted:   map[string]bool{},
 		usedNames:   used,
 		totalBytes:  total,
@@ -295,6 +304,9 @@ func (l *emailAssetLocalizer) localize(raw string) string {
 		return raw
 	}
 	lower := strings.ToLower(value)
+	if name := l.resourceNames[value]; name != "" {
+		return "cid:" + name
+	}
 	if strings.HasPrefix(lower, "cid:") {
 		cid := normalizeContentID(value[4:])
 		name := l.cidNames[cid]

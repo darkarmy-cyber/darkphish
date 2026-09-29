@@ -28,7 +28,7 @@ DarkPhish is designed as a native, self-hosted platform with a Go backend, web a
 
 ## Install
 
-For a quick development installation on Linux:
+For a quick installation on Linux:
 
 ```sh
 git clone https://github.com/darkarmy-cyber/darkphish.git
@@ -36,7 +36,7 @@ cd darkphish
 sudo ./install.sh
 ```
 
-This checks out `main`, which installs as a development build without verified in-product updates. For production, select a [published release tag](https://github.com/darkarmy-cyber/darkphish/releases) before running the installer; see the [installation guide](docs/INSTALLATION.md).
+This checks out `main`. If its commit has no matching version tag, the installer creates a development build without verified in-product updates. For a predictable production installation, select the [latest stable release tag](https://github.com/darkarmy-cyber/darkphish/releases/latest) before running the installer; see the [installation guide](docs/INSTALLATION.md).
 
 The installer automatically:
 

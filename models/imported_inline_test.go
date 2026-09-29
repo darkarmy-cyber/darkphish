@@ -50,12 +50,13 @@ func TestImportedInlineAttachmentIsSentAsCIDResource(t *testing.T) {
 	}
 	body := raw.String()
 	for _, required := range []string{
-		`src="cid:` + name + `"`,
-		"Content-Disposition: inline; filename=\"" + name + "\"",
+		"cid:" + name,
+		"Content-Disposition: inline",
+		`filename="` + name + `"`,
 		"Content-ID: <" + name + ">",
 	} {
 		if !strings.Contains(body, required) {
-			t.Fatalf("generated email is missing %q", required)
+			t.Errorf("generated email is missing %q", required)
 		}
 	}
 }

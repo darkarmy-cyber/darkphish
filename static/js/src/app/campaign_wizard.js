@@ -88,9 +88,10 @@
             $(this).toggleClass("active", itemStep === step);
         });
 
-        $("#campaignWizardBack").prop("hidden", step === 1);
-        $("#campaignWizardNext").prop("hidden", step === maxStep);
-        $("#launchButton").prop("hidden", step !== maxStep);
+        // Bootstrap's .btn display rule overrides the browser's [hidden] rule.
+        $("#campaignWizardBack").prop("hidden", step === 1).toggle(step !== 1);
+        $("#campaignWizardNext").prop("hidden", step === maxStep).toggle(step !== maxStep);
+        $("#launchButton").prop("hidden", step !== maxStep).toggle(step === maxStep);
 
         if (step === maxStep) populateReview();
     }

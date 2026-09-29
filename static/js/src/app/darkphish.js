@@ -290,6 +290,9 @@ var api = {
     import_email: function (req) {
         return query("/import/email", "POST", req, true)
     },
+    preview_email_images: function (req) {
+        return query("/import/email/images", "POST", req, true)
+    },
     // clone_site handles importing a site by url
     clone_site: function (req) {
         return query("/import/site", "POST", req, false)

@@ -1,5 +1,6 @@
 <div align="center">
-  <img src="docs/assets/darkphish_banner.svg" alt="DarkPhish fish logo and wordmark" width="600">
+  <img src="docs/assets/darkphish_fish.png" alt="DarkPhish fish logo" width="230">
+  <h1>DarkPhish</h1>
   <p><strong>Self-hosted phishing simulations for authorized security training and human-risk testing.</strong></p>
   <p>
     <a href="https://github.com/darkarmy-cyber/darkphish/releases/latest"><img src="https://img.shields.io/github/v/release/darkarmy-cyber/darkphish?label=latest%20release" alt="Latest release"></a>

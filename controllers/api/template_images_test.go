@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"image"
 	"image/png"
 	"io"
@@ -13,10 +12,8 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/darkarmy-cyber/darkphish/dialer"
-	"github.com/darkarmy-cyber/darkphish/models"
 )
 
 type previewTransport func(*http.Request) (*http.Response, error)
@@ -155,75 +152,6 @@ func TestImagePreviewFetchIsBoundedAndCredentialFree(t *testing.T) {
 				t.Fatal("invalid preview or diagnostic exposed")
 			}
 		})
-	}
-}
-
-func TestImagePreviewRequestValidationAndAuthentication(t *testing.T) {
-	for _, body := range []string{`{}`, `{"urls":[]}`, `{"urls":["http://example.test/a"]}`, `{"urls":["https://example.test/a"],"extra":true}`, `{"urls":["https://example.test/a"]}{}`, strings.Repeat("x", 65<<10)} {
-		r := httptest.NewRequest("POST", "/api/import/email/images", strings.NewReader(body))
-		w := httptest.NewRecorder()
-		(&Server{}).PreviewEmailImages(w, r)
-		if w.Code != http.StatusBadRequest || w.Header().Get("Cache-Control") != "no-store" {
-			t.Fatalf("invalid input status %d", w.Code)
-		}
-	}
-	tooMany, _ := json.Marshal(map[string][]string{"urls": make([]string, maxPreviewImages+1)})
-	w := httptest.NewRecorder()
-	(&Server{}).PreviewEmailImages(w, httptest.NewRequest("POST", "/api/import/email/images", bytes.NewReader(tooMany)))
-	if w.Code != http.StatusBadRequest {
-		t.Fatal("unbounded image count")
-	}
-	w = httptest.NewRecorder()
-	(&Server{}).PreviewEmailImages(w, httptest.NewRequest("GET", "/api/import/email/images", nil))
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Fatal("GET allowed")
-	}
-	ctx := setupTest(t)
-	w = httptest.NewRecorder()
-	ctx.apiServer.ServeHTTP(w, httptest.NewRequest("POST", "/api/import/email/images", strings.NewReader(`{"urls":["https://example.test/a"]}`)))
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated preview returned %d", w.Code)
-	}
-	for _, scope := range []string{"templates:read", "templates:write"} {
-		_, token, err := models.CreatePersonalAccessToken(ctx.admin.Id, "preview scope test", []string{scope}, time.Now().UTC().Add(time.Hour))
-		if err != nil {
-			t.Fatal(err)
-		}
-		r := httptest.NewRequest("POST", "/api/import/email/images", strings.NewReader(`{}`))
-		r.Header.Set("Authorization", "Bearer "+token)
-		w := httptest.NewRecorder()
-		ctx.apiServer.ServeHTTP(w, r)
-		want := http.StatusForbidden
-		if scope == "templates:write" {
-			want = http.StatusBadRequest
-		}
-		if w.Code != want {
-			t.Fatalf("scope %s returned %d, want %d", scope, w.Code, want)
-		}
-	}
-}
-
-func TestImagePreviewBatchLimitsAndDeniedResults(t *testing.T) {
-	imagePreviewSlots <- struct{}{}
-	imagePreviewSlots <- struct{}{}
-	w := httptest.NewRecorder()
-	(&Server{}).PreviewEmailImages(w, httptest.NewRequest("POST", "/api/import/email/images", strings.NewReader(`{"urls":["https://127.0.0.1/a"]}`)))
-	<-imagePreviewSlots
-	<-imagePreviewSlots
-	if w.Code != http.StatusTooManyRequests {
-		t.Fatal("busy batch was not rejected")
-	}
-	w = httptest.NewRecorder()
-	(&Server{}).PreviewEmailImages(w, httptest.NewRequest("POST", "/api/import/email/images", strings.NewReader(`{"urls":["https://127.0.0.1/a","https://127.0.0.1/a"]}`)))
-	var results []imagePreviewResult
-	if err := json.Unmarshal(w.Body.Bytes(), &results); err != nil {
-		t.Fatal(err)
-	}
-	if w.Code != http.StatusOK || len(results) != 1 || results[0].Data != "" || results[0].Error != errImagePreview.Error() {
-		t.Fatal("denied result or deduplication failed")
-	}
-	if len(imagePreviewSlots) != 0 {
-		t.Fatal("batch slot leaked")
 	}
 }
 

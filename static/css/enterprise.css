@@ -237,3 +237,18 @@ body.auth-page { padding: 0; min-height: 100vh; display: flex; flex-direction: c
     /* Whole milliseconds survive the release minifier; retain completion events. */
     .classic-ui *, .enterprise-ui *, .auth-page * { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
 }
+
+
+.enterprise-ui .email-import-action {
+    display: flex; align-items: center; gap: 16px; padding: 14px 16px; margin: 4px 0 18px;
+    border: 1px solid var(--dp-line); border-radius: 10px; background: var(--dp-tint);
+}
+.enterprise-ui .email-import-button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+    min-width: 190px; margin: 0; flex: 0 0 auto;
+}
+.enterprise-ui .email-import-copy { margin: 0; color: var(--dp-muted); line-height: 1.45; }
+@media (max-width: 720px) {
+    .enterprise-ui .email-import-action { align-items: stretch; flex-direction: column; }
+    .enterprise-ui .email-import-button { width: 100%; }
+}

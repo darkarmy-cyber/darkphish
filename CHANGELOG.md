@@ -6,6 +6,8 @@
 
 - Add route-addressable email-template and landing-page editors with unsaved-change navigation protection while preserving the classic editor UI and existing APIs.
 - Replace manual email-image preview loading with automatic, bounded import of inline and public external email images, and refresh the Import Email workflow.
+- Add a four-step campaign setup and final review flow while preserving existing launch confirmation, licensing gates and campaign API behavior.
+- Keep wizard navigation and launch buttons visually hidden outside their applicable steps, with browser regression coverage for review and licensing behavior.
 
 ### Changed
 

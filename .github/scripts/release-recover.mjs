@@ -124,8 +124,8 @@ async function verifiedReleasePR(repo, source, version, tag) {
 function successfulStep(job, name) { return job?.steps?.some((step) => step.name === name && step.status === "completed" && step.conclusion === "success") }
 async function verifyOriginalNativeRelease(repo, source) {
   const runs = await pages(`repos/${repo}/actions/runs?head_sha=${source}`, "workflow_runs")
-  const ci = runs.filter((run) => run.name === "CI" && run.path === ".github/workflows/ci.yml" && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success")
-  const codeql = runs.filter((run) => run.name === "CodeQL" && run.path === ".github/workflows/codeql.yml" && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success")
+  const ci = runs.filter((run) => run.name === "CI" && run.path === ".github/workflows/ci.yml" && ["push", "workflow_dispatch"].includes(run.event) && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success")
+  const codeql = runs.filter((run) => run.name === "CodeQL" && run.path === ".github/workflows/codeql.yml" && ["push", "repository_dispatch"].includes(run.event) && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success")
   if (!ci.length || !codeql.length) throw new Error("historical release source lacks successful exact-SHA CI or CodeQL")
   const candidates = []
   for (const run of runs.filter((item) => item.name === "Native release" && item.path === ".github/workflows/release.yml" && ["workflow_run", "schedule"].includes(item.event) && item.head_branch === "main" && item.head_sha === source && item.status === "completed" && ["success", "failure"].includes(item.conclusion))) {

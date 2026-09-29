@@ -19,7 +19,9 @@ test("recovery metadata and publication stay bound to canonical source metadata"
 test("historical release provenance is exact-SHA and canonical-workflow bound", () => {
   const historical = script.slice(script.indexOf("async function verifyOriginalNativeRelease"), script.indexOf("async function expectedMetadata"))
   assert.match(historical, /run\.path === "\.github\/workflows\/ci\.yml"/)
+  assert.match(historical, /\["push", "workflow_dispatch"\]\.includes\(run\.event\)/)
   assert.match(historical, /run\.path === "\.github\/workflows\/codeql\.yml"/)
+  assert.match(historical, /\["push", "repository_dispatch"\]\.includes\(run\.event\)/)
   assert.match(historical, /Native release/)
   assert.match(historical, /Run node scripts\/release-publish\.mjs metadata/)
   assert.match(historical, /Generate checksums/)

@@ -13,6 +13,70 @@ var icons = {
     "application/x-msdownload": "fa-file-o"
 }
 
+var inlineAssetPreviewRefs = []
+
+function attachmentObjectsFromTable() {
+    var files = []
+    if (!$.fn.DataTable.isDataTable("#attachmentsTable")) return files
+    $.each($("#attachmentsTable").DataTable().rows().data(), function (i, row) {
+        files.push({
+            name: unescapeHtml(row[1]),
+            content: row[3],
+            type: unescapeHtml(row[4])
+        })
+    })
+    return files
+}
+
+function rebuildInlineAssetPreviewRefs(files) {
+    inlineAssetPreviewRefs = []
+    $.each(files || [], function (i, file) {
+        var type = (file.type || "").toLowerCase()
+        if (!/^image\/(png|jpeg|gif)$/.test(type) || !/^[A-Za-z0-9+/=]+$/.test(file.content || "") || !file.name) return
+        inlineAssetPreviewRefs.push({
+            cid: "cid:" + file.name,
+            data: "data:" + type + ";base64," + file.content
+        })
+    })
+}
+
+function previewInlineAssetRefs(html) {
+    var output = html || ""
+    $.each(inlineAssetPreviewRefs, function (i, ref) {
+        output = output.split(ref.cid).join(ref.data)
+    })
+    return output
+}
+
+function restoreInlineAssetRefs(html) {
+    var output = html || ""
+    $.each(inlineAssetPreviewRefs, function (i, ref) {
+        output = output.split(ref.data).join(ref.cid)
+    })
+    return output
+}
+
+function attachmentRow(file) {
+    var type = file.type || "application/octet-stream"
+    var icon = icons[type] || "fa-file-o"
+    return [
+        '<i class="fa ' + icon + '"></i>',
+        escapeHtml(file.name),
+        '<span class="remove-row"><i class="fa fa-trash-o"></i></span>',
+        file.content,
+        escapeHtml(type)
+    ]
+}
+
+function addImportedAttachments(files) {
+    var rows = []
+    $.each(files || [], function (i, file) {
+        if (!file || !file.name || !file.content) return
+        rows.push(attachmentRow(file))
+    })
+    if (rows.length) attachmentsTable.rows.add(rows).draw()
+}
+
 // Save attempts to POST to /templates/
 function save(idx) {
     var template = {
@@ -21,7 +85,7 @@ function save(idx) {
     template.name = $("#name").val()
     template.subject = $("#subject").val()
     template.envelope_sender = $("#envelope-sender").val()
-    template.html = CKEDITOR.instances["html_editor"].getData();
+    template.html = restoreInlineAssetRefs(CKEDITOR.instances["html_editor"].getData());
     // Fix the URL Scheme added by CKEditor (until we can remove it from the plugin)
     template.html = template.html.replace(/https?:\/\/{{\.URL}}/gi, "{{.URL}}")
     // If the "Add Tracker Image" checkbox is checked, add the tracker
@@ -71,6 +135,7 @@ function save(idx) {
 
 function dismiss() {
     templateImagePreview.reset()
+    inlineAssetPreviewRefs = []
     $("#modal\\.flashes").empty()
     $("#attachmentsTable").dataTable().DataTable().clear().draw()
     $("#name").val("")
@@ -170,6 +235,7 @@ function edit(idx) {
     })
     $("#html_editor").ckeditor()
     templateImagePreview.reset(CKEDITOR.instances["html_editor"])
+    inlineAssetPreviewRefs = []
     setupAutocomplete(CKEDITOR.instances["html_editor"])
     $("#attachmentsTable").show()
     attachmentsTable = $('#attachmentsTable').DataTable({
@@ -194,7 +260,8 @@ function edit(idx) {
         $("#name").val(template.name)
         $("#subject").val(template.subject)
         $("#envelope-sender").val(template.envelope_sender)
-        $("#html_editor").val(template.html)
+        rebuildInlineAssetPreviewRefs(template.attachments)
+        $("#html_editor").val(previewInlineAssetRefs(template.html))
         $("#text_editor").val(template.text)
         attachmentRows = []
         $.each(template.attachments, function (i, file) {
@@ -235,6 +302,7 @@ function copy(idx) {
     })
     $("#html_editor").ckeditor()
     templateImagePreview.reset(CKEDITOR.instances["html_editor"])
+    inlineAssetPreviewRefs = []
     $("#attachmentsTable").show()
     attachmentsTable = $('#attachmentsTable').DataTable({
         destroy: true,
@@ -256,7 +324,8 @@ function copy(idx) {
     $("#name").val("Copy of " + template.name)
     $("#subject").val(template.subject)
     $("#envelope-sender").val(template.envelope_sender)
-    $("#html_editor").val(template.html)
+    rebuildInlineAssetPreviewRefs(template.attachments)
+    $("#html_editor").val(previewInlineAssetRefs(template.html))
     $("#text_editor").val(template.text)
     $.each(template.attachments, function (i, file) {
         var icon = icons[file.type] || "fa-file-o"
@@ -283,31 +352,46 @@ function copy(idx) {
 }
 
 function importEmail() {
-    raw = $("#email_content").val()
-    convert_links = $("#convert_links_checkbox").prop("checked")
+    var raw = $("#email_content").val()
+    var convert_links = $("#convert_links_checkbox").prop("checked")
+    var button = $("#importEmailSubmit")
     if (!raw) {
-        modalError("No Content Specified!")
-    } else {
-        api.import_email({
-                content: raw,
-                convert_links: convert_links
-            })
-            .success(function (data) {
-                templateImagePreview.reset(CKEDITOR.instances["html_editor"])
-                $("#text_editor").val(data.text)
-                $("#html_editor").val(data.html)
-                $("#subject").val(data.subject)
-                // If the HTML is provided, let's open that view in the editor
-                if (data.html) {
+        $("#emailImportStatus").text("Paste the complete raw email source first.")
+        return
+    }
+    button.prop("disabled", true).html('<i class="fa fa-spinner fa-spin" aria-hidden="true"></i> Importing…')
+    $("#emailImportStatus").text("Parsing MIME content and importing supported image resources…")
+    api.import_email({
+            content: raw,
+            convert_links: convert_links
+        })
+        .done(function (data) {
+            templateImagePreview.reset(CKEDITOR.instances["html_editor"])
+            attachmentsTable.clear().draw()
+            addImportedAttachments(data.attachments || [])
+            rebuildInlineAssetPreviewRefs(attachmentObjectsFromTable())
+            $("#text_editor").val(data.text)
+            $("#html_editor").val(previewInlineAssetRefs(data.html))
+            $("#subject").val(data.subject)
+            var warnings = data.warnings || []
+            $("#emailImportStatus").text(warnings.length ?
+                "Import completed with warnings: " + warnings.join(" ") :
+                "Email content and supported embedded images imported successfully.")
+            if (data.html) {
+                CKEDITOR.instances["html_editor"].setData(previewInlineAssetRefs(data.html), function () {
                     CKEDITOR.instances["html_editor"].setMode('wysiwyg')
                     $('.nav-tabs a[href="#html"]').click()
-                }
-                $("#importEmailModal").modal("hide")
-            })
-            .error(function (data) {
-                modalError(data.responseJSON.message)
-            })
-    }
+                })
+            }
+            setTimeout(function () { $("#importEmailModal").modal("hide") }, warnings.length ? 900 : 250)
+        })
+        .fail(function (data) {
+            var message = data.responseJSON && data.responseJSON.message ? data.responseJSON.message : "Email import failed."
+            $("#emailImportStatus").text(message)
+        })
+        .always(function () {
+            button.prop("disabled", false).html('<i class="fa fa-download" aria-hidden="true"></i> Import Email')
+        })
 }
 
 function load() {

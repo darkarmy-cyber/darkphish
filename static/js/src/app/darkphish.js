@@ -288,7 +288,7 @@ var api = {
     },
     // import handles all of the "import" functions in the api
     import_email: function (req) {
-        return query("/import/email", "POST", req, false)
+        return query("/import/email", "POST", req, true)
     },
     preview_email_images: function (req) {
         return query("/import/email/images", "POST", req, true)

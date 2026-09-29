@@ -15,6 +15,7 @@ import { uploadReleaseAsset } from "../../scripts/release-upload.mjs"
 import { successfulTrustedSBOMStep } from "./release-sbom-step.mjs"
 import { audited0201MetadataFailure, auditedTagless0201Source } from "./release-recover-0201-policy.mjs"
 import { audited0202MetadataFailure, auditedTagless0202Source } from "./release-recover-0202-policy.mjs"
+import { audited0211MetadataFailure, auditedTagless0211Source } from "./release-recover-0211-policy.mjs"
 
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
@@ -133,6 +134,7 @@ async function verifyOriginalNativeRelease(repo, source) {
     if (run.conclusion === "failure") {
       if (audited0201MetadataFailure({ repository: repo, source, run, jobs })) { candidates.push(run); continue }
       if (audited0202MetadataFailure({ repository: repo, source, run, jobs })) { candidates.push(run); continue }
+      if (audited0211MetadataFailure({ repository: repo, source, run, jobs })) { candidates.push(run); continue }
     }
     const metadata = jobs.find((job) => job.name === "metadata"), verify = jobs.find((job) => job.name === "verify"), smoke = jobs.find((job) => job.name === "audit-smoke"), publish = jobs.find((job) => job.name === "publish"), binaries = jobs.filter((job) => job.name?.startsWith("binaries ("))
     if (metadata?.conclusion !== "success" || verify?.conclusion !== "success" || smoke?.conclusion !== "success" || binaries.length !== 5 || binaries.some((job) => job.conclusion !== "success")) continue
@@ -328,7 +330,8 @@ async function recoveryState(repo, version, main) {
   let source = tagSHA || draftSource
   if (!source) {
     const audited = version === "0.20.1" ? { number: 116, select: auditedTagless0201Source }
-      : version === "0.20.2" ? { number: 119, select: auditedTagless0202Source } : null
+      : version === "0.20.2" ? { number: 119, select: auditedTagless0202Source }
+        : version === "0.21.1" ? { number: 128, select: auditedTagless0211Source } : null
     const pr = audited ? await api(`repos/${repo}/pulls/${audited.number}`, { missing: true }) : null
     source = audited?.select({ repository: repo, version, tag, pr }) || null
     if (!source) { await assertNoUnstagedRelease(repo, version); return null }

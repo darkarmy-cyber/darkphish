@@ -1,54 +1,32 @@
-# Email image previews
+# Email image import
 
-The administrative Content Security Policy intentionally blocks remote images.
-Importing a raw email preserves its HTML image URLs, but does not automatically
-contact external image hosts. A broken image in the editor does not by itself
-mean its URL was lost or that it will be broken in the recipient's email client.
+DarkPhish imports supported image resources while an administrator explicitly imports a complete raw RFC 5322/MIME message in **Email Templates → Import Email Source**. There is no separate **Load external images** action.
 
-In **Email Templates → HTML**, choose **Load external images** to request
-temporary previews. This works for both imported and existing templates. The
-request comes from the DarkPhish server, without your browser cookies,
-credentials or referrer. It still reveals the server's address to the image
-host, and a tracking image URL may register an open. Only load content you are
-authorized to inspect. No images are requested just by opening/importing a
-template or switching editor modes.
+## What is imported
 
-The preview is a validated, re-encoded PNG displayed through the existing
-`img-src 'self' data:` policy. The original `src` is retained by CKEditor and
-restored in Source and saved HTML. Previews stay in memory for the current
-editing session; they are not stored in the database or attached to outgoing
-email. Closing or replacing a template discards the cache and ignores late
-responses. Previously approved previews survive Source/HTML switching without
-another network request.
+- MIME inline PNG, JPEG and GIF resources referenced through `cid:` URLs are decoded, validated, normalized to PNG, stored as template attachments and rewritten to stable DarkPhish CID names.
+- Public HTTPS PNG, JPEG and GIF resources referenced by `src`, supported `srcset` entries, inline CSS `url(...)` values or style blocks are fetched by the DarkPhish server during the explicit import operation. They are validated, normalized to PNG, stored as embedded template attachments and rewritten to CID references.
+- Safe base64 PNG/JPEG/GIF data images are normalized and converted to CID attachments.
+- Ordinary MIME attachments with filenames are preserved subject to the normal template attachment limits.
 
-## Limits and failures
+The editor renders imported CID image attachments as local `data:` previews. Before the template is saved, those local previews are restored to CID references, so an actually sent message uses embedded MIME resources rather than browser-only preview data.
 
-- Any public HTTPS image host, port 443, with no domain allowlist or URL
-  credentials. Each redirect is resolved and validated separately. Connections
-  are pinned to that hop's public numeric DNS answers (mixed public/private
-  answers are rejected), with the original hostname retained for HTTP virtual
-  hosting and TLS certificate validation. No second hostname lookup is used
-  when connecting. Internal-host exceptions configured for site imports do not
-  apply to image previews.
-- Valid PNG, JPEG or GIF input, at most 1 MiB and 1 million pixels per image.
-  Animated GIF previews show the first frame. Re-encoded output is also bounded
-  to 1 MiB. SVG, HTML and other formats are not accepted.
-- At most 12 distinct URLs per request, an eight-second per-image timeout and
-  a twenty-second total deadline. Two preview batches can run concurrently.
-  The authenticated sensitive-operation rate limit also applies. Subsequent
-  clicks try remaining URLs before retrying failed images; a failed first batch
-  cannot prevent later images from being loaded. Once all URLs have been tried,
-  another click retries unavailable images. A failed API request can be retried
-  immediately. Closing/replacing the template resets this attempt history.
-- Unavailable, authenticated, expired or blocked remote URLs remain unavailable;
-  DarkPhish does not bypass image-host access controls.
-- CID attachments, relative URLs, CSS background images and `srcset` are not
-  converted by this preview operation. Import the complete raw email for MIME
-  parsing; this change does not add extraction of CID attachments.
+## Network and content safety
 
-The API endpoint is `POST /api/import/email/images` with
-`{"urls":["https://example.test/image.png"]}`. It requires the existing API
-authentication and write restrictions; PATs need `templates:write`. Results and
-errors use `Cache-Control: no-store`. The server does not log upstream response
-bodies, URL query values or network diagnostics. No public image proxy or
-anonymous GET endpoint is provided.
+Automatic image retrieval retains the existing restricted network boundary:
+
+- HTTPS only, port 443, without URL credentials.
+- Every hostname is resolved once per redirect hop and connections are pinned to the validated public numeric addresses.
+- Private, loopback, link-local, metadata and mixed public/private DNS answers are rejected.
+- Redirects are revalidated and bounded.
+- Browser cookies, administrator credentials, proxy environment variables and referrers are not forwarded.
+- Per-image byte, pixel and request deadlines remain bounded. The overall import also has a deadline and total attachment/resource limits.
+- Active SVG and unsupported image formats are not executed or silently trusted. Unsupported or unavailable resources remain unchanged and are reported as import warnings.
+
+Importing a message can contact the image hosts referenced by that message and can therefore register an image request or tracking event. This happens only when an authenticated operator explicitly starts the import.
+
+## Limits and compatibility
+
+The importer is intentionally fail-safe. Unsupported, authenticated, expired, private or oversized images are not fetched around their access controls. The raw source and MIME structure must fit the configured request/attachment limits. External image failures do not discard the rest of the email; the import completes with a concise warning.
+
+The previous authenticated endpoint `POST /api/import/email/images` and its manual preview UI were removed in 0.22. Image localization is now part of the normal `POST /api/import/email` operation, which continues to require template write permission.

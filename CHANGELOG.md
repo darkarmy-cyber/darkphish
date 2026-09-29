@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.22.1 - 2026-09-29
+
+### Fixed
+
+- Verify the exact successful release attempt and automation-triggered main checks when recovering a published release after a workflow retry.
+- Restore the compact, readable update version summary and align the sidebar credit and theme switch in the classic administration layout.
+
 ## 0.22.0 - 2026-09-29
 
 ### Added

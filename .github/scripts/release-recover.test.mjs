@@ -34,11 +34,8 @@ test("withdrawn native releases retain only canonical, ordered, non-future lifec
     { ...valid, updated_at: "2026-09-29T08:01:01Z" },
   ]) assert.equal(validDraftPublicationState(release, now), false)
 
-  const draft = script.slice(script.indexOf("function validDraftPublicationState"), script.indexOf("function assertExactPublished"))
-  assert.match(draft, /values\.every\(githubPublishedAt\)/)
-  assert.match(draft, /created <= published && published <= updated/)
-  assert.match(draft, /updated <= now \+ 60_000/)
-  assert.match(draft, /!validDraftPublicationState\(release\)/)
+  const draftAssertion = script.slice(script.indexOf("function assertExactDraft"), script.indexOf("function assertExactPublished"))
+  assert.match(draftAssertion, /!validDraftPublicationState\(release\)/)
 })
 
 test("historical release provenance is exact-SHA and canonical-workflow bound", () => {

@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import vm from 'node:vm'
+import {canonicalMainCheckRun, nativeReleaseAttemptStart} from '../.github/scripts/release-provenance-checks.mjs'
 
 // Execute the real guard functions with in-memory I/O; never run its CLI entry.
 const source = readFileSync(new URL('../.github/scripts/release-publication-guard.mjs', import.meta.url), 'utf8')
@@ -31,6 +32,7 @@ function fixture() {
     },
     pages: async path => { if(path.endsWith('/releases')) return [{...release}]; throw Error(`Unexpected pages ${path}`) },
     peelTagToCommit: async ref => ref.object.sha,
+    canonicalMainCheckRun, nativeReleaseAttemptStart,
   }
   const context = vm.createContext({...sandbox, probe: state})
   vm.runInContext(source, context)
@@ -76,7 +78,7 @@ test('real native and recovery run loops do not swallow final execution errors',
     f.run(`
       exactMainChecks = exactRequiredChecksBefore = assertPublishedSnapshot = async () => {};
       pages = async path => path.endsWith('/jobs')
-        ? ['metadata','verify','audit-smoke','publish',...Array.from({length:5},(_,i)=>'binaries ('+i+')')].map(name=>({name,conclusion:'success',steps}))
+        ? ['metadata','verify','audit-smoke','publish',...Array.from({length:5},(_,i)=>'binaries ('+i+')')].map(name=>({name,run_id:1,run_attempt:1,head_sha:runRecord.head_sha,started_at:'2026-09-17T10:00:00Z',completed_at:'2026-09-17T10:10:00Z',conclusion:'success',steps}))
         : [runRecord];
       executionMain = async () => { throw new RecoveryExecutionError(Error('main moved')) };
     `)

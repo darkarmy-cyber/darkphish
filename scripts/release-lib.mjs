@@ -40,7 +40,7 @@ export function expectedReleaseAssetNames(version) {
 }
 const githubActionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 export const trustedReleaseTarget = (release, source) => release?.target_commitish === source || release?.target_commitish === "main"
-const githubPublishedAt = (value) => {
+export const githubPublishedAt = (value) => {
   if (typeof value !== "string") return false
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/)
   if (!match) return false
@@ -49,6 +49,18 @@ const githubPublishedAt = (value) => {
   if (month < 1 || month > 12 || day < 1 || hour > 23 || minute > 59 || second > 59) return false
   const instant = new Date(Date.UTC(year, month - 1, day, hour, minute, second))
   return instant.getUTCFullYear() === year && instant.getUTCMonth() === month - 1 && instant.getUTCDate() === day && instant.getUTCHours() === hour && instant.getUTCMinutes() === minute && instant.getUTCSeconds() === second
+}
+const githubTimestampOrder = (value) => {
+  const match = value.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/)
+  return `${match[1]}.${(match[2] || "").padEnd(9, "0")}Z`
+}
+export function validDraftPublicationState(release, now = Date.now()) {
+  if (release?.published_at === null) return true
+  const values = [release?.created_at, release?.published_at, release?.updated_at]
+  if (!values.every(githubPublishedAt) || !Number.isFinite(now)) return false
+  const [created, published, updated] = values.map(githubTimestampOrder)
+  const latest = githubTimestampOrder(new Date(now + 60_000).toISOString())
+  return created <= published && published <= updated && updated <= latest
 }
 export async function peelTagToCommit(ref, fetchTag, maxDepth = 8) {
   if (!Number.isSafeInteger(maxDepth) || maxDepth < 1 || maxDepth > 32) throw new Error("invalid tag peel depth")

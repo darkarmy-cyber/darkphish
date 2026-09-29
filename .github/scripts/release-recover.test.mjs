@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
+import { validDraftPublicationState } from "../../scripts/release-lib.mjs"
 
 const script = readFileSync(new URL("./release-recover.mjs", import.meta.url), "utf8")
 const workflow = readFileSync(new URL("../workflows/release-recover.yml", import.meta.url), "utf8")
@@ -14,6 +15,29 @@ test("recovery metadata and publication stay bound to canonical source metadata"
   assert.match(script, /published release metadata does not exactly match the verified source/)
   assert.match(script, /verifyReleaseMaintainerReview/)
   assert.match(script, /generatedPath/)
+})
+
+test("withdrawn native releases retain only canonical, ordered, non-future lifecycle timestamps", () => {
+  const now = Date.parse("2026-09-29T08:00:00Z")
+  const valid = {
+    created_at: "2026-09-29T06:00:00Z",
+    published_at: "2026-09-29T06:30:00Z",
+    updated_at: "2026-09-29T07:00:00Z",
+  }
+  assert.equal(validDraftPublicationState(valid, now), true)
+  assert.equal(validDraftPublicationState({ ...valid, published_at: null }, now), true)
+  for (const release of [
+    { ...valid, created_at: "2026-02-30T06:00:00Z" },
+    { ...valid, published_at: "09/29/2026 06:30:00" },
+    { ...valid, updated_at: "2026-09-29T07:00:00+00:00" },
+    { ...valid, created_at: "2026-09-29T06:45:00Z" },
+    { ...valid, created_at: "2026-09-29T06:00:00.999999999Z", published_at: "2026-09-29T06:00:00.999000000Z" },
+    { ...valid, updated_at: "2026-09-29T08:01:00.000000001Z" },
+    { ...valid, updated_at: "2026-09-29T08:01:01Z" },
+  ]) assert.equal(validDraftPublicationState(release, now), false)
+
+  const draftAssertion = script.slice(script.indexOf("function assertExactDraft"), script.indexOf("function assertExactPublished"))
+  assert.match(draftAssertion, /!validDraftPublicationState\(release\)/)
 })
 
 test("historical release provenance is exact-SHA and canonical-workflow bound", () => {

@@ -21,11 +21,11 @@ import (
 )
 
 const (
-	maxImportedEmailBytes       = 48 << 20
-	maxImportedEmailParts       = 256
-	maxImportedEmailAssets      = 48
-	maxImportedEmailAssetTotal  = 32 << 20
-	importedImageFetchTimeout   = 30 * time.Second
+	maxImportedEmailBytes      = 48 << 20
+	maxImportedEmailParts      = 256
+	maxImportedEmailAssets     = 48
+	maxImportedEmailAssetTotal = 32 << 20
+	importedImageFetchTimeout  = 30 * time.Second
 )
 
 var emailCSSURL = regexp.MustCompile(`(?i)url\(\s*['"]?([^'")]+)['"]?\s*\)`)

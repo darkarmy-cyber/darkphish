@@ -237,8 +237,13 @@ async function verifyAuditedRelease0211Merge(get, repo, pr, files, trusted) {
     preMerge.submitted_at === "2026-09-29T10:37:44Z" &&
     preMerge.body === "Verified generated-only v0.21.1 release scope: VERSION bump, canonical changelog aggregation, and consumed-fragment removal. No runtime or workflow changes.",
   "Audited v0.21.1 pre-merge approval changed")
+  const expectedAttestationBody = `Darkphish generated-release review completed for this exact head.
+
+Verified generated-file scope, version/changelog integrity, exact-head CI and CodeQL provenance, resolved review state, and absence of unrelated executable or workflow changes.
+
+<!-- darkphish-release-maintainer-review:v1 {"repository":"darkarmy-cyber/darkphish","pullRequestNumber":128,"headSha":"e5a4f4713cbe25d05d641c8b22e8e83da3ea69a7","baseSha":"e9512fc4c564dabdc098b3bf44d3748c355d4d15","scope":"generated-release-only","codeReview":"completed","securityReview":"completed","decision":"approved"} -->`
   requireReview(attestation?.state === "APPROVED" && attestation.commit_id === pr.head.sha &&
-    attestation.submitted_at === "2026-09-29T10:48:56Z",
+    attestation.submitted_at === "2026-09-29T10:48:56Z" && attestation.body === expectedAttestationBody,
   "Audited v0.21.1 generated-release attestation changed")
   requireReview(timestamp(preMerge.submitted_at) <= timestamp(pr.merged_at) &&
     timestamp(attestation.submitted_at) > timestamp(pr.merged_at),

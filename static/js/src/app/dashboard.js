@@ -283,20 +283,22 @@ function generateTimelineChart(campaigns) {
     })
 }
 
-$(document).ready(function () {
-    Highcharts.setOptions({
-        global: {
-            useUTC: false
-        }
-    })
+var dashboardLoading = false
+
+function refreshDashboard() {
+    if (dashboardLoading) return
+    dashboardLoading = true
+    $("#analyticsRefresh").prop("disabled", true)
     api.campaigns.summary()
         .success(function (data) {
             $("#loading").hide()
             campaigns = data.campaigns
+            $("#emptyMessage").toggle(campaigns.length === 0)
+            $("#dashboard").toggle(campaigns.length > 0)
             if (campaigns.length > 0) {
                 $("#dashboard").show()
                 // Create the overview chart data
-                campaignTable = $("#campaignTable").DataTable({
+                campaignTable = $.fn.dataTable.isDataTable("#campaignTable") ? $("#campaignTable").DataTable() : $("#campaignTable").DataTable({
                     columnDefs: [{
                             orderable: false,
                             targets: "no-sort"
@@ -358,15 +360,34 @@ $(document).ready(function () {
                     ])
                     $('[data-toggle="tooltip"]').tooltip()
                 })
-                campaignTable.rows.add(campaignRows).draw()
+                campaignTable.clear().rows.add(campaignRows).draw()
                 // Build the charts
                 generateStatsPieCharts(campaigns)
                 generateTimelineChart(campaigns)
             } else {
                 $("#emptyMessage").show()
+                if ($.fn.dataTable.isDataTable("#campaignTable")) $("#campaignTable").DataTable().clear().draw()
             }
+            $(document).trigger("dashboard:updated")
         })
         .error(function () {
+            campaigns = []
+            $("#loading, #dashboard, #emptyMessage").hide()
+            $(document).trigger("dashboard:updated")
             errorFlash("Error fetching campaigns")
         })
+        .always(function () {
+            dashboardLoading = false
+            $("#analyticsRefresh").prop("disabled", false)
+        })
+}
+
+$(document).ready(function () {
+    Highcharts.setOptions({
+        global: {
+            useUTC: false
+        }
+    })
+    $("#analyticsRefresh").on("click", refreshDashboard)
+    refreshDashboard()
 })

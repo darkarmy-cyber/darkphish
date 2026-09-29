@@ -12,6 +12,14 @@
     <title>{{ .Title }} - DarkPhish</title>
 
     <link href="/css/dist/darkphish.css?v={{.Version}}" rel="stylesheet" type="text/css">
+    <link href="/css/dark-theme.css?v={{.Version}}" rel="stylesheet" type="text/css">
+    <script>
+        try {
+            if (localStorage.getItem("darkphish-theme") === "dark") {
+                document.documentElement.setAttribute("data-theme", "dark")
+            }
+        } catch (e) {}
+    </script>
     <script>
         {{if .User}}
     var user = {
@@ -33,6 +41,13 @@
                     <li class="dropdown" id="adminNotifications">
                         <a href="#" class="dropdown-toggle" data-toggle="dropdown" aria-label="Admin notifications" aria-expanded="false"><i class="fa fa-bell" aria-hidden="true"></i> <span id="adminNotificationBadge" class="badge" hidden></span></a>
                         <ul class="dropdown-menu"><li><a id="adminReleaseNotification" href="/settings?tab=update">Check release information</a></li></ul>
+                    </li>
+                    {{end}}
+                    {{if .User}}
+                    <li>
+                        <button type="button" class="btn btn-default darkphish-theme-toggle" id="themeToggle" aria-pressed="false" title="Toggle dark theme">
+                            <i class="fa fa-moon-o" aria-hidden="true"></i><span class="sr-only">Toggle dark theme</span>
+                        </button>
                     </li>
                     {{end}}
                     <li>
@@ -58,6 +73,7 @@
     <!-- Placed at the end of the document so the pages load faster -->
     <script src="/js/dist/vendor.min.js"></script>
     <script src="/js/dist/app/darkphish.min.js"></script>
+    <script src="/js/src/app/theme.js?v={{.Version}}"></script>
     {{if .ModifySystem}}<script src="/js/dist/app/notifications.min.js"></script>{{end}}
     {{template "scripts" .}}
 </body>

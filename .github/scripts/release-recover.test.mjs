@@ -16,6 +16,15 @@ test("recovery metadata and publication stay bound to canonical source metadata"
   assert.match(script, /generatedPath/)
 })
 
+test("withdrawn native releases retain safe GitHub publication timestamps as drafts", () => {
+  const draft = script.slice(script.indexOf("function validDraftPublicationState"), script.indexOf("function assertExactPublished"))
+  assert.match(draft, /release\?\.published_at === null/)
+  assert.match(draft, /created <= published && published <= updated/)
+  assert.match(draft, /published <= Date\.now\(\) \+ 60_000/)
+  assert.match(draft, /!validDraftPublicationState\(release\)/)
+  assert.doesNotMatch(draft, /release\.published_at !== null/)
+})
+
 test("historical release provenance is exact-SHA and canonical-workflow bound", () => {
   const historical = script.slice(script.indexOf("async function verifyOriginalNativeRelease"), script.indexOf("async function expectedMetadata"))
   assert.match(historical, /run\.path === "\.github\/workflows\/ci\.yml"/)

@@ -53,6 +53,14 @@ test("historical release provenance is exact-SHA and canonical-workflow bound", 
   assert.match(historical, /release provenance spans unexpected Native release workflows/)
 })
 
+test("audited metadata failures still require pre-release CI and CodeQL chronology", () => {
+  const original = script.slice(script.indexOf("async function verifyOriginalNativeRelease"), script.indexOf("async function expectedMetadata"))
+  const audited = original.indexOf("const auditedMetadataFailure")
+  const chronology = original.indexOf("ci.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at))")
+  const accepted = original.indexOf("if (auditedMetadataFailure) { candidates.push(run); continue }")
+  assert.ok(audited >= 0 && chronology > audited && accepted > chronology)
+})
+
 test("successful native publication is accepted before recovery withdrawal", () => {
   const original = script.slice(script.indexOf("async function verifyOriginalNativeRelease"), script.indexOf("async function expectedMetadata"))
   assert.match(original, /\["workflow_run", "schedule"\]\.includes\(item\.event\)/)

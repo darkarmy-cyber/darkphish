@@ -50,6 +50,13 @@ export const githubPublishedAt = (value) => {
   const instant = new Date(Date.UTC(year, month - 1, day, hour, minute, second))
   return instant.getUTCFullYear() === year && instant.getUTCMonth() === month - 1 && instant.getUTCDate() === day && instant.getUTCHours() === hour && instant.getUTCMinutes() === minute && instant.getUTCSeconds() === second
 }
+export function validDraftPublicationState(release, now = Date.now()) {
+  if (release?.published_at === null) return true
+  const values = [release?.created_at, release?.published_at, release?.updated_at]
+  if (!values.every(githubPublishedAt)) return false
+  const [created, published, updated] = values.map(Date.parse)
+  return created <= published && published <= updated && updated <= now + 60_000
+}
 export async function peelTagToCommit(ref, fetchTag, maxDepth = 8) {
   if (!Number.isSafeInteger(maxDepth) || maxDepth < 1 || maxDepth > 32) throw new Error("invalid tag peel depth")
   let object = ref?.object

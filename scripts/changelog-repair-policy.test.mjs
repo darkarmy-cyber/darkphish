@@ -100,6 +100,37 @@ test("only PR129 may stage its 0.22.0 fragment while v0.21.1 recovery is pending
   }
 })
 
+test("only PR135 may stage its exact v0.22.0 recovery hardening scope", () => {
+  const repairBase = "69355444d01c7ef29709ec398fdbacfc4d9b4753"
+  const repairFiles = [
+    ".github/scripts/release-recover.mjs",
+    ".github/scripts/release-recover.test.mjs",
+    "changes/harden-v0-21-1-recovery.md",
+    "scripts/changelog-repair-policy.mjs",
+    "scripts/changelog-repair-policy.test.mjs",
+    "scripts/release-repair-policy-0211.test.mjs",
+    "scripts/release-repair-policy.mjs",
+  ]
+  const fixture = () => ({
+    repository, eventName: "pull_request", current: "0.21.1", target: "0.22.0",
+    baseSHA: repairBase, files: [...repairFiles], event: { pull_request: {
+      number: 135, state: "open", draft: false, base: { ref: "main", sha: repairBase },
+      head: { ref: "fix/v0.21.1-recovery-hardening", repo: { full_name: repository } },
+    } },
+  })
+  assert.equal(auditedPendingPatchRepair(fixture()), true)
+  for (const change of [
+    value => { value.event.pull_request.number = 136 },
+    value => { value.baseSHA = "a".repeat(40) },
+    value => { value.event.pull_request.base.sha = "a".repeat(40) },
+    value => { value.files.pop() },
+    value => { value.files.push("VERSION") },
+  ]) {
+    const value = fixture(); change(value)
+    assert.equal(auditedPendingPatchRepair(value), false)
+  }
+})
+
 test("only the immediate reviewed squash merge may keep pending patch validation green", () => {
   const headSHA = "d".repeat(40)
   const value = {

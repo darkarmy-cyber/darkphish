@@ -7,6 +7,10 @@
 - Add route-addressable email-template and landing-page editors with unsaved-change navigation protection while preserving the classic editor UI and existing APIs.
 - Replace manual email-image preview loading with automatic, bounded import of inline and public external email images, and refresh the Import Email workflow.
 
+### Changed
+
+- Restructure the dashboard into operational overview, engagement trend and aggregate outcome sections with text-only KPI summaries derived from existing campaign metrics.
+
 ### Fixed
 
 - Enforce pre-release CI and CodeQL chronology for audited recovery failures and detect private draft releases across the complete authenticated release inventory.

@@ -31,6 +31,8 @@ test("withdrawn native releases retain only canonical, ordered, non-future lifec
     { ...valid, published_at: "09/29/2026 06:30:00" },
     { ...valid, updated_at: "2026-09-29T07:00:00+00:00" },
     { ...valid, created_at: "2026-09-29T06:45:00Z" },
+    { ...valid, created_at: "2026-09-29T06:00:00.999999999Z", published_at: "2026-09-29T06:00:00.999000000Z" },
+    { ...valid, updated_at: "2026-09-29T08:01:00.000000001Z" },
     { ...valid, updated_at: "2026-09-29T08:01:01Z" },
   ]) assert.equal(validDraftPublicationState(release, now), false)
 

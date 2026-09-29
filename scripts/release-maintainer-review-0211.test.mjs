@@ -77,6 +77,7 @@ test("v0.21.1 recovery fails closed on identity, manifest, review or chronology 
     f => { f.reviews[0].body = "generic approval" },
     f => { f.reviews[1].submitted_at = "2026-09-29T10:41:53Z" },
     f => { f.reviews[1].body = "forged attestation" },
+    f => { f.reviews[1].body += "\nappended text" },
     f => { f.threads.push({ id: "PRRT_unresolved", isResolved: false }) },
     f => { f.finalPR.merge_commit_sha = "e".repeat(40) },
   ]

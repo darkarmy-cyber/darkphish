@@ -35,10 +35,11 @@ function fixture() {
   const request = async (path, options = {}) => {
     if (path.endsWith("/files?per_page=100&page=1")) return structuredClone(files)
     if (path.includes("/contents/VERSION?")) return { type: "file", encoding: "base64", content: Buffer.from("0.21.1\n").toString("base64") }
-    if (path.endsWith("/git/ref/tags/v0.21.1") || path.endsWith("/releases/tags/v0.21.1")) {
+    if (path.endsWith("/git/ref/tags/v0.21.1")) {
       assert.equal(options.missing, true)
       return null
     }
+    if (path.includes("/releases?per_page=100&page=")) return []
     throw new Error(`Unexpected request ${path}`)
   }
   return { pr, files, request, verify: () => verifyReleaseRepair(repo, pr, request) }
@@ -68,9 +69,21 @@ test("v0.21.1 repair rejects scope, identity, version and release-state drift", 
     f.request = async (path, options) => {
       if (target === "version" && path.includes("/contents/VERSION?")) return { type: "file", encoding: "base64", content: Buffer.from("0.22.0\n").toString("base64") }
       if (target === "tag" && path.endsWith("/git/ref/tags/v0.21.1")) return { object: { type: "commit", sha: base } }
-      if (target === "release" && path.endsWith("/releases/tags/v0.21.1")) return { tag_name: "v0.21.1" }
+      if (target === "release" && path.includes("/releases?per_page=100&page=")) return [{ tag_name: "v0.21.1", draft: true }]
       return original(path, options)
     }
     await assert.rejects(verifyReleaseRepair(repo, f.pr, f.request))
   }
+})
+
+test("v0.21.1 repair paginates authenticated releases and rejects a later private draft", async () => {
+  const f = fixture(), original = f.request
+  f.request = async (path, options) => {
+    if (path.endsWith("/releases?per_page=100&page=1")) {
+      return Array.from({ length: 100 }, (_, id) => ({ id, tag_name: `v0.20.${id}`, draft: false }))
+    }
+    if (path.endsWith("/releases?per_page=100&page=2")) return [{ id: 1001, tag_name: "v0.21.1", draft: true }]
+    return original(path, options)
+  }
+  await assert.rejects(verifyReleaseRepair(repo, f.pr, f.request), /absent tag and release state/)
 })

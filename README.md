@@ -9,7 +9,7 @@
   </p>
   <p>
     <a href="docs/INSTALLATION.md">Installation</a> ·
-    <a href="VERSION">Development version</a> ·
+    <a href="VERSION">Source version</a> ·
     <a href="#documentation">Documentation</a> ·
     <a href="CHANGELOG.md">Changelog</a> ·
     <a href="https://github.com/darkarmy-cyber/darkphish/releases">Releases</a> ·

@@ -8,6 +8,8 @@
 - Replace manual email-image preview loading with automatic, bounded import of inline and public external email images, and refresh the Import Email workflow.
 - Add a four-step campaign setup and final review flow while preserving existing launch confirmation, licensing gates and campaign API behavior.
 - Keep wizard navigation and launch buttons visually hidden outside their applicable steps, with browser regression coverage for review and licensing behavior.
+- Verify dark-theme contrast with actual browser styles, including action states, status labels, striped tables, Select2 and CKEditor; preserve reduced motion and storage-failure fallback.
+- Add an opt-in, persisted dark administration theme with accessible focus states, reduced-motion support, CKEditor readability and production image packaging.
 
 ### Changed
 
@@ -17,6 +19,10 @@
 
 - Enforce pre-release CI and CodeQL chronology for audited recovery failures and detect private draft releases across the complete authenticated release inventory.
 - Recover the exact reviewed v0.21.1 generated release merge through an immutable one-time provenance exception without weakening pre-merge attestation requirements for future releases.
+- Include the v0.22 dashboard KPI controller in production Docker images so operational metrics render outside source checkouts.
+- Refresh KPI values when summary statistics change and reset them for empty results, with browser coverage across mobile, tablet and desktop layouts.
+- Add an explicit analytics refresh that fetches a new authorized summary and updates KPI cards, charts and the campaign table together.
+
 
 ## 0.21.1 - 2026-09-29
 

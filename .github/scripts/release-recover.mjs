@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   api, assertCurrentVersionPublished, assetDisposition, expectedReleaseAssetNames, generatedPath,
-  greenCommit, pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, trustedReleaseTarget, verifyChecksums, versionTag,
+  greenCommit, pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, trustedReleaseTarget, validDraftPublicationState, verifyChecksums, versionTag,
 } from "../../scripts/release-lib.mjs"
 import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
@@ -161,7 +161,7 @@ async function expectedMetadata(repo, source, version) {
 }
 function assertExactDraft(release, version, source, expected) {
   const tag = versionTag(version)
-  if (!release || !Number.isSafeInteger(release.id) || release.id < 1 || release.tag_name !== tag || !trustedReleaseTarget(release, source) || release.name !== expected.name || release.body !== expected.body || release.draft !== true || release.prerelease !== false || release.published_at !== null || !actionsBot(release.author)) throw new Error("pending release draft metadata does not exactly match the verified source")
+  if (!release || !Number.isSafeInteger(release.id) || release.id < 1 || release.tag_name !== tag || !trustedReleaseTarget(release, source) || release.name !== expected.name || release.body !== expected.body || release.draft !== true || release.prerelease !== false || !validDraftPublicationState(release) || !actionsBot(release.author)) throw new Error("pending release draft metadata does not exactly match the verified source")
   return release
 }
 function assertExactPublished(release, version, source, expected) {

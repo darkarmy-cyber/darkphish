@@ -3,11 +3,19 @@ import test from "node:test"
 import { readFileSync } from "node:fs"
 import {
   assetDisposition, assertGeneratedCommits, assertPublishedVersion, assertReleaseState,
-  checksPassed, expectedReleaseAssetNames, generatedPath, nextPatchVersion,
+  checksPassed, expectedReleaseAssetNames, generatedPath, githubPublishedAt, nextPatchVersion,
   peelTagToCommit, protectedMergeRequest, trustedReleaseTarget, verifyChecksums, verifyPublicationReceipt, verifyPublishedAssetManifest, versionTag,
 } from "./release-lib.mjs"
 
 const bot = { login: "github-actions[bot]", type: "Bot", id: 41898282 }
+
+test("GitHub release timestamps are canonical UTC calendar instants", () => {
+  for (const value of ["2026-09-29T07:00:00Z", "2024-02-29T23:59:59.123456789Z"]) assert.equal(githubPublishedAt(value), true)
+  for (const value of [
+    null, "2026-02-30T07:00:00Z", "2026-04-31T07:00:00Z", "2026-09-29",
+    "09/29/2026 07:00:00", "2026-09-29T07:00:00+00:00", "2026-09-29T24:00:00Z",
+  ]) assert.equal(githubPublishedAt(value), false)
+})
 
 function publishedFixture(version = "0.7.0") {
   const source = "a".repeat(40), marker = `<!-- darkphish-release-source:${source} -->`

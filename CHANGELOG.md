@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.21.1 - 2026-09-29
+
+### Fixed
+
+- Recover a withdrawn release draft only when its GitHub lifecycle timestamps are canonical, ordered, and not future-dated.
+
 ## 0.21.0 - 2026-09-28
 
 ### Fixed

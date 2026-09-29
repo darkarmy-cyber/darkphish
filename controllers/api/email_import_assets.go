@@ -44,6 +44,7 @@ type emailAssetLocalizer struct {
 	usedNames   map[string]bool
 	totalBytes  int
 	warnings    map[string]bool
+	fetchImage  func(context.Context, string) (string, error)
 }
 
 func normalizeContentID(value string) string {
@@ -230,7 +231,7 @@ func collectImportedEmailAssets(raw string) importedEmailAssets {
 	return result
 }
 
-func newEmailAssetLocalizer(ctx context.Context, imported importedEmailAssets) *emailAssetLocalizer {
+func newEmailAssetLocalizer(ctx context.Context, imported importedEmailAssets, fetchImage func(context.Context, string) (string, error)) *emailAssetLocalizer {
 	used := make(map[string]bool)
 	total := 0
 	for _, attachment := range imported.Attachments {
@@ -247,6 +248,7 @@ func newEmailAssetLocalizer(ctx context.Context, imported importedEmailAssets) *
 		usedNames:   used,
 		totalBytes:  total,
 		warnings:    map[string]bool{},
+		fetchImage:  fetchImage,
 	}
 }
 
@@ -322,7 +324,7 @@ func (l *emailAssetLocalizer) localize(raw string) string {
 	if name := l.cached[value]; name != "" {
 		return "cid:" + name
 	}
-	preview, err := fetchImagePreview(l.ctx, value)
+	preview, err := l.fetchImage(l.ctx, value)
 	if err != nil {
 		l.warn("Some external email images were unavailable, private, unsupported, or oversized.")
 		return raw
@@ -367,12 +369,16 @@ func (l *emailAssetLocalizer) localizeSrcset(value string) string {
 }
 
 func localizeImportedEmailHTML(ctx context.Context, html string, imported importedEmailAssets) (string, []models.Attachment, []string) {
+	return localizeImportedEmailHTMLWithFetcher(ctx, html, imported, fetchImagePreview)
+}
+
+func localizeImportedEmailHTMLWithFetcher(ctx context.Context, html string, imported importedEmailAssets, fetchImage func(context.Context, string) (string, error)) (string, []models.Attachment, []string) {
 	if strings.TrimSpace(html) == "" {
 		return html, imported.Attachments, imported.Warnings
 	}
 	ctx, cancel := context.WithTimeout(ctx, importedImageFetchTimeout)
 	defer cancel()
-	localizer := newEmailAssetLocalizer(ctx, imported)
+	localizer := newEmailAssetLocalizer(ctx, imported, fetchImage)
 	document, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
 		warnings := append([]string(nil), imported.Warnings...)

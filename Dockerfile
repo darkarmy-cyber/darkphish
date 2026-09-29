@@ -37,8 +37,10 @@ COPY --from=backend --chown=65532:65532 /src/static/db ./static/db
 COPY --from=backend --chown=65532:65532 /src/static/endpoint ./static/endpoint
 COPY --from=backend --chown=65532:65532 /src/static/js/src/vendor/ckeditor ./static/js/src/vendor/ckeditor
 COPY --from=backend --chown=65532:65532 /src/static/js/src/app/campaign_wizard.js ./static/js/src/app/campaign_wizard.js
+COPY --from=backend --chown=65532:65532 /src/static/js/src/app/theme.js ./static/js/src/app/theme.js
 COPY --from=frontend --chown=65532:65532 /src/static/js/dist ./static/js/dist
 COPY --from=frontend --chown=65532:65532 /src/static/css/dist ./static/css/dist
+COPY --from=backend --chown=65532:65532 /src/static/css/dark-theme.css ./static/css/dark-theme.css
 COPY --chown=65532:65532 docker/config.json /etc/darkphish/config.json
 COPY --chown=65532:65532 license-public-keys.json /etc/darkphish/license-public-keys.json
 

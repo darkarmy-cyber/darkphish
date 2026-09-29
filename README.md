@@ -1,11 +1,23 @@
-# DarkPhish
+<div align="center">
+  <img src="docs/assets/darkphish_banner.svg" alt="DarkPhish fish logo and wordmark" width="600">
+  <p><strong>Self-hosted phishing simulations for authorized security training and human-risk testing.</strong></p>
+  <p>
+    <a href="https://github.com/darkarmy-cyber/darkphish/releases/latest"><img src="https://img.shields.io/github/v/release/darkarmy-cyber/darkphish?label=latest%20release" alt="Latest release"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
+    <a href="https://github.com/darkarmy-cyber/darkphish/actions/workflows/ci.yml"><img src="https://github.com/darkarmy-cyber/darkphish/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+    <a href="https://github.com/darkarmy-cyber/darkphish/actions/workflows/codeql.yml"><img src="https://github.com/darkarmy-cyber/darkphish/actions/workflows/codeql.yml/badge.svg" alt="CodeQL status"></a>
+  </p>
+  <p>
+    <a href="docs/INSTALLATION.md">Installation</a> ·
+    <a href="VERSION">Source version</a> ·
+    <a href="#documentation">Documentation</a> ·
+    <a href="CHANGELOG.md">Changelog</a> ·
+    <a href="https://github.com/darkarmy-cyber/darkphish/releases">Releases</a> ·
+    <a href="SECURITY.md">Security</a>
+  </p>
+</div>
 
-![DarkPhish](docs/assets/DarkPhish.png)
-
-[![CI](https://github.com/darkarmy-cyber/darkphish/actions/workflows/ci.yml/badge.svg)](https://github.com/darkarmy-cyber/darkphish/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/darkarmy-cyber/darkphish/actions/workflows/codeql.yml/badge.svg)](https://github.com/darkarmy-cyber/darkphish/actions/workflows/codeql.yml)
-
-DarkPhish is an open-source platform for authorized phishing simulations, human-risk testing, security-awareness programs, and defensive research.
+---
 
 It gives security teams a central place to prepare campaigns, manage users and groups, build email templates and landing pages, monitor results, investigate user risk, and maintain an auditable phishing-simulation program.
 
@@ -125,3 +137,9 @@ Production security material is stored separately under:
 DarkPhish is distributed under the MIT License.
 
 The project is derived from Gophish. Original copyright and license notices are preserved in [LICENSE](LICENSE), with additional project attribution in [NOTICE.md](NOTICE.md).
+
+## Security and feedback
+
+For ordinary bugs, questions, and feature requests, use [GitHub Issues](https://github.com/darkarmy-cyber/darkphish/issues).
+
+If you find a potential security vulnerability, [report it privately](https://github.com/darkarmy-cyber/darkphish/security/advisories/new) and follow the [security policy](SECURITY.md). Please do not post exploitable details, credentials, or personal data in a public issue.

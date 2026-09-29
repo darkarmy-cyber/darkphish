@@ -66,6 +66,9 @@ test("only PR120 may stage its 0.20.3 fragment while v0.20.2 recovery is pending
 test("only PR129 may stage its 0.21.2 fragment while v0.21.1 recovery is pending", () => {
   const repairBase = "51f3c3b56df05d8a6fd165d227cb78d9e46ae821"
   const repairFiles = [
+    ".github/scripts/release-recover-0211-policy.mjs",
+    ".github/scripts/release-recover-0211-policy.test.mjs",
+    ".github/scripts/release-recover.mjs",
     "changes/recover-v0-21-1-review-provenance.md",
     "scripts/changelog-repair-policy.mjs",
     "scripts/changelog-repair-policy.test.mjs",

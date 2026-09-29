@@ -13,6 +13,7 @@ import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-
 import { assertNoUnstagedRelease } from "../../scripts/release-pending.mjs"
 import { uploadReleaseAsset } from "../../scripts/release-upload.mjs"
 import { successfulTrustedSBOMStep } from "./release-sbom-step.mjs"
+import { canonicalMainCheckRun, nativeReleaseAttemptStart } from "./release-provenance-checks.mjs"
 import { audited0201MetadataFailure, auditedTagless0201Source } from "./release-recover-0201-policy.mjs"
 import { audited0202MetadataFailure, auditedTagless0202Source } from "./release-recover-0202-policy.mjs"
 import { audited0211MetadataFailure, auditedTagless0211Source } from "./release-recover-0211-policy.mjs"
@@ -125,8 +126,8 @@ async function verifiedReleasePR(repo, source, version, tag) {
 function successfulStep(job, name) { return job?.steps?.some((step) => step.name === name && step.status === "completed" && step.conclusion === "success") }
 async function verifyOriginalNativeRelease(repo, source) {
   const runs = await pages(`repos/${repo}/actions/runs?head_sha=${source}`, "workflow_runs")
-  const ci = runs.filter((run) => run.name === "CI" && run.path === ".github/workflows/ci.yml" && ["push", "workflow_dispatch"].includes(run.event) && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success")
-  const codeql = runs.filter((run) => run.name === "CodeQL" && run.path === ".github/workflows/codeql.yml" && ["push", "repository_dispatch"].includes(run.event) && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success")
+  const ci = runs.filter((run) => canonicalMainCheckRun(run, "CI", source))
+  const codeql = runs.filter((run) => canonicalMainCheckRun(run, "CodeQL", source))
   if (!ci.length || !codeql.length) throw new Error("historical release source lacks successful exact-SHA CI or CodeQL")
   const candidates = []
   for (const run of runs.filter((item) => item.name === "Native release" && item.path === ".github/workflows/release.yml" && ["workflow_run", "schedule"].includes(item.event) && item.head_branch === "main" && item.head_sha === source && item.status === "completed" && ["success", "failure"].includes(item.conclusion))) {
@@ -137,7 +138,10 @@ async function verifyOriginalNativeRelease(repo, source) {
       audited0211MetadataFailure({ repository: repo, source, run, jobs })
     )
     const metadata = jobs.find((job) => job.name === "metadata"), verify = jobs.find((job) => job.name === "verify"), smoke = jobs.find((job) => job.name === "audit-smoke"), publish = jobs.find((job) => job.name === "publish"), binaries = jobs.filter((job) => job.name?.startsWith("binaries ("))
-    if (ci.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at)) || codeql.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at))) continue
+    let attemptStarted
+    try { attemptStarted = nativeReleaseAttemptStart(run, metadata) } catch { continue }
+    if (!ci.some((item) => canonicalMainCheckRun(item, "CI", source, attemptStarted)) ||
+      !codeql.some((item) => canonicalMainCheckRun(item, "CodeQL", source, attemptStarted))) continue
     if (auditedMetadataFailure) { candidates.push(run); continue }
     if (metadata?.conclusion !== "success" || verify?.conclusion !== "success" || smoke?.conclusion !== "success" || binaries.length !== 5 || binaries.some((job) => job.conclusion !== "success")) continue
     if (!successfulStep(metadata, "Run node scripts/release-publish.mjs metadata") || !successfulStep(publish, "Run actions/download-artifact@v8") || !successfulTrustedSBOMStep(publish) || !successfulStep(publish, "Generate checksums")) continue
@@ -175,8 +179,8 @@ function assertExactPublished(release, version, source, expected) {
 function timestamp(value, label) { const parsed = Date.parse(value || ""); if (!Number.isFinite(parsed)) throw new Error(`${label} timestamp is invalid`); return parsed }
 async function exactMainChecks(repo, source, before = Infinity) {
   const runs = await pages(`repos/${repo}/actions/runs?head_sha=${source}`, "workflow_runs")
-  const successBefore = (run, name, path) => run.name === name && run.path === path && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success" && timestamp(run.updated_at, `${name} run`) <= before
-  if (!runs.some((run) => successBefore(run, "CI", ".github/workflows/ci.yml")) || !runs.some((run) => successBefore(run, "CodeQL", ".github/workflows/codeql.yml"))) throw new Error("recovery workflow source lacks successful exact-SHA CI or CodeQL before publication")
+  if (!runs.some((run) => canonicalMainCheckRun(run, "CI", source, before)) ||
+    !runs.some((run) => canonicalMainCheckRun(run, "CodeQL", source, before))) throw new Error("recovery workflow source lacks successful exact-SHA CI or CodeQL before publication")
 }
 async function exactRequiredChecksBefore(repo, source, before) {
   const checks = await pages(`repos/${repo}/commits/${source}/check-runs?filter=all`, "check_runs")

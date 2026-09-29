@@ -2,7 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 
-const workflow = readFileSync(new URL("../workflows/release-recover.yml", import.meta.url), "utf8")
+const workflow = readFileSync(new URL("../workflows/release-recover.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n")
 const guard = readFileSync(new URL("./release-publication-guard.mjs", import.meta.url), "utf8")
 
 test("recovery executable checkout is pinned to the immutable workflow run SHA", () => {

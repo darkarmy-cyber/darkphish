@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import { validDraftPublicationState } from "../../scripts/release-lib.mjs"
 
 const script = readFileSync(new URL("./release-recover.mjs", import.meta.url), "utf8")
-const workflow = readFileSync(new URL("../workflows/release-recover.yml", import.meta.url), "utf8")
+const workflow = readFileSync(new URL("../workflows/release-recover.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n")
 const guard = readFileSync(new URL("./release-missing-tag-guard.mjs", import.meta.url), "utf8")
 
 test("recovery metadata and publication stay bound to canonical source metadata", () => {
@@ -42,10 +42,9 @@ test("withdrawn native releases retain only canonical, ordered, non-future lifec
 
 test("historical release provenance is exact-SHA and canonical-workflow bound", () => {
   const historical = script.slice(script.indexOf("async function verifyOriginalNativeRelease"), script.indexOf("async function expectedMetadata"))
-  assert.match(historical, /run\.path === "\.github\/workflows\/ci\.yml"/)
-  assert.match(historical, /\["push", "workflow_dispatch"\]\.includes\(run\.event\)/)
-  assert.match(historical, /run\.path === "\.github\/workflows\/codeql\.yml"/)
-  assert.match(historical, /\["push", "repository_dispatch"\]\.includes\(run\.event\)/)
+  assert.match(historical, /canonicalMainCheckRun\(run, "CI", source\)/)
+  assert.match(historical, /canonicalMainCheckRun\(run, "CodeQL", source\)/)
+  assert.match(historical, /nativeReleaseAttemptStart\(run, metadata\)/)
   assert.match(historical, /Native release/)
   assert.match(historical, /Run node scripts\/release-publish\.mjs metadata/)
   assert.match(historical, /Generate checksums/)
@@ -56,7 +55,7 @@ test("historical release provenance is exact-SHA and canonical-workflow bound", 
 test("audited metadata failures still require pre-release CI and CodeQL chronology", () => {
   const original = script.slice(script.indexOf("async function verifyOriginalNativeRelease"), script.indexOf("async function expectedMetadata"))
   const audited = original.indexOf("const auditedMetadataFailure")
-  const chronology = original.indexOf("ci.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at))")
+  const chronology = original.indexOf("nativeReleaseAttemptStart(run, metadata)")
   const accepted = original.indexOf("if (auditedMetadataFailure) { candidates.push(run); continue }")
   assert.ok(audited >= 0 && chronology > audited && accepted > chronology)
 })
@@ -196,10 +195,11 @@ test("duplicate recovery authenticates one immutable source without current-main
 test("historical CodeQL and Native-release provenance stay time-bound to the immutable source", () => {
   const original = script.slice(script.indexOf("async function verifyOriginalNativeRelease"), script.indexOf("async function expectedMetadata"))
   assert.match(original, /actions\/runs\?head_sha=\$\{source\}/)
-  assert.match(original, /run\.path === "\.github\/workflows\/ci\.yml"/)
-  assert.match(original, /run\.path === "\.github\/workflows\/codeql\.yml"/)
-  assert.match(original, /run\.head_sha === source/)
-  assert.match(original, /Date\.parse\(item\.updated_at\) > Date\.parse\(run\.created_at\)/)
+  assert.match(original, /canonicalMainCheckRun\(run, "CI", source\)/)
+  assert.match(original, /canonicalMainCheckRun\(run, "CodeQL", source\)/)
+  assert.match(original, /item\.head_sha === source/)
+  assert.match(original, /canonicalMainCheckRun\(item, "CI", source, attemptStarted\)/)
+  assert.match(original, /canonicalMainCheckRun\(item, "CodeQL", source, attemptStarted\)/)
   assert.match(original, /release provenance has no qualifying Native release run/)
 })
 

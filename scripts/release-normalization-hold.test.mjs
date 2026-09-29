@@ -4,9 +4,9 @@ import { readFileSync } from "node:fs"
 import { normalizationHold } from "./release-normalization-hold.mjs"
 
 const source = readFileSync(new URL("./release-normalization-hold.mjs", import.meta.url), "utf8")
-const nativeWorkflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8")
-const recoveryWorkflow = readFileSync(new URL("../.github/workflows/release-recover.yml", import.meta.url), "utf8")
-const reconcileWorkflow = readFileSync(new URL("../.github/workflows/release-reconcile.yml", import.meta.url), "utf8")
+const nativeWorkflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n")
+const recoveryWorkflow = readFileSync(new URL("../.github/workflows/release-recover.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n")
+const reconcileWorkflow = readFileSync(new URL("../.github/workflows/release-reconcile.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n")
 
 test("reviewed v0.7.1 resumption removes the temporary normalization hold", () => {
   assert.equal(normalizationHold(), null)

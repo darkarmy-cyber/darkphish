@@ -97,6 +97,7 @@ styles = function () {
             css_directory + 'enterprise.css',
             css_directory + 'auth-update.css',
             css_directory + 'classic-admin.css',
+            css_directory + 'dark-theme.css',
         ])
         .pipe(cleanCSS({
             compatibilty: 'ie9'

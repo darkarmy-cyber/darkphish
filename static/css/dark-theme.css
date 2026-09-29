@@ -3,6 +3,72 @@ html[data-theme="dark"] body.classic-ui {
     background: #111715;
     color: #e8efe9;
 }
+html[data-theme="dark"] .classic-ui a {
+    color: #8edabe;
+}
+html[data-theme="dark"] .classic-ui a:hover,
+html[data-theme="dark"] .classic-ui a:focus {
+    color: #c5f3e3;
+}
+html[data-theme="dark"] .classic-ui .alert .alert-link,
+html[data-theme="dark"] .classic-ui .alert .alert-link:hover,
+html[data-theme="dark"] .classic-ui .alert .alert-link:focus {
+    color: inherit;
+    text-decoration: underline;
+}
+html[data-theme="dark"] .classic-ui .swal2-title,
+html[data-theme="dark"] .classic-ui .swal2-content,
+html[data-theme="dark"] .classic-ui .swal2-html-container,
+html[data-theme="dark"] .classic-ui .swal2-footer {
+    color: #e8efe9;
+}
+html[data-theme="dark"] .classic-ui .modal .close,
+html[data-theme="dark"] .classic-ui .swal2-close {
+    color: #e8efe9;
+    opacity: 1;
+    text-shadow: none;
+}
+html[data-theme="dark"] .classic-ui .swal2-input,
+html[data-theme="dark"] .classic-ui .swal2-textarea,
+html[data-theme="dark"] .classic-ui .swal2-select {
+    background: #111715;
+    color: #e8efe9;
+    border-color: #52645b;
+}
+html[data-theme="dark"] .classic-ui .swal2-validation-message {
+    background: #362b19;
+    color: #f2d39a;
+}
+html[data-theme="dark"] .classic-ui table.dataTable thead .sorting:after {
+    color: #b7c4bb;
+    opacity: 1;
+}
+/* Only chart chrome changes; series/metric colors retain their meaning. */
+html[data-theme="dark"] .classic-ui .highcharts-background {
+    fill: #18201d;
+}
+html[data-theme="dark"] .classic-ui .highcharts-title,
+html[data-theme="dark"] .classic-ui .highcharts-subtitle,
+html[data-theme="dark"] .classic-ui .highcharts-axis-title,
+html[data-theme="dark"] .classic-ui .highcharts-axis-labels text,
+html[data-theme="dark"] .classic-ui .highcharts-legend-item text {
+    fill: #e8efe9 !important;
+    color: #e8efe9 !important;
+}
+html[data-theme="dark"] .classic-ui .highcharts-grid-line,
+html[data-theme="dark"] .classic-ui .highcharts-axis-line,
+html[data-theme="dark"] .classic-ui .highcharts-tick {
+    stroke: #52645b;
+}
+html[data-theme="dark"] .classic-ui .highcharts-tooltip-box {
+    fill: #202a26;
+    fill-opacity: 1;
+}
+html[data-theme="dark"] .classic-ui .highcharts-tooltip text,
+html[data-theme="dark"] .classic-ui .highcharts-tooltip span {
+    fill: #e8efe9 !important;
+    color: #e8efe9 !important;
+}
 html[data-theme="dark"] .classic-ui .darkphish-topbar,
 html[data-theme="dark"] .classic-ui .navbar-inverse {
     background: #18201d;
@@ -253,7 +319,7 @@ html[data-theme="dark"] .classic-ui .label-danger {
     color: #ffffff;
 }
 html[data-theme="dark"] .classic-ui .label-clicked {
-    background: #a44b09;
+    background-color: #a44b09 !important;
     color: #ffffff;
 }
 html[data-theme="dark"] .classic-ui .label-default {

@@ -18,7 +18,8 @@ test("dark theme is explicit, persistent and keyboard accessible", () => {
   const controller = read("static/js/src/app/theme.js")
   assert.match(base, /id="themeToggle"/)
   assert.match(base, /aria-pressed="false"/)
-  assert.match(base, /dark-theme\.css\?v=\{\{\.Version\}\}/)
+  assert.match(base, /css\/dist\/darkphish\.css\?v=\{\{\.Version\}\}/)
+  assert.doesNotMatch(base, /href="\/css\/dark-theme\.css/)
   assert.match(base, /theme\.js\?v=\{\{\.Version\}\}/)
   assert.match(controller, /darkphish-theme/)
   assert.match(controller, /setAttribute\("data-theme", "dark"\)/)
@@ -40,8 +41,13 @@ test("dark theme preserves reduced motion and a readable CKEditor canvas", () =>
   assert.match(css, /:focus-visible/)
 })
 
-test("dark theme assets are included in production Docker images", () => {
+test("dark theme assets are included in Docker and native release packages", () => {
   const docker = read("Dockerfile")
   assert.match(docker, /theme\.js \.\/static\/js\/src\/app\/theme\.js/)
-  assert.match(docker, /dark-theme\.css \.\/static\/css\/dark-theme\.css/)
+  assert.match(docker, /static\/css\/dist \.\/static\/css\/dist/)
+  assert.match(read("gulpfile.js"), /css_directory \+ 'dark-theme\.css'/)
+  assert.match(read("static/css/dist/darkphish.css"), /data-theme=dark/)
+  const release = read(".github/workflows/release.yml")
+  assert.match(release, /Copy-Item static\/css\/dist -Recurse/)
+  assert.match(release, /Copy-Item static\/js\/dist,static\/js\/src -Recurse/)
 })

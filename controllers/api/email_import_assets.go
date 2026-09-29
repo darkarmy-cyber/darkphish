@@ -193,9 +193,19 @@ func collectImportedEmailAssets(raw string) importedEmailAssets {
 		}
 
 		inlineImage := cid != "" && strings.HasPrefix(strings.ToLower(contentType), "image/")
-		if inlineImage && strings.EqualFold(contentType, "image/svg+xml") {
-			result.Warnings = append(result.Warnings, "Active SVG email resources are not imported.")
-			continue
+		if inlineImage {
+			preview, previewErr := rasterPreview(data)
+			if previewErr != nil {
+				result.Warnings = append(result.Warnings, "Some CID images were unsupported or oversized and were skipped.")
+				continue
+			}
+			normalized, ok := decodePreviewData(preview)
+			if !ok {
+				result.Warnings = append(result.Warnings, "Some CID images could not be normalized safely.")
+				continue
+			}
+			data = normalized
+			contentType = "image/png"
 		}
 		var name string
 		if inlineImage {

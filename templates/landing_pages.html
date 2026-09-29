@@ -5,8 +5,7 @@
     </h1>
     <div id="flashes" class="row"></div>
     <div class="row">
-        <button type="button" class="btn btn-primary" onclick="edit(-1)" data-toggle="modal" data-backdrop="static"
-            data-target="#modal"><i class="fa fa-plus"></i> New Page</button>
+        <a class="btn btn-primary" href="/landing_pages/new"><i class="fa fa-plus"></i> New Page</a>
     </div>
     &nbsp;
     <div id="loading">
@@ -125,4 +124,5 @@
 <script src="/js/src/vendor/ckeditor/adapters/jquery.js"></script>
 <script src="/js/dist/app/autocomplete.min.js"></script>
 <script src="/js/dist/app/landing_pages.min.js"></script>
+<script src="/js/src/app/editor_routes.js?v={{.Version}}"></script>
 {{end}}

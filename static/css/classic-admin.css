@@ -45,18 +45,3 @@ body.classic-ui { padding-top: 60px; background: #fff; color: #34495e; }
     .classic-ui .editor-workspace .modal-dialog { width: calc(100% - 16px); margin: 8px auto; }
     .classic-ui .editor-workspace .modal-content { min-height: calc(100vh - 16px); }
 }
-
-
-.classic-ui .email-import-action {
-    display: flex; align-items: center; gap: 16px; padding: 14px 16px; margin: 4px 0 18px;
-    border: 1px solid #d8e0e4; border-radius: 8px; background: #f7f9fa;
-}
-.classic-ui .email-import-button {
-    display: inline-flex; align-items: center; justify-content: center; gap: 9px;
-    min-width: 190px; margin: 0; flex: 0 0 auto; padding: 10px 16px; border-radius: 7px;
-}
-.classic-ui .email-import-copy { margin: 0; color: #56636e; line-height: 1.45; }
-@media (max-width: 720px) {
-    .classic-ui .email-import-action { align-items: stretch; flex-direction: column; }
-    .classic-ui .email-import-button { width: 100%; }
-}

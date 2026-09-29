@@ -131,15 +131,16 @@ async function verifyOriginalNativeRelease(repo, source) {
   const candidates = []
   for (const run of runs.filter((item) => item.name === "Native release" && item.path === ".github/workflows/release.yml" && ["workflow_run", "schedule"].includes(item.event) && item.head_branch === "main" && item.head_sha === source && item.status === "completed" && ["success", "failure"].includes(item.conclusion))) {
     const jobs = await pages(`repos/${repo}/actions/runs/${run.id}/jobs`, "jobs")
-    if (run.conclusion === "failure") {
-      if (audited0201MetadataFailure({ repository: repo, source, run, jobs })) { candidates.push(run); continue }
-      if (audited0202MetadataFailure({ repository: repo, source, run, jobs })) { candidates.push(run); continue }
-      if (audited0211MetadataFailure({ repository: repo, source, run, jobs })) { candidates.push(run); continue }
-    }
+    const auditedMetadataFailure = run.conclusion === "failure" && (
+      audited0201MetadataFailure({ repository: repo, source, run, jobs }) ||
+      audited0202MetadataFailure({ repository: repo, source, run, jobs }) ||
+      audited0211MetadataFailure({ repository: repo, source, run, jobs })
+    )
     const metadata = jobs.find((job) => job.name === "metadata"), verify = jobs.find((job) => job.name === "verify"), smoke = jobs.find((job) => job.name === "audit-smoke"), publish = jobs.find((job) => job.name === "publish"), binaries = jobs.filter((job) => job.name?.startsWith("binaries ("))
+    if (ci.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at)) || codeql.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at))) continue
+    if (auditedMetadataFailure) { candidates.push(run); continue }
     if (metadata?.conclusion !== "success" || verify?.conclusion !== "success" || smoke?.conclusion !== "success" || binaries.length !== 5 || binaries.some((job) => job.conclusion !== "success")) continue
     if (!successfulStep(metadata, "Run node scripts/release-publish.mjs metadata") || !successfulStep(publish, "Run actions/download-artifact@v8") || !successfulTrustedSBOMStep(publish) || !successfulStep(publish, "Generate checksums")) continue
-    if (ci.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at)) || codeql.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at))) continue
     if (run.conclusion === "success") {
       if (publish?.conclusion !== "success" ||
         !successfulStep(publish, "Generate canonical native publication receipt") ||

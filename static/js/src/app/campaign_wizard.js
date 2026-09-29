@@ -21,13 +21,19 @@
         flashes().empty();
     }
 
+    function select2Data(selector) {
+        var element = $(selector);
+        if (!element.length || !element.hasClass("select2-hidden-accessible")) return [];
+        return element.select2("data") || [];
+    }
+
     function selectText(selector) {
-        var data = $(selector).select2("data") || [];
+        var data = select2Data(selector);
         return data.length ? data[0].text : "";
     }
 
     function groupNames() {
-        return ($("#users").select2("data") || []).map(function (group) {
+        return select2Data("#users").map(function (group) {
             return group.text;
         });
     }
@@ -154,6 +160,15 @@
         $("#reviewPage").text(selectText("#page") || "—");
         $("#reviewUrl").text($("#url").val() || "—");
         $("#reviewCredentialMode").text($("#credential_mode option:selected").text() || "—");
+        $("#reviewCredentialRetention").text($("#credential_retention_hours").val() + " hours");
+        $("#reviewCredentialLength").text($("#credential_min_length").val() + "–" + $("#credential_max_length").val() + " characters");
+        $("#reviewCredentialCharacters").text(
+            "upper " + $("#credential_uppercase").val() +
+            ", lower " + $("#credential_lowercase").val() +
+            ", digits " + $("#credential_digit").val() +
+            ", symbols " + $("#credential_symbol").val()
+        );
+        $("#reviewCredentialPatterns").text($.trim($("#credential_disallowed_patterns").val()) || "None");
         $("#reviewProfile").text(selectText("#profile") || "—");
         $("#reviewGroups").text(groupNames().join(", ") || "—");
         $("#reviewLaunchDate").text($("#launch_date").val() || "—");

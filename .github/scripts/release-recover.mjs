@@ -159,9 +159,14 @@ async function verifyOriginalNativeRelease(repo, source) {
 async function expectedMetadata(repo, source, version) {
   return { name: releaseName(version), body: canonicalReleaseBody(await sourceText(repo, "CHANGELOG.md", source), version, source) }
 }
+function validDraftPublicationState(release) {
+  if (release?.published_at === null) return true
+  const created = Date.parse(release?.created_at || ""), published = Date.parse(release?.published_at || ""), updated = Date.parse(release?.updated_at || "")
+  return Number.isFinite(created) && Number.isFinite(published) && Number.isFinite(updated) && created <= published && published <= updated && published <= Date.now() + 60_000
+}
 function assertExactDraft(release, version, source, expected) {
   const tag = versionTag(version)
-  if (!release || !Number.isSafeInteger(release.id) || release.id < 1 || release.tag_name !== tag || !trustedReleaseTarget(release, source) || release.name !== expected.name || release.body !== expected.body || release.draft !== true || release.prerelease !== false || release.published_at !== null || !actionsBot(release.author)) throw new Error("pending release draft metadata does not exactly match the verified source")
+  if (!release || !Number.isSafeInteger(release.id) || release.id < 1 || release.tag_name !== tag || !trustedReleaseTarget(release, source) || release.name !== expected.name || release.body !== expected.body || release.draft !== true || release.prerelease !== false || !validDraftPublicationState(release) || !actionsBot(release.author)) throw new Error("pending release draft metadata does not exactly match the verified source")
   return release
 }
 function assertExactPublished(release, version, source, expected) {

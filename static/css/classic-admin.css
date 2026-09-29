@@ -4,6 +4,8 @@
  * These additions retain responsive navigation, accessibility and new features. */
 body.classic-ui { padding-top: 60px; background: #fff; color: #34495e; }
 .classic-ui .darkphish-topbar { min-height: 60px; }
+.classic-ui .darkphish-topbar .navbar-nav > li { display: flex; align-items: center; min-height: 60px; }
+.classic-ui .darkphish-topbar #navbar-dropdown { margin: 0 15px 0 0; }
 .classic-ui .darkphish-brand img { border-radius: 0; }
 .classic-ui .sidebar { top: 60px; display: flex; flex-direction: column; }
 .classic-ui .sidebar > * { flex-shrink: 0; }
@@ -11,7 +13,7 @@ body.classic-ui { padding-top: 60px; background: #fff; color: #34495e; }
 .classic-ui .btn-import:hover, .classic-ui .btn-import:focus { background-color: #0e594f; border-color: #0e594f; color: #fff; }
 .classic-ui .btn-import:active { background-color: #0a453e; border-color: #0a453e; color: #fff; }
 .classic-ui .btn-import:disabled, .classic-ui .btn-import.disabled { background-color: #526d69; border-color: #526d69; color: #fff; opacity: 1; cursor: not-allowed; }
-.classic-ui .sidebar-credit { margin: auto 0 0; padding: 24px 0 0; font-size: 12px; }
+.classic-ui .sidebar-credit { margin: auto 0 0; padding: 24px 0 0; font-size: 12px; text-align: center; }
 .classic-ui .sidebar-credit a { font-weight: 600; white-space: nowrap; text-decoration: underline; }
 .classic-ui :focus-visible { outline: 3px solid #168475; outline-offset: 3px; }
 .classic-ui .nav-sidebar > .active > a:focus-visible { outline-offset: -3px; }
@@ -24,6 +26,14 @@ body.classic-ui { padding-top: 60px; background: #fff; color: #34495e; }
 .classic-ui #auditFilters .form-control { min-width: 0; flex: 1 1 170px; max-width: 100%; }
 .classic-ui .select2-container { max-width: 100%; }
 .classic-ui #licenseActivation { max-width: 640px; }
+.classic-ui .update-card { max-width: 440px; margin: 10px 0 24px; }
+.classic-ui .update-version-grid { display: grid; gap: 10px; }
+.classic-ui .update-field-label { display: block; margin-bottom: 3px; font-size: 15px; font-weight: 700; }
+.classic-ui .update-version-value { display: block; font-size: 16px; font-weight: 400; }
+.classic-ui #updateTarget { width: 100%; max-width: 300px; }
+.classic-ui .update-card .help-block { margin: 5px 0 0; }
+.classic-ui .update-target-warning { margin: 12px 0 0; }
+.classic-ui .update-actions { margin-bottom: 4px; }
 /* Preserve the current wide editors and all existing Bootstrap modal hooks. */
 .classic-ui .editor-workspace .modal-dialog { width: calc(100% - 48px); max-width: 1240px; margin: 24px auto; }
 .classic-ui .editor-workspace .modal-body { max-width: 1040px; margin: auto; }

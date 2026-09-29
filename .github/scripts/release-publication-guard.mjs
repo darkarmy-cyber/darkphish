@@ -11,6 +11,7 @@ import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes
 import { normalizationHold } from "../../scripts/release-normalization-hold.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
+import { canonicalMainCheckRun, nativeReleaseAttemptStart } from "./release-provenance-checks.mjs"
 
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
@@ -98,8 +99,8 @@ async function verifiedReleasePR(repo, source, version, tag) {
 }
 async function exactMainChecks(repo, source, before = Infinity) {
   const runs = await pages(`repos/${repo}/actions/runs?head_sha=${source}`, "workflow_runs")
-  const okay = (run, name, path) => run.name === name && run.path === path && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success" && timestamp(run.updated_at, `${name} run`) <= before
-  if (!runs.some((run) => okay(run, "CI", ".github/workflows/ci.yml")) || !runs.some((run) => okay(run, "CodeQL", ".github/workflows/codeql.yml"))) throw new Error("publication source lacks canonical exact-SHA CI or CodeQL")
+  if (!runs.some((run) => canonicalMainCheckRun(run, "CI", source, before)) ||
+    !runs.some((run) => canonicalMainCheckRun(run, "CodeQL", source, before))) throw new Error("publication source lacks canonical exact-SHA CI or CodeQL")
 }
 async function exactRequiredChecksBefore(repo, source, before) {
   const checks = await pages(`repos/${repo}/commits/${source}/check-runs?filter=all`, "check_runs")
@@ -213,12 +214,12 @@ async function verifyNativePublication(repo, release, version, main, tagState, c
     for (const run of runs.sort((a, b) => b.id - a.id)) {
       try {
         if (run.name !== "Native release" || run.path !== ".github/workflows/release.yml" || run.head_branch !== "main" || run.head_sha !== common.source || !["workflow_run", "schedule"].includes(run.event) || run.status !== "completed" || run.conclusion !== "success") continue
-        const created = timestamp(run.created_at, "native release run creation")
-        await exactMainChecks(repo, common.source, created)
-        await exactRequiredChecksBefore(repo, common.source, created)
         const jobs = await pages(`repos/${repo}/actions/runs/${run.id}/jobs`, "jobs")
         const metadata = jobs.find((job) => job.name === "metadata"), verify = jobs.find((job) => job.name === "verify"), smoke = jobs.find((job) => job.name === "audit-smoke"), publish = jobs.find((job) => job.name === "publish"), binaries = jobs.filter((job) => job.name?.startsWith("binaries ("))
         if (metadata?.conclusion !== "success" || verify?.conclusion !== "success" || smoke?.conclusion !== "success" || publish?.conclusion !== "success" || binaries.length !== 5 || binaries.some((job) => job.conclusion !== "success")) continue
+        const attemptStarted = nativeReleaseAttemptStart(run, metadata)
+        await exactMainChecks(repo, common.source, attemptStarted)
+        await exactRequiredChecksBefore(repo, common.source, attemptStarted)
         if (!successfulStep(metadata, "Run node scripts/release-publish.mjs metadata") || !successfulStep(publish, "Generate checksums") || !successfulStep(publish, "Publish verified assets without overwriting an existing release")) continue
         const publishStep = publish.steps.find((step) => step.name === "Publish verified assets without overwriting an existing release")
         const start = timestamp(publishStep.started_at, "native publish start"), end = timestamp(publishStep.completed_at, "native publish end")

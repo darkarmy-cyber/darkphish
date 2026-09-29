@@ -251,16 +251,16 @@ func newEmailAssetLocalizer(ctx context.Context, imported importedEmailAssets, f
 		}
 	}
 	return &emailAssetLocalizer{
-		ctx:         ctx,
-		attachments: append([]models.Attachment(nil), imported.Attachments...),
+		ctx:           ctx,
+		attachments:   append([]models.Attachment(nil), imported.Attachments...),
 		cidNames:      imported.CIDNames,
 		resourceNames: imported.ResourceNames,
 		cached:        map[string]string{},
-		attempted:   map[string]bool{},
-		usedNames:   used,
-		totalBytes:  total,
-		warnings:    map[string]bool{},
-		fetchImage:  fetchImage,
+		attempted:     map[string]bool{},
+		usedNames:     used,
+		totalBytes:    total,
+		warnings:      map[string]bool{},
+		fetchImage:    fetchImage,
 	}
 }
 

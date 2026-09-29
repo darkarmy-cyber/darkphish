@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/darkphish_fish.png" alt="DarkPhish fish logo" width="230">
+  <img src="docs/assets/darkphish_fish.png" alt="DarkPhish fish logo" width="160">
   <h1>DarkPhish</h1>
   <p><strong>Self-hosted phishing simulations for authorized security training and human-risk testing.</strong></p>
   <p>

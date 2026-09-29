@@ -48,9 +48,6 @@
         modal.off(".editorRoute");
         modal.on("input.editorRoute change.editorRoute", "input, textarea, select", markDirty);
         modal.on("click.editorRoute", "#attachmentsTable .fa-trash-o", markDirty);
-        modal.on("click.editorRoute", "#modalSubmit", function () {
-            routeState.saving = true;
-        });
 
         if (window.CKEDITOR && CKEDITOR.instances && CKEDITOR.instances.html_editor) {
             CKEDITOR.instances.html_editor.on("change", markDirty);
@@ -171,6 +168,17 @@
     });
 
     document.addEventListener("click", interceptListActions, true);
+
+    $(document).ajaxSend(function (_event, _xhr, settings) {
+        if (!routeState.active) return;
+        var method = settings && settings.type ? settings.type.toUpperCase() : "";
+        var url = settings && settings.url ? settings.url : "";
+        if ((method === "POST" || method === "PUT") &&
+            ((routeState.resource === "templates" && /\/api\/templates/.test(url)) ||
+             (routeState.resource === "landing_pages" && /\/api\/pages/.test(url)))) {
+            routeState.saving = true;
+        }
+    });
 
     $(document).ajaxSuccess(function (_event, _xhr, settings) {
         if (!routeState.active) return;

@@ -86,6 +86,31 @@
             <div class="modal-body" id="modal_body">
                 {{template "license_warning" .}}
                 <div class="row" id="modal.flashes"></div>
+                <ol id="campaignWizardSteps" class="breadcrumb" aria-label="Campaign setup steps">
+                    <li class="active" data-step="1">Basics</li>
+                    <li data-step="2">Credential policy</li>
+                    <li data-step="3">Delivery</li>
+                    <li data-step="4">Review</li>
+                </ol>
+                <div id="campaignReview" class="well" hidden>
+                    <h4>Review campaign</h4>
+                    <dl class="dl-horizontal">
+                        <dt>Name</dt><dd id="reviewName"></dd>
+                        <dt>Email template</dt><dd id="reviewTemplate"></dd>
+                        <dt>Landing page</dt><dd id="reviewPage"></dd>
+                        <dt>URL</dt><dd id="reviewUrl"></dd>
+                        <dt>Credential handling</dt><dd id="reviewCredentialMode"></dd>
+                        <dt>Retention</dt><dd id="reviewCredentialRetention"></dd>
+                        <dt>Length policy</dt><dd id="reviewCredentialLength"></dd>
+                        <dt>Character minimums</dt><dd id="reviewCredentialCharacters"></dd>
+                        <dt>Disallowed patterns</dt><dd id="reviewCredentialPatterns"></dd>
+                        <dt>Sending profile</dt><dd id="reviewProfile"></dd>
+                        <dt>Groups</dt><dd id="reviewGroups"></dd>
+                        <dt>Launch</dt><dd id="reviewLaunchDate"></dd>
+                        <dt>Send by</dt><dd id="reviewSendByDate"></dd>
+                    </dl>
+                    <p class="help-block">Review every selection before launching. Launch still uses the existing confirmation and licensing controls.</p>
+                </div>
                 <div class="form-group">
                     <label for="name">Name:</label>
                     <input type="text" class="form-control" id="name" placeholder="Campaign name" autofocus>
@@ -133,7 +158,7 @@
                     <input class="form-control" id="credential_disallowed_patterns" type="text" maxlength="1300" placeholder="company name, season, password">
                     <div class="row">
                         <div class="col-md-6">
-                            <label class="control-label" for="url">Launch Date </label>
+                            <label class="control-label" for="launch_date">Launch Date </label>
                             <input type="text" class="form-control" id="launch_date" />
                         </div>
                         <div class="col-md-6">
@@ -160,7 +185,9 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-default" data-dismiss="modal" onclick="dismiss()">Close</button>
-                <button type="button" id="launchButton" class="btn btn-primary" onclick="launch()" {{if not .SendingAllowed}}disabled aria-disabled="true" title="Activate a valid license before launching campaigns"{{end}}>
+                <button type="button" id="campaignWizardBack" class="btn btn-default" hidden><i class="fa fa-arrow-left"></i> Back</button>
+                <button type="button" id="campaignWizardNext" class="btn btn-primary">Next <i class="fa fa-arrow-right"></i></button>
+                <button type="button" id="launchButton" class="btn btn-primary" onclick="launch()" hidden {{if not .SendingAllowed}}disabled aria-disabled="true" title="Activate a valid license before launching campaigns"{{end}}>
                     <i class="fa fa-rocket"></i> Launch Campaign</button>
             </div>
         </div>
@@ -208,4 +235,5 @@
 </div>
 {{end}} {{define "scripts"}}
 <script src="/js/dist/app/campaigns.min.js"></script>
+<script src="/js/src/app/campaign_wizard.js?v={{.Version}}"></script>
 {{end}}

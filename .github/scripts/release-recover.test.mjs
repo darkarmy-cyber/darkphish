@@ -23,8 +23,26 @@ test("historical release provenance is exact-SHA and canonical-workflow bound", 
   assert.match(historical, /Native release/)
   assert.match(historical, /Run node scripts\/release-publish\.mjs metadata/)
   assert.match(historical, /Generate checksums/)
-  assert.match(historical, /historical release provenance has no qualifying failed Native release run/)
-  assert.match(historical, /historical release provenance spans unexpected Native release workflows/)
+  assert.match(historical, /release provenance has no qualifying Native release run/)
+  assert.match(historical, /release provenance spans unexpected Native release workflows/)
+})
+
+test("successful native publication is accepted before recovery withdrawal", () => {
+  const original = script.slice(script.indexOf("async function verifyOriginalNativeRelease"), script.indexOf("async function expectedMetadata"))
+  assert.match(original, /\["workflow_run", "schedule"\]\.includes\(item\.event\)/)
+  assert.match(original, /\["success", "failure"\]\.includes\(item\.conclusion\)/)
+  assert.match(original, /Generate canonical native publication receipt/)
+  assert.match(original, /Attest canonical native release artifacts/)
+  assert.match(original, /Publish verified assets without overwriting an existing release/)
+
+  const state = script.slice(script.indexOf("async function recoveryState"), script.indexOf("function localArtifacts"))
+  const nativeCheck = state.indexOf('originalRun.conclusion === "success"')
+  const recoveryCheck = state.indexOf("verifyPublishedRecovery")
+  const withdrawal = state.indexOf("ensureDraftState")
+  assert.ok(nativeCheck >= 0 && recoveryCheck > nativeCheck && withdrawal > recoveryCheck)
+  assert.match(state, /assertCurrentVersionPublished\(repo, \{ version \}\)/)
+  assert.match(state, /native publication resolved a different release/)
+  assert.match(state, /nativeRun: originalRun/)
 })
 
 test("protected main verification can be pinned to immutable execution SHA", () => {
@@ -148,7 +166,7 @@ test("historical CodeQL and Native-release provenance stay time-bound to the imm
   assert.match(original, /run\.path === "\.github\/workflows\/codeql\.yml"/)
   assert.match(original, /run\.head_sha === source/)
   assert.match(original, /Date\.parse\(item\.updated_at\) > Date\.parse\(run\.created_at\)/)
-  assert.match(original, /historical release provenance has no qualifying failed Native release run/)
+  assert.match(original, /release provenance has no qualifying Native release run/)
 })
 
 test("protected main remains independently pinned to immutable recovery execution SHA for duplicate drafts", () => {

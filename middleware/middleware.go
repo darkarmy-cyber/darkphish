@@ -293,7 +293,7 @@ func requiredPATScope(method, path string) string {
 		return "integrations:read"
 	case clean == "/api/import/group":
 		return "groups:write"
-	case clean == "/api/import/email" || clean == "/api/import/email/images":
+	case clean == "/api/import/email":
 		return "templates:write"
 	case clean == "/api/import/site":
 		return "landing-pages:write"

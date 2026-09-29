@@ -14,9 +14,25 @@
         </div>
     </div>
     <div id="dashboard" style="display:none;">
-        <div class="row">
-            <div id="overview_chart" style="height:200px;" class="col-lg-12 col-md-12 col-sm-12 col-xs-12"></div>
-        </div>
+        <section aria-labelledby="analyticsOverviewTitle">
+            <h2 id="analyticsOverviewTitle">Operational Overview</h2>
+            <div class="row" id="analyticsKpis">
+                <div class="col-lg-2 col-md-4 col-sm-6"><div class="well text-center"><strong id="kpiCampaigns">0</strong><div>Campaigns</div></div></div>
+                <div class="col-lg-2 col-md-4 col-sm-6"><div class="well text-center"><strong id="kpiRecipients">0</strong><div>Recipients</div></div></div>
+                <div class="col-lg-2 col-md-4 col-sm-6"><div class="well text-center"><strong id="kpiSentRate">0%</strong><div>Sent</div></div></div>
+                <div class="col-lg-2 col-md-4 col-sm-6"><div class="well text-center"><strong id="kpiOpenRate">0%</strong><div>Opened</div></div></div>
+                <div class="col-lg-2 col-md-4 col-sm-6"><div class="well text-center"><strong id="kpiClickRate">0%</strong><div>Clicked</div></div></div>
+                <div class="col-lg-2 col-md-4 col-sm-6"><div class="well text-center"><strong id="kpiReportRate">0%</strong><div>Reported</div></div></div>
+            </div>
+        </section>
+        <section aria-labelledby="engagementTrendTitle">
+            <h2 id="engagementTrendTitle">Engagement Trend</h2>
+            <div class="row">
+                <div id="overview_chart" style="height:200px;" class="col-lg-12 col-md-12 col-sm-12 col-xs-12"></div>
+            </div>
+        </section>
+        <section aria-labelledby="aggregateOutcomesTitle">
+        <h2 id="aggregateOutcomesTitle">Aggregate Outcomes</h2>
         <div class="row">
             <div style="height:200px;" class="col-lg-1 col-md-1"></div>
             <div id="sent_chart" style="height:200px;" class="col-lg-2 col-md-2"></div>
@@ -26,6 +42,7 @@
             <div id="email_reported_chart" style="height:200px;" class="col-lg-2 col-md-2"></div>
             <div style="height:200px;" class="col-lg-1 col-md-1"></div>
         </div>
+        </section>
         <div class="row">
             <h2>Recent Campaigns</h2>
         </div>
@@ -68,4 +85,5 @@
 </div>
 {{end}} {{define "scripts"}}
 <script src="/js/dist/app/dashboard.min.js"></script>
+<script src="/js/src/app/dashboard_overview.js?v={{.Version}}"></script>
 {{end}}

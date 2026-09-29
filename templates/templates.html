@@ -7,8 +7,7 @@
     </div>
     <div id="flashes" class="row"></div>
     <div class="row">
-        <button type="button" class="btn btn-primary" onclick="edit(-1)" data-toggle="modal" data-backdrop="static"
-            data-target="#modal"><i class="fa fa-plus"></i> New Template</button>
+        <a class="btn btn-primary" href="/templates/new"><i class="fa fa-plus"></i> New Template</a>
     </div>
     &nbsp;
     <div id="loading">
@@ -151,4 +150,5 @@
 <script src="/js/dist/app/autocomplete.min.js"></script>
 <script src="/js/dist/app/template_images.min.js"></script>
 <script src="/js/dist/app/templates.min.js"></script>
+<script src="/js/src/app/editor_routes.js?v={{.Version}}"></script>
 {{end}}

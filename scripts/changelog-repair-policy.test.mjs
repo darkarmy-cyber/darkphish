@@ -63,8 +63,8 @@ test("only PR120 may stage its 0.20.3 fragment while v0.20.2 recovery is pending
   assert.equal(auditedPendingPatchRepair(value), true)
 })
 
-test("only PR129 may stage its 0.21.2 fragment while v0.21.1 recovery is pending", () => {
-  const repairBase = "51f3c3b56df05d8a6fd165d227cb78d9e46ae821"
+test("only PR129 may stage its 0.22.0 fragment while v0.21.1 recovery is pending", () => {
+  const repairBase = "d58b43260b1b94a8a7ad6897636f9d0fb9ee06d4"
   const repairFiles = [
     ".github/scripts/release-recover-0211-policy.mjs",
     ".github/scripts/release-recover-0211-policy.test.mjs",
@@ -74,9 +74,11 @@ test("only PR129 may stage its 0.21.2 fragment while v0.21.1 recovery is pending
     "scripts/changelog-repair-policy.test.mjs",
     "scripts/release-maintainer-review-0211.test.mjs",
     "scripts/release-maintainer-review.mjs",
+    "scripts/release-repair-policy-0211.test.mjs",
+    "scripts/release-repair-policy.mjs",
   ]
   const fixture = () => ({
-    repository, eventName: "pull_request", current: "0.21.1", target: "0.21.2",
+    repository, eventName: "pull_request", current: "0.21.1", target: "0.22.0",
     baseSHA: repairBase, files: [...repairFiles], event: { pull_request: {
       number: 129, state: "open", draft: false, base: { ref: "main", sha: repairBase },
       head: { ref: "fix/v0.21.1-review-recovery", repo: { full_name: repository } },

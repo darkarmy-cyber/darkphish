@@ -97,6 +97,7 @@ $(function () {
     function render(status) {
         currentStatus = status;
         $("#updateCurrent").text(status.current_version);
+        $("#updateLatest").text(status.latest_version || "—");
         if (status.applying && status.target_version) selectedVersion = status.target_version;
         renderSelector(status);
         $("#updateStatus").text(status.result || status.error || (status.applying ? "Update in progress" : status.available ? "A new stable release is available" : "Stable release information is current"));

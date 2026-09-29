@@ -27,5 +27,7 @@ test("route editor guards unsaved changes and converts list actions to routes", 
   assert.match(source, /You have unsaved changes/)
   assert.match(source, /button\[onclick\]/)
   assert.match(source, /window\.location\.assign\(path \+ "\/" \+ items\[idx\]\.id \+ "\/" \+ action\[1\]\)/)
-  assert.match(source, /\/api\/import\//)
+  assert.match(source, /ajaxSuccess/)
+  assert.match(source, /api\\\/import/)
+  assert.match(source, /ajaxSend/)
 })

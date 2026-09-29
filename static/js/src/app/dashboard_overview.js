@@ -39,6 +39,7 @@
     }
 
     $(document).ajaxComplete(render);
+    $(document).on("dashboard:updated", render);
     $(document).ready(function () {
         render();
         window.setTimeout(render, 250);

@@ -288,6 +288,15 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
+      - name: Export v0.22 generated assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: v022-generated-assets
+          path: |
+            static/js/dist/app/templates.min.js
+            static/js/dist/app/darkphish.min.js
+            static/css/dist/darkphish.css
+          if-no-files-found: error
       - name: Verify generated assets are committed
         run: git diff --exit-code -- static/js/dist static/css/dist
       - run: pnpm audit --audit-level=high

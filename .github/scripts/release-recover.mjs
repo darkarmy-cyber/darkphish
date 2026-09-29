@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   api, assertCurrentVersionPublished, assetDisposition, expectedReleaseAssetNames, generatedPath,
-  githubPublishedAt, greenCommit, pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, trustedReleaseTarget, verifyChecksums, versionTag,
+  greenCommit, pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, trustedReleaseTarget, validDraftPublicationState, verifyChecksums, versionTag,
 } from "../../scripts/release-lib.mjs"
 import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
@@ -158,13 +158,6 @@ async function verifyOriginalNativeRelease(repo, source) {
 }
 async function expectedMetadata(repo, source, version) {
   return { name: releaseName(version), body: canonicalReleaseBody(await sourceText(repo, "CHANGELOG.md", source), version, source) }
-}
-export function validDraftPublicationState(release, now = Date.now()) {
-  if (release?.published_at === null) return true
-  const values = [release?.created_at, release?.published_at, release?.updated_at]
-  if (!values.every(githubPublishedAt)) return false
-  const [created, published, updated] = values.map(Date.parse)
-  return created <= published && published <= updated && updated <= now + 60_000
 }
 function assertExactDraft(release, version, source, expected) {
   const tag = versionTag(version)

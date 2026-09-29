@@ -50,12 +50,12 @@
                     <input type="text" class="form-control" ng-model="template.name" placeholder="Template name" id="name"
                         autofocus />
                 </div>
-                <div class="form-group email-import-action">
-                    <button type="button" class="btn btn-primary btn-import email-import-button" data-toggle="modal" data-backdrop="static" data-target="#importEmailModal">
+                <div class="form-group well">
+                    <button type="button" class="btn btn-primary btn-import" data-toggle="modal" data-backdrop="static" data-target="#importEmailModal">
                         <i class="fa fa-envelope-o" aria-hidden="true"></i>
                         <span>Import Email Source</span>
                     </button>
-                    <p class="help-block email-import-copy">Import a complete raw RFC 5322/MIME message. Inline and supported public HTTPS images are imported automatically as embedded email resources.</p>
+                    <p class="help-block" style="margin-bottom:0">Import a complete raw RFC 5322/MIME message. Inline and supported public HTTPS images are imported automatically as embedded email resources.</p>
                 </div>
                 <label class="control-label" for="envelope-sender">Envelope Sender: <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" title="This sender is shown to the user by most email clients. Defaults to the SMTP From as defined in the Sending Profile."></i></label>
                 <div class="form-group">

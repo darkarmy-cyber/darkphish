@@ -124,24 +124,35 @@ async function verifiedReleasePR(repo, source, version, tag) {
 function successfulStep(job, name) { return job?.steps?.some((step) => step.name === name && step.status === "completed" && step.conclusion === "success") }
 async function verifyOriginalNativeRelease(repo, source) {
   const runs = await pages(`repos/${repo}/actions/runs?head_sha=${source}`, "workflow_runs")
-  const ci = runs.filter((run) => run.name === "CI" && run.path === ".github/workflows/ci.yml" && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success")
-  const codeql = runs.filter((run) => run.name === "CodeQL" && run.path === ".github/workflows/codeql.yml" && run.event === "push" && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success")
+  const ci = runs.filter((run) => run.name === "CI" && run.path === ".github/workflows/ci.yml" && ["push", "workflow_dispatch"].includes(run.event) && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success")
+  const codeql = runs.filter((run) => run.name === "CodeQL" && run.path === ".github/workflows/codeql.yml" && ["push", "repository_dispatch"].includes(run.event) && run.head_branch === "main" && run.head_sha === source && run.status === "completed" && run.conclusion === "success")
   if (!ci.length || !codeql.length) throw new Error("historical release source lacks successful exact-SHA CI or CodeQL")
   const candidates = []
-  for (const run of runs.filter((item) => item.name === "Native release" && item.path === ".github/workflows/release.yml" && item.event === "workflow_run" && item.head_branch === "main" && item.head_sha === source && item.status === "completed" && item.conclusion === "failure")) {
+  for (const run of runs.filter((item) => item.name === "Native release" && item.path === ".github/workflows/release.yml" && ["workflow_run", "schedule"].includes(item.event) && item.head_branch === "main" && item.head_sha === source && item.status === "completed" && ["success", "failure"].includes(item.conclusion))) {
     const jobs = await pages(`repos/${repo}/actions/runs/${run.id}/jobs`, "jobs")
-    if (audited0201MetadataFailure({ repository: repo, source, run, jobs })) { candidates.push(run); continue }
-    if (audited0202MetadataFailure({ repository: repo, source, run, jobs })) { candidates.push(run); continue }
+    if (run.conclusion === "failure") {
+      if (audited0201MetadataFailure({ repository: repo, source, run, jobs })) { candidates.push(run); continue }
+      if (audited0202MetadataFailure({ repository: repo, source, run, jobs })) { candidates.push(run); continue }
+    }
     const metadata = jobs.find((job) => job.name === "metadata"), verify = jobs.find((job) => job.name === "verify"), smoke = jobs.find((job) => job.name === "audit-smoke"), publish = jobs.find((job) => job.name === "publish"), binaries = jobs.filter((job) => job.name?.startsWith("binaries ("))
-    if (metadata?.conclusion !== "success" || verify?.conclusion !== "success" || smoke?.conclusion !== "success" || publish?.conclusion !== "failure" || binaries.length !== 5 || binaries.some((job) => job.conclusion !== "success")) continue
+    if (metadata?.conclusion !== "success" || verify?.conclusion !== "success" || smoke?.conclusion !== "success" || binaries.length !== 5 || binaries.some((job) => job.conclusion !== "success")) continue
     if (!successfulStep(metadata, "Run node scripts/release-publish.mjs metadata") || !successfulStep(publish, "Run actions/download-artifact@v8") || !successfulTrustedSBOMStep(publish) || !successfulStep(publish, "Generate checksums")) continue
+    if (ci.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at)) || codeql.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at))) continue
+    if (run.conclusion === "success") {
+      if (publish?.conclusion !== "success" ||
+        !successfulStep(publish, "Generate canonical native publication receipt") ||
+        !successfulStep(publish, "Attest canonical native release artifacts") ||
+        !successfulStep(publish, "Publish verified assets without overwriting an existing release")) continue
+      candidates.push(run)
+      continue
+    }
+    if (publish?.conclusion !== "failure") continue
     const failedPublish = publish.steps?.find((step) => step.name === "Publish verified assets without overwriting an existing release")
     if (failedPublish?.status !== "completed" || failedPublish.conclusion !== "failure") continue
-    if (ci.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at)) || codeql.every((item) => Date.parse(item.updated_at) > Date.parse(run.created_at))) continue
     candidates.push(run)
   }
-  if (!candidates.length) throw new Error("historical release provenance has no qualifying failed Native release run")
-  if (new Set(candidates.map((run) => run.workflow_id)).size !== 1) throw new Error("historical release provenance spans unexpected Native release workflows")
+  if (!candidates.length) throw new Error("release provenance has no qualifying Native release run")
+  if (new Set(candidates.map((run) => run.workflow_id)).size !== 1) throw new Error("release provenance spans unexpected Native release workflows")
   candidates.sort((a, b) => b.id - a.id)
   return candidates[0]
 }
@@ -289,11 +300,19 @@ async function recoveryState(repo, version, main) {
       const source = initialTagState.commit
       await verifySourceAncestry(repo, source, main); await verifiedReleasePR(repo, source, version, tag)
       const originalRun = await verifyOriginalNativeRelease(repo, source), expected = await expectedMetadata(repo, source, version)
+      if (originalRun.conclusion === "success") {
+        assertExactPublished(candidate, version, source, expected)
+        const canonical = await assertCurrentVersionPublished(repo, { version })
+        if (canonical.id !== candidate.id) throw new Error("native publication resolved a different release")
+        const commit = await api(`repos/${repo}/commits/${source}`), builtAt = commit?.commit?.committer?.date
+        if (!builtAt || Number.isNaN(Date.parse(builtAt))) throw new Error("published native source commit timestamp is unavailable")
+        return { tag, source, published: candidate, nativeRun: originalRun, originalRun, expected, builtAt: new Date(builtAt).toISOString(), tagState: initialTagState }
+      }
       const recoveryRun = await verifyPublishedRecovery(repo, candidate, version, main, initialTagState, expected)
       const commit = await api(`repos/${repo}/commits/${source}`), builtAt = commit?.commit?.committer?.date
       if (!builtAt || Number.isNaN(Date.parse(builtAt))) throw new Error("published recovery source commit timestamp is unavailable")
       return { tag, source, published: candidate, recoveryRun, originalRun, expected, builtAt: new Date(builtAt).toISOString(), tagState: initialTagState }
-    } catch (error) { console.warn(`Existing public ${tag} is not a fully attested recovery publication and will be withdrawn: ${error.message}`) }
+    } catch (error) { console.warn(`Existing public ${tag} is not a trusted native or fully attested recovery publication and will be withdrawn: ${error.message}`) }
   }
   if (published.length) {
     for (const release of published) await ensureDraftState(repo, release.id, tag, initialTagState)
@@ -366,7 +385,12 @@ async function metadata() {
   const state = await recoveryState(repo, version, main)
   await assertPrecheckSnapshot(repo, tag, precheck, "release tag changed during recovery metadata verification")
   if (!state) { output("ready", "false"); console.log("No pending release recovery is required."); return }
-  if (state.published) { output("ready", "false"); console.log(`Verified existing attested recovery publication ${state.tag} from recovery run ${state.recoveryRun.id}; no recovery action is required.`); return }
+  if (state.published) {
+    output("ready", "false")
+    if (state.nativeRun) console.log(`Verified existing native publication ${state.tag} from Native release run ${state.nativeRun.id}; no recovery action is required.`)
+    else console.log(`Verified existing attested recovery publication ${state.tag} from recovery run ${state.recoveryRun.id}; no recovery action is required.`)
+    return
+  }
   const finalMain = await currentProtectedMain(repo, executionSHA)
   if (finalMain !== main) throw new Error("protected main changed during recovery metadata verification")
   await verifySourceAncestry(repo, state.source, finalMain)

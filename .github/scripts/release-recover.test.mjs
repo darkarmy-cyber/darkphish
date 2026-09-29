@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
+import { validDraftPublicationState } from "./release-recover.mjs"
 
 const script = readFileSync(new URL("./release-recover.mjs", import.meta.url), "utf8")
 const workflow = readFileSync(new URL("../workflows/release-recover.yml", import.meta.url), "utf8")
@@ -16,13 +17,28 @@ test("recovery metadata and publication stay bound to canonical source metadata"
   assert.match(script, /generatedPath/)
 })
 
-test("withdrawn native releases retain safe GitHub publication timestamps as drafts", () => {
+test("withdrawn native releases retain only canonical, ordered, non-future lifecycle timestamps", () => {
+  const now = Date.parse("2026-09-29T08:00:00Z")
+  const valid = {
+    created_at: "2026-09-29T06:00:00Z",
+    published_at: "2026-09-29T06:30:00Z",
+    updated_at: "2026-09-29T07:00:00Z",
+  }
+  assert.equal(validDraftPublicationState(valid, now), true)
+  assert.equal(validDraftPublicationState({ ...valid, published_at: null }, now), true)
+  for (const release of [
+    { ...valid, created_at: "2026-02-30T06:00:00Z" },
+    { ...valid, published_at: "09/29/2026 06:30:00" },
+    { ...valid, updated_at: "2026-09-29T07:00:00+00:00" },
+    { ...valid, created_at: "2026-09-29T06:45:00Z" },
+    { ...valid, updated_at: "2026-09-29T08:01:01Z" },
+  ]) assert.equal(validDraftPublicationState(release, now), false)
+
   const draft = script.slice(script.indexOf("function validDraftPublicationState"), script.indexOf("function assertExactPublished"))
-  assert.match(draft, /release\?\.published_at === null/)
+  assert.match(draft, /values\.every\(githubPublishedAt\)/)
   assert.match(draft, /created <= published && published <= updated/)
-  assert.match(draft, /published <= Date\.now\(\) \+ 60_000/)
+  assert.match(draft, /updated <= now \+ 60_000/)
   assert.match(draft, /!validDraftPublicationState\(release\)/)
-  assert.doesNotMatch(draft, /release\.published_at !== null/)
 })
 
 test("historical release provenance is exact-SHA and canonical-workflow bound", () => {

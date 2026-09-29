@@ -40,7 +40,7 @@ export function expectedReleaseAssetNames(version) {
 }
 const githubActionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 export const trustedReleaseTarget = (release, source) => release?.target_commitish === source || release?.target_commitish === "main"
-const githubPublishedAt = (value) => {
+export const githubPublishedAt = (value) => {
   if (typeof value !== "string") return false
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/)
   if (!match) return false

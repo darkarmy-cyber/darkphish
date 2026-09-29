@@ -288,10 +288,7 @@ var api = {
     },
     // import handles all of the "import" functions in the api
     import_email: function (req) {
-        return query("/import/email", "POST", req, false)
-    },
-    preview_email_images: function (req) {
-        return query("/import/email/images", "POST", req, true)
+        return query("/import/email", "POST", req, true)
     },
     // clone_site handles importing a site by url
     clone_site: function (req) {

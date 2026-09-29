@@ -14,6 +14,7 @@
 ### Changed
 
 - Restructure the dashboard into operational overview, engagement trend and aggregate outcome sections with text-only KPI summaries derived from existing campaign metrics.
+- Refresh the public README with the compact official DarkPhish fish logo, release and documentation links, and security-reporting guidance.
 
 ### Fixed
 
@@ -22,7 +23,6 @@
 - Include the v0.22 dashboard KPI controller in production Docker images so operational metrics render outside source checkouts.
 - Refresh KPI values when summary statistics change and reset them for empty results, with browser coverage across mobile, tablet and desktop layouts.
 - Add an explicit analytics refresh that fetches a new authorized summary and updates KPI cards, charts and the campaign table together.
-
 
 ## 0.21.1 - 2026-09-29
 

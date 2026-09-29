@@ -86,6 +86,37 @@ func TestEmailImportLocalizesCIDAndExternalImages(t *testing.T) {
 	}
 }
 
+func TestEmailImportPreservesContentLocationImage(t *testing.T) {
+	picture, _ := tinyPNG(t)
+	raw := "Subject: Content-Location test\r\n" +
+		"MIME-Version: 1.0\r\n" +
+		"Content-Type: multipart/related; boundary=location-boundary\r\n\r\n" +
+		"--location-boundary\r\n" +
+		"Content-Type: text/html; charset=UTF-8\r\n\r\n" +
+		"<html><body><img src=\"images/logo.png\"></body></html>\r\n" +
+		"--location-boundary\r\n" +
+		"Content-Type: image/png\r\n" +
+		"Content-Location: images/logo.png\r\n" +
+		"Content-Transfer-Encoding: base64\r\n\r\n" +
+		base64.StdEncoding.EncodeToString(picture) + "\r\n" +
+		"--location-boundary--\r\n"
+
+	imported := collectImportedEmailAssets(raw)
+	name := imported.ResourceNames["images/logo.png"]
+	if name == "" || len(imported.Attachments) != 1 {
+		t.Fatalf("Content-Location resource not collected: %+v", imported)
+	}
+	html, attachments, warnings := localizeImportedEmailHTMLWithFetcher(context.Background(),
+		`<html><body><img src="images/logo.png"></body></html>`,
+		imported, func(context.Context, string) (string, error) {
+			t.Fatal("Content-Location resource must not use the network")
+			return "", nil
+		})
+	if len(warnings) != 0 || len(attachments) != 1 || strings.Contains(html, "images/logo.png") || !strings.Contains(html, "cid:"+name) {
+		t.Fatalf("Content-Location resource was not localized: html=%s warnings=%v", html, warnings)
+	}
+}
+
 func TestEmailImportLeavesUnsafeExternalSchemesUnfetched(t *testing.T) {
 	calls := 0
 	html, attachments, warnings := localizeImportedEmailHTMLWithFetcher(context.Background(),

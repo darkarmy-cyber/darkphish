@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 
@@ -30,9 +31,11 @@ type cloneResponse struct {
 }
 
 type emailResponse struct {
-	Text    string `json:"text"`
-	HTML    string `json:"html"`
-	Subject string `json:"subject"`
+	Text        string              `json:"text"`
+	HTML        string              `json:"html"`
+	Subject     string              `json:"subject"`
+	Attachments []models.Attachment `json:"attachments"`
+	Warnings    []string            `json:"warnings,omitempty"`
 }
 
 // ImportGroup imports a CSV of group members
@@ -56,9 +59,11 @@ func (as *Server) ImportEmail(w http.ResponseWriter, r *http.Request) {
 		Content      string `json:"content"`
 		ConvertLinks bool   `json:"convert_links"`
 	}{}
-	err := json.NewDecoder(r.Body).Decode(&ir)
-	if err != nil {
-		JSONResponse(w, models.Response{Success: false, Message: "Error decoding JSON Request"}, http.StatusBadRequest)
+	r.Body = http.MaxBytesReader(w, r.Body, maxImportedEmailBytes)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&ir); err != nil || decoder.Decode(&struct{}{}) != io.EOF || len(ir.Content) == 0 || len(ir.Content) > maxImportedEmailBytes {
+		JSONResponse(w, models.Response{Success: false, Message: "Invalid or oversized raw email request"}, http.StatusBadRequest)
 		return
 	}
 	e, err := email.NewEmailFromReader(strings.NewReader(ir.Content))
@@ -66,9 +71,17 @@ func (as *Server) ImportEmail(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, models.Response{Success: false, Message: "Unable to parse email; provide the complete raw email source"}, http.StatusBadRequest)
 		return
 	}
+
+	// Import MIME resources and public external images as real template
+	// attachments. HTML references are rewritten to stable CID names, so the
+	// result works in an actually sent message instead of only in the editor.
+	assets := collectImportedEmailAssets(ir.Content)
+	localizedHTML, attachments, warnings := localizeImportedEmailHTML(r.Context(), string(e.HTML), assets)
+	e.HTML = []byte(localizedHTML)
+
 	// If the user wants to convert links to point to
 	// the landing page, let's make it happen by changing up
-	// e.HTML
+	// e.HTML after image resources have been localized.
 	if ir.ConvertLinks {
 		d, err := goquery.NewDocumentFromReader(bytes.NewReader(e.HTML))
 		if err != nil {
@@ -86,9 +99,11 @@ func (as *Server) ImportEmail(w http.ResponseWriter, r *http.Request) {
 		e.HTML = []byte(h)
 	}
 	er := emailResponse{
-		Subject: e.Subject,
-		Text:    string(e.Text),
-		HTML:    string(e.HTML),
+		Subject:     e.Subject,
+		Text:        string(e.Text),
+		HTML:        string(e.HTML),
+		Attachments: attachments,
+		Warnings:    warnings,
 	}
 	JSONResponse(w, er, http.StatusOK)
 }

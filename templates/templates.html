@@ -50,10 +50,12 @@
                     <input type="text" class="form-control" ng-model="template.name" placeholder="Template name" id="name"
                         autofocus />
                 </div>
-                <div class="form-group">
-                    <button type="button" class="btn btn-primary btn-import" data-toggle="modal" data-backdrop="static" data-target="#importEmailModal"><i
-                            class="fa fa-envelope"></i>
-                        Import Email</button>
+                <div class="form-group well">
+                    <button type="button" class="btn btn-primary btn-import" data-toggle="modal" data-backdrop="static" data-target="#importEmailModal">
+                        <i class="fa fa-envelope-o" aria-hidden="true"></i>
+                        <span>Import Email Source</span>
+                    </button>
+                    <p class="help-block" style="margin-bottom:0">Import a complete raw RFC 5322/MIME message. Inline and supported public HTTPS images are imported automatically as embedded email resources.</p>
                 </div>
                 <label class="control-label" for="envelope-sender">Envelope Sender: <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" title="This sender is shown to the user by most email clients. Defaults to the SMTP From as defined in the Sending Profile."></i></label>
                 <div class="form-group">
@@ -124,9 +126,11 @@
             </div>
             <div class="modal-body">
                 <div class="row" id="modal.flashes"></div>
-                <label class="control-label" for="email">Email Content:</label>
+                <label class="control-label" for="email_content">Raw Email Source:</label>
                 <div class="form-group">
-                    <textarea rows="10" id="email_content" class="darkphish-editor form-control" placeholder="Raw Email Source"></textarea>
+                    <textarea rows="12" id="email_content" class="darkphish-editor form-control" placeholder="Paste the complete raw message including MIME headers and boundaries"></textarea>
+                    <p class="help-block">DarkPhish imports supported inline and public HTTPS images during this operation. Remote image hosts may observe the server request; private/internal destinations and active image content remain blocked.</p>
+                    <p id="emailImportStatus" class="help-block" role="status" aria-live="polite"></p>
                 </div>
                 <div class="checkbox checkbox-primary">
                     <input id="convert_links_checkbox" type="checkbox" checked>
@@ -135,7 +139,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" data-dismiss="modal" class="btn btn-default">Cancel</button>
-                <button type="button" class="btn btn-primary btn-import" id="modalSubmit" onclick="importEmail()">Import</button>
+                <button type="button" class="btn btn-primary btn-import" id="importEmailSubmit" onclick="importEmail()"><i class="fa fa-download" aria-hidden="true"></i> Import Email</button>
             </div>
         </div>
     </div>

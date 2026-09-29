@@ -139,3 +139,37 @@ test('image preview is wired to the template editor without relaxing admin CSP',
   assert.match(read('middleware/middleware.go'), /img-src 'self' data:;/)
   assert.doesNotMatch(read('middleware/middleware.go'), /img-src[^;]*https:/)
 })
+
+
+test('automatic email import coexists with explicit external image consent', () => {
+  const readFeature = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
+  const html = readFeature('templates/templates.html')
+  const api = readFeature('static/js/src/app/darkphish.js')
+  const source = readFeature('static/js/src/app/templates.js')
+  const dist = readFeature('static/js/dist/app/templates.min.js')
+  const apiDist = readFeature('static/js/dist/app/darkphish.min.js')
+
+  assert.match(html, /id="importEmailSubmit"/)
+  assert.match(html, /id="loadTemplateImages"/)
+  assert.match(html, /supported public HTTPS images are imported automatically/)
+  assert.match(html, /id="emailImportStatus"[^>]*role="status"/)
+  assert.match(api, /query\("\/import\/email", "POST", req, true\)/)
+  assert.match(api, /query\("\/import\/email\/images", "POST", req, true\)/)
+  assert.match(apiDist, /import\/email\/images/)
+
+  for (const js of [source, dist]) {
+    assert.match(js, /previewInlineAssetRefs/)
+    assert.match(js, /restoreInlineAssetRefs/)
+    assert.match(js, /[A-Za-z_$][\w$]*\.attachments/)
+    assert.match(js, /Import completed with warnings/)
+    assert.match(js, /templateImagePreview\.reset/)
+  }
+})
+
+test('imported CID previews are restored before template persistence', () => {
+  const source = readFileSync(new URL('../static/js/src/app/templates.js', import.meta.url), 'utf8')
+  assert.match(source, /template\.html = restoreInlineAssetRefs\(CKEDITOR\.instances\["html_editor"\]\.getData\(\)\)/)
+  assert.match(source, /"cid:" \+ file\.name/)
+  assert.match(source, /"data:" \+ type \+ ";base64," \+ file\.content/)
+  assert.match(source, /attachmentsTable\.clear\(\)\.draw\(\)/)
+})

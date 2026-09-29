@@ -65,7 +65,6 @@ scripts = function () {
             app_directory + 'update.js',
             app_directory + 'licensing.js',
             app_directory + 'templates.js',
-            app_directory + 'template_images.js',
             app_directory + 'training_images.js',
             app_directory + 'darkphish.js',
             app_directory + 'users.js',

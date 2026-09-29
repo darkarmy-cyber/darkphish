@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"image"
 	_ "image/gif"
@@ -13,12 +15,23 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/darkarmy-cyber/darkphish/models"
 )
 
+const maxPreviewImages = 12
 const maxPreviewImageBytes = 1 << 20
 const maxPreviewPixels = 1_000_000
 
 var errImagePreview = errors.New("image unavailable, unsupported, too large, or destination blocked")
+var imagePreviewSlots = make(chan struct{}, 2)
+
+type imagePreviewResult struct {
+	URL   string `json:"url"`
+	Data  string `json:"data,omitempty"`
+	Error string `json:"error,omitempty"`
+}
 
 func validImagePreviewURL(raw string) bool {
 	_, err := parseImagePreviewURL(raw)
@@ -86,4 +99,61 @@ func readImagePreview(response *http.Response) (string, error) {
 		return "", errImagePreview
 	}
 	return rasterPreview(content)
+}
+
+// PreviewEmailImages is behind API authentication, CSRF, PAT scope, view-only
+// restrictions and the sensitive-operation limiter. No network access on GET.
+func (as *Server) PreviewEmailImages(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		JSONResponse(w, models.Response{Success: false, Message: "Method not allowed"}, http.StatusMethodNotAllowed)
+		return
+	}
+	var input struct {
+		URLs []string `json:"urls"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil || len(input.URLs) == 0 || len(input.URLs) > maxPreviewImages {
+		JSONResponse(w, models.Response{Success: false, Message: "Provide between 1 and 12 image URLs"}, http.StatusBadRequest)
+		return
+	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		JSONResponse(w, models.Response{Success: false, Message: "Invalid preview request"}, http.StatusBadRequest)
+		return
+	}
+	for _, raw := range input.URLs {
+		if !validImagePreviewURL(raw) {
+			JSONResponse(w, models.Response{Success: false, Message: "Image previews require HTTPS URLs on port 443 without credentials"}, http.StatusBadRequest)
+			return
+		}
+	}
+	select {
+	case imagePreviewSlots <- struct{}{}:
+		defer func() { <-imagePreviewSlots }()
+	default:
+		JSONResponse(w, models.Response{Success: false, Message: "Image preview is busy; try again later"}, http.StatusTooManyRequests)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	results := make([]imagePreviewResult, 0, len(input.URLs))
+	seen := make(map[string]bool)
+	for _, raw := range input.URLs {
+		if seen[raw] {
+			continue
+		}
+		seen[raw] = true
+		result := imagePreviewResult{URL: raw}
+		data, err := fetchImagePreview(ctx, raw)
+		if err != nil {
+			result.Error = errImagePreview.Error()
+		} else {
+			result.Data = data
+		}
+		results = append(results, result)
+	}
+	JSONResponse(w, results, http.StatusOK)
 }

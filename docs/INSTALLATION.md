@@ -1,18 +1,18 @@
 # Linux installer
 
 DarkPhish includes a production-oriented installer for fresh native Linux deployments.
-For production, install from an immutable published release tag rather than the moving
-`main` branch. Starting with v0.10.0:
+For production, choose a tag from the [published releases](https://github.com/darkarmy-cyber/darkphish/releases) and install that immutable source snapshot:
 
 ```sh
-git clone --branch v0.10.0 --depth 1 https://github.com/darkarmy-cyber/darkphish.git
+git clone https://github.com/darkarmy-cyber/darkphish.git
 cd darkphish
+git switch --detach vX.Y.Z
 sudo ./install.sh
 ```
 
-For later releases, replace `v0.10.0` with the release tag you intend to deploy.
-An untagged checkout can still be built deliberately, but DarkPhish marks it as a
-development build and verified in-product updates remain unavailable.
+Replace `vX.Y.Z` with the tag of the release you want to deploy. If you skip
+that step, `main` installs as a development build and verified in-product updates
+remain unavailable.
 
 The installer currently supports amd64 and arm64 hosts using systemd 245 or newer and
 the apt, dnf, or yum package families. systemd 245 is the minimum because the hardened

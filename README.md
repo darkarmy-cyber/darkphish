@@ -2,7 +2,6 @@
   <img src="docs/assets/darkphish_banner.svg" alt="DarkPhish fish logo and wordmark" width="600">
   <p><strong>Self-hosted phishing simulations for authorized security training and human-risk testing.</strong></p>
   <p>
-    <a href="VERSION"><img src="https://img.shields.io/badge/development-v0.22.0-0f766e" alt="Development version v0.22.0"></a>
     <a href="https://github.com/darkarmy-cyber/darkphish/releases/latest"><img src="https://img.shields.io/github/v/release/darkarmy-cyber/darkphish?label=latest%20release" alt="Latest release"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
     <a href="https://github.com/darkarmy-cyber/darkphish/actions/workflows/ci.yml"><img src="https://github.com/darkarmy-cyber/darkphish/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
@@ -10,6 +9,7 @@
   </p>
   <p>
     <a href="docs/INSTALLATION.md">Installation</a> ·
+    <a href="VERSION">Development version</a> ·
     <a href="#documentation">Documentation</a> ·
     <a href="CHANGELOG.md">Changelog</a> ·
     <a href="https://github.com/darkarmy-cyber/darkphish/releases">Releases</a> ·

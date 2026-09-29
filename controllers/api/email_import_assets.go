@@ -41,6 +41,7 @@ type emailAssetLocalizer struct {
 	attachments []models.Attachment
 	cidNames    map[string]string
 	cached      map[string]string
+	attempted   map[string]bool
 	usedNames   map[string]bool
 	totalBytes  int
 	warnings    map[string]bool
@@ -245,6 +246,7 @@ func newEmailAssetLocalizer(ctx context.Context, imported importedEmailAssets, f
 		attachments: append([]models.Attachment(nil), imported.Attachments...),
 		cidNames:    imported.CIDNames,
 		cached:      map[string]string{},
+		attempted:   map[string]bool{},
 		usedNames:   used,
 		totalBytes:  total,
 		warnings:    map[string]bool{},
@@ -324,6 +326,10 @@ func (l *emailAssetLocalizer) localize(raw string) string {
 	if name := l.cached[value]; name != "" {
 		return "cid:" + name
 	}
+	if l.attempted[value] {
+		return raw
+	}
+	l.attempted[value] = true
 	preview, err := l.fetchImage(l.ctx, value)
 	if err != nil {
 		l.warn("Some external email images were unavailable, private, unsupported, or oversized.")
@@ -422,6 +428,9 @@ func rasterPreviewDataURI(value string) (string, error) {
 	}
 	header, payload := value[:comma], value[comma+1:]
 	if !strings.HasSuffix(strings.ToLower(header), ";base64") {
+		return "", errImagePreview
+	}
+	if len(payload) > base64.StdEncoding.EncodedLen(maxPreviewImageBytes)+4 {
 		return "", errImagePreview
 	}
 	content, err := base64.StdEncoding.DecodeString(payload)

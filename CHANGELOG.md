@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.22.0 - 2026-09-29
+
+### Added
+
+- Add route-addressable email-template and landing-page editors with unsaved-change navigation protection while preserving the classic editor UI and existing APIs.
+- Replace manual email-image preview loading with automatic, bounded import of inline and public external email images, and refresh the Import Email workflow.
+
+### Changed
+
+- Restructure the dashboard into operational overview, engagement trend and aggregate outcome sections with text-only KPI summaries derived from existing campaign metrics.
+
+### Fixed
+
+- Enforce pre-release CI and CodeQL chronology for audited recovery failures and detect private draft releases across the complete authenticated release inventory.
+- Recover the exact reviewed v0.21.1 generated release merge through an immutable one-time provenance exception without weakening pre-merge attestation requirements for future releases.
+
 ## 0.21.1 - 2026-09-29
 
 ### Fixed

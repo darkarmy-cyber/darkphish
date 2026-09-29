@@ -87,3 +87,61 @@ test("v0.21.1 repair paginates authenticated releases and rejects a later privat
   }
   await assert.rejects(verifyReleaseRepair(repo, f.pr, f.request), /absent tag and release state/)
 })
+
+function followupFixture() {
+  const repairBase = "69355444d01c7ef29709ec398fdbacfc4d9b4753"
+  const files = [
+    ".github/scripts/release-recover.mjs",
+    ".github/scripts/release-recover.test.mjs",
+    "changes/harden-v0-21-1-recovery.md",
+    "scripts/changelog-repair-policy.mjs",
+    "scripts/changelog-repair-policy.test.mjs",
+    "scripts/release-repair-policy-0211.test.mjs",
+    "scripts/release-repair-policy.mjs",
+  ].map(filename => ({ filename, status: filename.startsWith("changes/") ? "added" : "modified" }))
+  const pr = {
+    number: 135, state: "open", draft: false, author_association: "OWNER",
+    head: { sha: head, ref: "fix/v0.21.1-recovery-hardening", repo: { full_name: repo } },
+    base: { ref: "main", sha: repairBase },
+  }
+  const request = async (path, options = {}) => {
+    if (path.endsWith("/files?per_page=100&page=1")) return structuredClone(files)
+    if (path.includes("/contents/VERSION?")) return { type: "file", encoding: "base64", content: Buffer.from("0.21.1\n").toString("base64") }
+    if (path.endsWith("/git/ref/tags/v0.21.1")) {
+      assert.equal(options.missing, true)
+      return { object: { type: "commit", sha: "51f3c3b56df05d8a6fd165d227cb78d9e46ae821" } }
+    }
+    if (path.includes("/releases?per_page=100&page=")) return []
+    throw new Error(`Unexpected request ${path}`)
+  }
+  return { pr, files, request, verify: () => verifyReleaseRepair(repo, pr, request) }
+}
+
+test("PR135 alone may harden recovery with the pinned tag and absent release", async () => {
+  await followupFixture().verify()
+})
+
+test("v0.21.1 hardening rejects identity, scope, tag and release drift", async () => {
+  const changes = [
+    f => { f.pr.number = 136 },
+    f => { f.pr.base.sha = "b".repeat(40) },
+    f => { f.pr.head.ref = "fix/other" },
+    f => { f.files.pop() },
+    f => { f.files[0].status = "added" },
+  ]
+  for (const change of changes) {
+    const f = followupFixture(); change(f)
+    await assert.rejects(verifyReleaseRepair(repo, f.pr, f.request))
+  }
+
+  for (const target of ["tag-type", "tag-sha", "release"]) {
+    const f = followupFixture(), original = f.request
+    f.request = async (path, options) => {
+      if (target === "tag-type" && path.endsWith("/git/ref/tags/v0.21.1")) return { object: { type: "tag", sha: "51f3c3b56df05d8a6fd165d227cb78d9e46ae821" } }
+      if (target === "tag-sha" && path.endsWith("/git/ref/tags/v0.21.1")) return { object: { type: "commit", sha: "b".repeat(40) } }
+      if (target === "release" && path.includes("/releases?per_page=100&page=")) return [{ tag_name: "v0.21.1", draft: true }]
+      return original(path, options)
+    }
+    await assert.rejects(verifyReleaseRepair(repo, f.pr, f.request), /pinned tag and absent release state/)
+  }
+})

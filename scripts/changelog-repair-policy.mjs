@@ -48,6 +48,8 @@ const files129 = [
   "scripts/changelog-repair-policy.test.mjs",
   "scripts/release-maintainer-review-0211.test.mjs",
   "scripts/release-maintainer-review.mjs",
+  "scripts/release-repair-policy-0211.test.mjs",
+  "scripts/release-repair-policy.mjs",
 ].sort()
 const repairs = [
   { number: 117, current: "0.20.1", target: "0.20.2", base, branch, files: files117, title: "fix(release): recover v0.20.1 review provenance (#117)" },
@@ -55,7 +57,7 @@ const repairs = [
     title: "fix(release): correct v0.20.1 run manifest (#118)" },
   { number: 120, current: "0.20.2", target: "0.20.3", base: "4be0bc0d1a6a2f158da5aaed996dcd87bab3bd80", branch: "fix/recover-v0.20.2-review-provenance", files: files120,
     title: "fix(release): recover v0.20.2 review provenance (#120)" },
-  { number: 129, current: "0.21.1", target: "0.21.2", base: "51f3c3b56df05d8a6fd165d227cb78d9e46ae821", branch: "fix/v0.21.1-review-recovery", files: files129,
+  { number: 129, current: "0.21.1", target: "0.22.0", base: "d58b43260b1b94a8a7ad6897636f9d0fb9ee06d4", branch: "fix/v0.21.1-review-recovery", files: files129,
     title: "fix(release): audit v0.21.1 review recovery (#129)" },
 ]
 

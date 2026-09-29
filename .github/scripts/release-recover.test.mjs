@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
-import { validDraftPublicationState } from "./release-recover.mjs"
+import { validDraftPublicationState } from "../../scripts/release-lib.mjs"
 
 const script = readFileSync(new URL("./release-recover.mjs", import.meta.url), "utf8")
 const workflow = readFileSync(new URL("../workflows/release-recover.yml", import.meta.url), "utf8")

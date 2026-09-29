@@ -19,6 +19,7 @@ const maxPreviewImageBytes = 1 << 20
 const maxPreviewPixels = 1_000_000
 
 var errImagePreview = errors.New("image unavailable, unsupported, too large, or destination blocked")
+
 func validImagePreviewURL(raw string) bool {
 	_, err := parseImagePreviewURL(raw)
 	return err == nil

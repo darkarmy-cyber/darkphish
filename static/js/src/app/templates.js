@@ -134,6 +134,7 @@ function save(idx) {
 }
 
 function dismiss() {
+    templateImagePreview.reset()
     inlineAssetPreviewRefs = []
     $("#modal\\.flashes").empty()
     $("#attachmentsTable").dataTable().DataTable().clear().draw()
@@ -233,6 +234,7 @@ function edit(idx) {
         this.value = null
     })
     $("#html_editor").ckeditor()
+    templateImagePreview.reset(CKEDITOR.instances["html_editor"])
     inlineAssetPreviewRefs = []
     setupAutocomplete(CKEDITOR.instances["html_editor"])
     $("#attachmentsTable").show()
@@ -299,6 +301,7 @@ function copy(idx) {
         this.value = null
     })
     $("#html_editor").ckeditor()
+    templateImagePreview.reset(CKEDITOR.instances["html_editor"])
     inlineAssetPreviewRefs = []
     $("#attachmentsTable").show()
     attachmentsTable = $('#attachmentsTable').DataTable({
@@ -363,6 +366,7 @@ function importEmail() {
             convert_links: convert_links
         })
         .done(function (data) {
+            templateImagePreview.reset(CKEDITOR.instances["html_editor"])
             attachmentsTable.clear().draw()
             addImportedAttachments(data.attachments || [])
             rebuildInlineAssetPreviewRefs(attachmentObjectsFromTable())

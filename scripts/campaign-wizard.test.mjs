@@ -29,6 +29,7 @@ test("campaign review renders operator data as text rather than HTML", () => {
   const source = read("static/js/src/app/campaign_wizard.js")
   for (const id of [
     "reviewName","reviewTemplate","reviewPage","reviewUrl","reviewCredentialMode",
+    "reviewCredentialRetention","reviewCredentialLength","reviewCredentialCharacters","reviewCredentialPatterns",
     "reviewProfile","reviewGroups","reviewLaunchDate","reviewSendByDate"
   ]) {
     assert.match(source, new RegExp("\\$\\(\"#" + id + "\"\\)\\.text\\("))
@@ -44,4 +45,15 @@ test("wizard validates required selections before the final review", () => {
   assert.match(source, /Select a sending profile before continuing/)
   assert.match(source, /Select at least one target group before continuing/)
   assert.match(source, /Credential length policy is invalid/)
+})
+
+
+test("wizard tolerates slow Select2 initialization and ships in the runtime image", () => {
+  const source = read("static/js/src/app/campaign_wizard.js")
+  assert.match(source, /hasClass\("select2-hidden-accessible"\)/)
+  assert.match(source, /function select2Data/)
+  const html = read("templates/campaigns.html")
+  assert.match(html, /for="launch_date">Launch Date/)
+  const docker = read("Dockerfile")
+  assert.match(docker, /campaign_wizard\.js \.\/static\/js\/src\/app\/campaign_wizard\.js/)
 })

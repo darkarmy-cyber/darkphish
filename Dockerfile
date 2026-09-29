@@ -37,6 +37,7 @@ COPY --from=backend --chown=65532:65532 /src/static/db ./static/db
 COPY --from=backend --chown=65532:65532 /src/static/endpoint ./static/endpoint
 COPY --from=backend --chown=65532:65532 /src/static/js/src/vendor/ckeditor ./static/js/src/vendor/ckeditor
 COPY --from=backend --chown=65532:65532 /src/static/js/src/app/campaign_wizard.js ./static/js/src/app/campaign_wizard.js
+COPY --from=backend --chown=65532:65532 /src/static/js/src/app/theme.js ./static/js/src/app/theme.js
 COPY --from=backend --chown=65532:65532 /src/static/js/src/app/dashboard_overview.js ./static/js/src/app/dashboard_overview.js
 COPY --from=frontend --chown=65532:65532 /src/static/js/dist ./static/js/dist
 COPY --from=frontend --chown=65532:65532 /src/static/css/dist ./static/css/dist

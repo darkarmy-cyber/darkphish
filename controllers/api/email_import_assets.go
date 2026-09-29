@@ -32,23 +32,23 @@ const (
 var emailCSSURL = regexp.MustCompile(`(?i)url\(\s*['"]?([^'")]+)['"]?\s*\)`)
 
 type importedEmailAssets struct {
-	Attachments  []models.Attachment
-	CIDNames     map[string]string
+	Attachments   []models.Attachment
+	CIDNames      map[string]string
 	ResourceNames map[string]string
-	Warnings     []string
+	Warnings      []string
 }
 
 type emailAssetLocalizer struct {
-	ctx         context.Context
-	attachments []models.Attachment
-	cidNames    map[string]string
+	ctx           context.Context
+	attachments   []models.Attachment
+	cidNames      map[string]string
 	resourceNames map[string]string
-	cached      map[string]string
-	attempted   map[string]bool
-	usedNames   map[string]bool
-	totalBytes  int
-	warnings    map[string]bool
-	fetchImage  func(context.Context, string) (string, error)
+	cached        map[string]string
+	attempted     map[string]bool
+	usedNames     map[string]bool
+	totalBytes    int
+	warnings      map[string]bool
+	fetchImage    func(context.Context, string) (string, error)
 }
 
 func normalizeContentID(value string) string {

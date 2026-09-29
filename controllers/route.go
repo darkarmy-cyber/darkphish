@@ -185,8 +185,12 @@ func (as *AdminServer) registerRoutes() {
 	router.HandleFunc("/reset_password", mid.Use(as.ResetPassword, mid.RequireLogin))
 	router.HandleFunc("/campaigns", mid.Use(as.Campaigns, mid.RequireLogin))
 	router.HandleFunc("/campaigns/{id:[0-9]+}", mid.Use(as.CampaignID, mid.RequireLogin))
+	router.HandleFunc("/templates/new", mid.Use(as.TemplateEditor, mid.RequireLogin))
+	router.HandleFunc("/templates/{id:[0-9]+}/{mode:edit|copy}", mid.Use(as.TemplateEditor, mid.RequireLogin))
 	router.HandleFunc("/templates", mid.Use(as.Templates, mid.RequireLogin))
 	router.HandleFunc("/groups", mid.Use(as.Groups, mid.RequireLogin))
+	router.HandleFunc("/landing_pages/new", mid.Use(as.LandingPageEditor, mid.RequireLogin))
+	router.HandleFunc("/landing_pages/{id:[0-9]+}/{mode:edit|copy}", mid.Use(as.LandingPageEditor, mid.RequireLogin))
 	router.HandleFunc("/landing_pages", mid.Use(as.LandingPages, mid.RequireLogin))
 	router.HandleFunc("/sending_profiles", mid.Use(as.SendingProfiles, mid.RequireLogin))
 	router.HandleFunc("/settings", mid.Use(as.Settings, mid.RequireLogin))
@@ -322,6 +326,26 @@ func (as *AdminServer) Templates(w http.ResponseWriter, r *http.Request) {
 	getTemplate(w, "templates").ExecuteTemplate(w, "base", params)
 }
 
+// TemplateEditor renders a route-addressable email-template editor while
+// preserving the existing template editor and API behavior. Existing records
+// are resolved by both ID and owner before the editor is rendered.
+func (as *AdminServer) TemplateEditor(w http.ResponseWriter, r *http.Request) {
+	params := newTemplateParams(r)
+	params.Title = "Email Templates"
+	if rawID := mux.Vars(r)["id"]; rawID != "" {
+		id, err := strconv.ParseInt(rawID, 10, 64)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		if _, err := models.GetTemplate(id, params.User.Id); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+	}
+	getTemplate(w, "templates").ExecuteTemplate(w, "base", params)
+}
+
 // Groups handles the default path and template execution
 func (as *AdminServer) Groups(w http.ResponseWriter, r *http.Request) {
 	params := newTemplateParams(r)
@@ -333,6 +357,26 @@ func (as *AdminServer) Groups(w http.ResponseWriter, r *http.Request) {
 func (as *AdminServer) LandingPages(w http.ResponseWriter, r *http.Request) {
 	params := newTemplateParams(r)
 	params.Title = "Landing Pages"
+	getTemplate(w, "landing_pages").ExecuteTemplate(w, "base", params)
+}
+
+// LandingPageEditor renders a route-addressable landing-page editor while
+// preserving the existing editor and API behavior. Existing records are
+// resolved by both ID and owner before the editor is rendered.
+func (as *AdminServer) LandingPageEditor(w http.ResponseWriter, r *http.Request) {
+	params := newTemplateParams(r)
+	params.Title = "Landing Pages"
+	if rawID := mux.Vars(r)["id"]; rawID != "" {
+		id, err := strconv.ParseInt(rawID, 10, 64)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		if _, err := models.GetPage(id, params.User.Id); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+	}
 	getTemplate(w, "landing_pages").ExecuteTemplate(w, "base", params)
 }
 
@@ -462,6 +506,20 @@ func administrativeReturnPath(raw string) string {
 		id, err := strconv.ParseUint(strings.TrimPrefix(parsed.EscapedPath(), "/campaigns/"), 10, 64)
 		if err == nil {
 			return "/campaigns/" + strconv.FormatUint(id, 10)
+		}
+	}
+	for _, base := range []string{"/templates", "/landing_pages"} {
+		if parsed.EscapedPath() == base+"/new" {
+			return base + "/new"
+		}
+		if strings.HasPrefix(parsed.EscapedPath(), base+"/") {
+			parts := strings.Split(strings.TrimPrefix(parsed.EscapedPath(), base+"/"), "/")
+			if len(parts) == 2 && (parts[1] == "edit" || parts[1] == "copy") {
+				id, err := strconv.ParseUint(parts[0], 10, 64)
+				if err == nil {
+					return base + "/" + strconv.FormatUint(id, 10) + "/" + parts[1]
+				}
+			}
 		}
 	}
 	return "/"

@@ -43,6 +43,18 @@ Email and landing-page editors now use a wide workspace surface. They intentiona
 
 The full proposal is broader than this foundation. Dedicated editor routes with unsaved-change protection, a multi-step campaign setup/review flow, a restructured analytics dashboard, and a separately designed dark theme remain follow-up work. Do not represent this PR as completion of those stages. Existing campaign confirmations and license gates remain in force; this work neither introduces a draft persistence model nor bypasses sending restrictions.
 
+### v0.22 execution plan
+
+DarkPhish 0.22 is being delivered in bounded workstreams so UI changes remain reviewable and security regressions can be isolated:
+
+1. Email Template Import 2.0 — merged in PR #125; automatic bounded image localization while preserving explicit external-image consent and import security limits.
+2. Dedicated editor routes with unsaved-change protection — tracked in #130 and implemented first after the import workstream.
+3. Multi-step campaign setup and final review — tracked in #131.
+4. Restructured analytics dashboard — tracked in #132.
+5. Separately designed dark theme — tracked in #133 and intentionally sequenced after the workflow changes stabilize.
+
+Each workstream must preserve existing authorization, licensing, audit, release-provenance and safe-rendering boundaries and must carry focused regression coverage before merge.
+
 ## Verification
 
 - `node --test scripts/enterprise-ui.test.mjs scripts/branding.test.mjs` checks bundle wiring, scopes, authentication contracts, original brand assets, editor integration and text contrast.

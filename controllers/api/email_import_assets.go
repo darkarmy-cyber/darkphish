@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -329,6 +330,10 @@ func (l *emailAssetLocalizer) localize(raw string) string {
 	if l.attempted[value] {
 		return raw
 	}
+	if len(l.attempted) >= maxImportedEmailAssets || len(l.attachments) >= maxImportedEmailAssets || l.totalBytes >= maxImportedEmailAssetTotal {
+		l.warn("Some email images were skipped because the safe import limit was reached.")
+		return raw
+	}
 	l.attempted[value] = true
 	preview, err := l.fetchImage(l.ctx, value)
 	if err != nil {
@@ -415,9 +420,12 @@ func localizeImportedEmailHTMLWithFetcher(ctx context.Context, html string, impo
 		localizer.warn("Email HTML image references could not be rewritten.")
 	}
 	warnings := append([]string(nil), imported.Warnings...)
+	localizedWarnings := make([]string, 0, len(localizer.warnings))
 	for warning := range localizer.warnings {
-		warnings = append(warnings, warning)
+		localizedWarnings = append(localizedWarnings, warning)
 	}
+	sort.Strings(localizedWarnings)
+	warnings = append(warnings, localizedWarnings...)
 	return output, localizer.attachments, warnings
 }
 

@@ -1,8 +1,6 @@
 (function () {
     "use strict";
 
-    var renderedFor = null;
-
     function rate(count, total) {
         if (!total) return "0%";
         return Math.round((count / total) * 100) + "%";
@@ -29,12 +27,7 @@
     }
 
     function render() {
-        if (!Array.isArray(window.campaigns) || !window.campaigns.length) return;
-        var signature = window.campaigns.map(function (campaign) {
-            return [campaign.id, campaign.modified_date || campaign.created_date, campaign.status].join(":");
-        }).join("|");
-        if (signature === renderedFor) return;
-        renderedFor = signature;
+        if (!Array.isArray(window.campaigns)) return;
 
         var totals = aggregate(window.campaigns);
         $("#kpiCampaigns").text(String(totals.campaigns));
@@ -46,6 +39,7 @@
     }
 
     $(document).ajaxComplete(render);
+    $(document).on("dashboard:updated", render);
     $(document).ready(function () {
         render();
         window.setTimeout(render, 250);

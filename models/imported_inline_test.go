@@ -6,10 +6,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/darkarmy-cyber/darkphish/config"
 	"github.com/gophish/gomail"
 )
 
 func TestImportedInlineAttachmentIsSentAsCIDResource(t *testing.T) {
+	previousConfig := conf
+	if conf == nil {
+		conf = &config.Config{}
+	}
+	defer func() { conf = previousConfig }()
+
 	const name = "inline-test-image.png"
 	req := EmailRequest{
 		Template: Template{

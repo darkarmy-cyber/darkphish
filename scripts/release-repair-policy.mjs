@@ -66,6 +66,16 @@ const release0211Added = new Set([
   "changes/recover-v0-21-1-review-provenance.md",
 ])
 
+async function hasReleaseWithTag(repo, tag, request) {
+  for (let page = 1; page <= 1000; page++) {
+    const releases = await request(`repos/${repo}/releases?per_page=100&page=${page}`)
+    if (!Array.isArray(releases)) throw new Error("Release inventory is malformed")
+    if (releases.some((release) => release?.tag_name === tag)) return true
+    if (releases.length < 100) return false
+  }
+  throw new Error("Release inventory pagination exceeded its safe bound")
+}
+
 export async function verifyReleaseRepair(repo, pr, request) {
   const resume = pr.number === 58, timestamp = pr.number === 59, release0201 = pr.number === 117, release0201Followup = pr.number === 118, release0202 = pr.number === 120, release0211 = pr.number === 129
   const expectedBase = release0211 ? "d58b43260b1b94a8a7ad6897636f9d0fb9ee06d4" : release0202 ? "4be0bc0d1a6a2f158da5aaed996dcd87bab3bd80" : release0201Followup ? "3cc011581698b73c76512f155f7fd78399345efd" : release0201 ? "cafdcc08b9d968931cb1446891055e3256d0caec" : timestamp ? "697fe42eb20f3f5197be9545ed5b3bf835b730c0" : resume ? "88377d6951ede7352acb257777250bdfecd2052b" : base
@@ -93,8 +103,7 @@ export async function verifyReleaseRepair(repo, pr, request) {
   if ((await read("VERSION")).trim() !== (release0211 ? "0.21.1" : release0202 ? "0.20.2" : release0201 || release0201Followup ? "0.20.1" : "0.7.1")) throw new Error("Release repair VERSION changed")
   if (release0211) {
     const tag = await request(`repos/${repo}/git/ref/tags/v0.21.1`, { missing: true })
-    const release = await request(`repos/${repo}/releases/tags/v0.21.1`, { missing: true })
-    if (tag !== null || release !== null) throw new Error("v0.21.1 recovery repair requires the reviewed absent tag and release state")
+    if (tag !== null || await hasReleaseWithTag(repo, "v0.21.1", request)) throw new Error("v0.21.1 recovery repair requires the reviewed absent tag and release state")
     return
   }
   if (release0202) {

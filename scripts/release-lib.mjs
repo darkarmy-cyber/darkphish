@@ -51,7 +51,7 @@ export const githubPublishedAt = (value) => {
   return instant.getUTCFullYear() === year && instant.getUTCMonth() === month - 1 && instant.getUTCDate() === day && instant.getUTCHours() === hour && instant.getUTCMinutes() === minute && instant.getUTCSeconds() === second
 }
 const githubTimestampOrder = (value) => {
-  const match = value.match(/^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})(?:\\.(\\d{1,9}))?Z$/)
+  const match = value.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/)
   return `${match[1]}.${(match[2] || "").padEnd(9, "0")}Z`
 }
 export function validDraftPublicationState(release, now = Date.now()) {

@@ -3,20 +3,23 @@ package controllers
 import "testing"
 
 func TestAdministrativeReturnPathAllowsEditorRoutes(t *testing.T) {
-	tests := map[string]string{
-		"/templates/new":             "/templates/new",
-		"/templates/17/edit":         "/templates/17/edit",
-		"/templates/17/copy":         "/templates/17/copy",
-		"/landing_pages/new":         "/landing_pages/new",
-		"/landing_pages/23/edit":     "/landing_pages/23/edit",
-		"/landing_pages/23/copy":     "/landing_pages/23/copy",
-		"/templates/not-a-number/edit": "/",
-		"/templates/17/delete":       "/",
-		"/landing_pages/23/delete":   "/",
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "/templates/new", want: "/templates/new"},
+		{input: "/templates/17/edit", want: "/templates/17/edit"},
+		{input: "/templates/17/copy", want: "/templates/17/copy"},
+		{input: "/landing_pages/new", want: "/landing_pages/new"},
+		{input: "/landing_pages/23/edit", want: "/landing_pages/23/edit"},
+		{input: "/landing_pages/23/copy", want: "/landing_pages/23/copy"},
+		{input: "/templates/not-a-number/edit", want: "/"},
+		{input: "/templates/17/delete", want: "/"},
+		{input: "/landing_pages/23/delete", want: "/"},
 	}
-	for input, want := range tests {
-		if got := administrativeReturnPath(input); got != want {
-			t.Errorf("administrativeReturnPath(%q) = %q, want %q", input, got, want)
+	for _, tc := range tests {
+		if got := administrativeReturnPath(tc.input); got != tc.want {
+			t.Errorf("administrativeReturnPath(%q) = %q, want %q", tc.input, got, tc.want)
 		}
 	}
 }

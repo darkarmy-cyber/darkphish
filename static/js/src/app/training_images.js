@@ -1,11 +1,11 @@
-// Only inert training imports use this helper. No image fetch until consent.
+// Only inert training imports use this helper. Safe public raster images are fetched automatically after import.
 var trainingImagePreview = (function () {
     var generation = 0, pending = false, attempted = Object.create(null)
     function reset() {
         generation++
         pending = false
         attempted = Object.create(null)
-        $("#trainingImageStatus").text("Images have not been requested.")
+        $("#trainingImageStatus").text("Safe public images will be loaded automatically after import.")
     }
     function load() {
         if (!trainingStatic || pending) return
@@ -27,7 +27,6 @@ var trainingImagePreview = (function () {
             urls = urls.slice(0, 12)
             if (!urls.length) { $("#trainingImageStatus").text("No additional supported images to load. Inline SVG and dynamic images are not supported."); return }
             pending = true
-            $("#loadTrainingImages").prop("disabled", true)
             $("#trainingImageStatus").text("Verifying images…")
             api.preview_email_images({urls: urls}).done(function (results) {
                 if (current !== generation || !trainingStatic) return
@@ -55,11 +54,11 @@ var trainingImagePreview = (function () {
                     })
                 })
                 editor.fire("change")
-                $("#trainingImageStatus").text(loaded + " of " + urls.length + " images embedded. Unavailable, private, oversized or unsupported images remain blocked." + (overBudget ? " Page size budget reached; use fewer or smaller images before loading more." : "") + (remaining ? " Click again for remaining images." : ""))
+                $("#trainingImageStatus").text(loaded + " of " + urls.length + " public raster images embedded." + (overBudget ? " Page size budget reached; some images were skipped." : "") + (remaining ? " Additional images remain after the automatic batch." : ""))
             }).fail(function () {
                 if (current === generation) $("#trainingImageStatus").text("Images could not be verified. Check your session and try again.")
             }).always(function () {
-                if (current === generation) { pending = false; $("#loadTrainingImages").prop("disabled", !trainingStatic) }
+                if (current === generation) { pending = false }
             })
         }
         if (editor.mode !== "wysiwyg") editor.setMode("wysiwyg", request)

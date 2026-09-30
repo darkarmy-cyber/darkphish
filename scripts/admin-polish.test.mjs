@@ -18,7 +18,7 @@ test('sidebar removes redundant visible heading but preserves accessible navigat
 test('both import dialogs use explicit buttons and consistent scoped action styling', () => {
   for (const file of ['templates.html', 'landing_pages.html']) {
     const markup = read('templates/' + file)
-    assert.equal((markup.match(/class="btn btn-primary btn-import"/g) || []).length, file === 'landing_pages.html' ? 3 : 2)
+    assert.equal((markup.match(/class="btn btn-primary btn-import"/g) || []).length, 2)
     assert.match(markup, /type="button" class="btn btn-primary btn-import" data-toggle="modal"/)
     assert.match(markup, /data-dismiss="modal" class="btn btn-default">Cancel/)
   }

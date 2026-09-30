@@ -1,0 +1,103 @@
+name: Normalize v0.22.1 staging drafts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/release-0221-normalize.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: protected-main-mutation
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.19.0
+
+      - name: Remove exact duplicate v0.22.1 staging drafts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SOURCE: 7d33ed03306772e215ecd2e39227649d9f8ff1a5
+          TAG: v0.22.1
+          VERSION: 0.22.1
+          DRAFT_IDS: "399548475 399822116"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git merge-base --is-ancestor "$SOURCE" "$GITHUB_SHA"
+          tag_sha="$(gh api "repos/$REPO/git/ref/tags/$TAG" --jq '.object.sha')"
+          test "$tag_sha" = "$SOURCE"
+
+          git show "$SOURCE:CHANGELOG.md" > /tmp/darkphish-0221-changelog.md
+          expected_name="$(node --input-type=module - <<'NODE'
+          import {releaseDisplayName} from "./scripts/release-notes.mjs"
+          process.stdout.write(releaseDisplayName("0.22.1"))
+          NODE
+          )"
+          test "$expected_name" = "Darkphish 0.22.1"
+          expected_body="$(node --input-type=module - <<'NODE'
+          import {readFileSync} from "node:fs"
+          import {releaseBody} from "./scripts/release-notes.mjs"
+          process.stdout.write(releaseBody(readFileSync("/tmp/darkphish-0221-changelog.md", "utf8"), "0.22.1", "7d33ed03306772e215ecd2e39227649d9f8ff1a5"))
+          NODE
+          )"
+
+          expected_assets="$(printf '%s\n'             "SHA256SUMS"             "darkphish-v0.22.1-darwin-amd64.tar.gz"             "darkphish-v0.22.1-darwin-arm64.tar.gz"             "darkphish-v0.22.1-linux-amd64.tar.gz"             "darkphish-v0.22.1-linux-arm64.tar.gz"             "darkphish-v0.22.1-windows-amd64.zip"             "darkphish-v0.22.1.release.json"             "darkphish-v0.22.1.spdx.json" | sort)"
+
+          if gh api "repos/$REPO/releases/tags/$TAG" >/tmp/public.json 2>/dev/null; then
+            test "$(jq -r '.draft' /tmp/public.json)" = "true"
+            echo "Unexpected public release identity before staging normalization." >&2
+            exit 1
+          fi
+
+          for id in $DRAFT_IDS; do
+            release="$(gh api "repos/$REPO/releases/$id")"
+            test "$(jq -r '.id' <<<"$release")" = "$id"
+            test "$(jq -r '.tag_name' <<<"$release")" = "$TAG"
+            test "$(jq -r '.draft' <<<"$release")" = "true"
+            test "$(jq -r '.prerelease' <<<"$release")" = "false"
+            test "$(jq -r '.author.login' <<<"$release")" = "github-actions[bot]"
+            test "$(jq -r '.author.id' <<<"$release")" = "41898282"
+            actual_body="$(jq -r '.body // ""' <<<"$release" | tr -d '\r')"
+            test "$actual_body" = "$expected_body"
+            test "$(grep -c '<!-- darkphish-release-source:7d33ed03306772e215ecd2e39227649d9f8ff1a5 -->' <<<"$actual_body")" = "1"
+
+            assets="$(gh api "repos/$REPO/releases/$id/assets?per_page=100")"
+            test "$(jq 'length' <<<"$assets")" = "8"
+            actual_assets="$(jq -r '.[].name' <<<"$assets" | sort)"
+            test "$actual_assets" = "$expected_assets"
+            test "$(jq '[.[] | select(.state != "uploaded" or .size <= 0 or (.digest | test("^sha256:[a-f0-9]{64}$") | not) or .uploader.login != "github-actions[bot]" or .uploader.id != 41898282)] | length' <<<"$assets")" = "0"
+          done
+
+          for id in $DRAFT_IDS; do
+            gh api --method DELETE "repos/$REPO/releases/$id"
+          done
+
+          for id in $DRAFT_IDS; do
+            if gh api "repos/$REPO/releases/$id" >/dev/null 2>&1; then
+              echo "Draft $id still exists after deletion." >&2
+              exit 1
+            fi
+          done
+
+          tag_sha_after="$(gh api "repos/$REPO/git/ref/tags/$TAG" --jq '.object.sha')"
+          test "$tag_sha_after" = "$SOURCE"
+
+          remaining="$(gh api "repos/$REPO/releases?per_page=100")"
+          test "$(jq --arg tag "$TAG" '[.[] | select(.tag_name == $tag)] | length' <<<"$remaining")" = "0"
+
+          echo "Removed only the two verified duplicate v0.22.1 staging drafts. The immutable tag remains at $SOURCE; normal recovery will rebuild and publish one canonical release."

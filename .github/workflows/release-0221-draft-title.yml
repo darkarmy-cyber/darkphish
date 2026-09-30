@@ -36,6 +36,7 @@ jobs:
           REPO: ${{ github.repository }}
           RELEASE_ID: "399548475"
           TAG: v0.22.1
+          LEGACY_TAG: untagged-2789ab7210c3a8870166
           SOURCE: 7d33ed03306772e215ecd2e39227649d9f8ff1a5
           EXPECTED_NAME: Darkphish 0.22
           LEGACY_NAME: Darkphish 0.22.1
@@ -47,7 +48,11 @@ jobs:
 
           before="$(gh api "repos/$REPO/releases/$RELEASE_ID")"
           test "$(jq -r '.id' <<<"$before")" = "$RELEASE_ID"
-          test "$(jq -r '.tag_name' <<<"$before")" = "$TAG"
+          current_tag="$(jq -r '.tag_name' <<<"$before")"
+          if [ "$current_tag" != "$TAG" ] && [ "$current_tag" != "$LEGACY_TAG" ]; then
+            echo "Unexpected draft tag: $current_tag" >&2
+            exit 1
+          fi
           test "$(jq -r '.target_commitish' <<<"$before")" = "$SOURCE"
           test "$(jq -r '.draft' <<<"$before")" = "true"
           test "$(jq -r '.prerelease' <<<"$before")" = "false"
@@ -73,8 +78,11 @@ jobs:
           assets_before="$(gh api "repos/$REPO/releases/$RELEASE_ID/assets?per_page=100" | jq -c 'sort_by(.id) | map({id,name,size,digest,state,uploader:.uploader.id})')"
           test "$(jq 'length' <<<"$assets_before")" -eq 8
 
-          if [ "$current_name" != "$EXPECTED_NAME" ]; then
-            gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" -f name="$EXPECTED_NAME" >/dev/null
+          if [ "$current_name" != "$EXPECTED_NAME" ] || [ "$current_tag" != "$TAG" ]; then
+            gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" \
+              -f name="$EXPECTED_NAME" \
+              -f tag_name="$TAG" \
+              -f target_commitish="$SOURCE" >/dev/null
           fi
 
           after="$(gh api "repos/$REPO/releases/$RELEASE_ID")"

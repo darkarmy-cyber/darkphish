@@ -27,7 +27,8 @@ func TestCheckerIgnoresDraftAndPrereleaseWithoutToken(t *testing.T) {
 	r, _, _ := evidence(t)
 	source := r.Source
 	// Historical recovery releases may advertise target_commitish=main. The
-	// catalogue must resolve the immutable tag instead of trusting that field.
+	// catalogue must use the canonical immutable source marker from trusted
+	// release notes instead of spending one GitHub API request per release tag.
 	r.Source = "main"
 	draft := r
 	draft.ID = 2
@@ -46,10 +47,8 @@ func TestCheckerIgnoresDraftAndPrereleaseWithoutToken(t *testing.T) {
 		switch {
 		case strings.HasSuffix(req.URL.Path, "/releases"):
 			response = body
-		case strings.HasSuffix(req.URL.Path, "/git/ref/tags/"+r.Tag):
-			response = []byte(`{"object":{"type":"commit","sha":"` + source + `"}}`)
 		default:
-			t.Fatalf("unexpected checker request: %s", req.URL.Path)
+			t.Fatalf("catalogue check made an unnecessary request: %s", req.URL.Path)
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(response)), Header: make(http.Header)}, nil
 	})}}
@@ -57,11 +56,30 @@ func TestCheckerIgnoresDraftAndPrereleaseWithoutToken(t *testing.T) {
 	if err != nil || got.Tag != r.Tag || got.Source != source {
 		t.Fatalf("latest: %+v %v", got, err)
 	}
+	if got.Source == "main" {
+		t.Fatal("catalogue trusted mutable target_commitish instead of canonical source marker")
+	}
 	for _, raw := range []string{`{"draft":false}`, `{"draft":null,"prerelease":false}`, `{"prerelease":false}`} {
 		var release Release
 		if err = json.Unmarshal([]byte(raw), &release); err == nil {
 			t.Fatal("accepted missing release state")
 		}
+	}
+}
+
+
+func TestSourceFromReleaseNotesAcceptsCRLFAndRejectsAmbiguity(t *testing.T) {
+	source := strings.Repeat("a", 40)
+	body := "## 0.22.1\r\n\r\n<!-- darkphish-release-source:" + source + " -->\r\n"
+	got, err := sourceFromReleaseNotes(body)
+	if err != nil || got != source {
+		t.Fatalf("CRLF source marker rejected: %q %v", got, err)
+	}
+	if _, err = sourceFromReleaseNotes(body + "<!-- darkphish-release-source:" + source + " -->\r\n"); err == nil {
+		t.Fatal("accepted ambiguous release source markers")
+	}
+	if _, err = sourceFromReleaseNotes("missing marker"); err == nil {
+		t.Fatal("accepted release notes without source marker")
 	}
 }
 
@@ -366,6 +384,7 @@ func TestStableSemVer(t *testing.T) {
 func evidence(t *testing.T) (Release, []byte, []byte) {
 	t.Helper()
 	r := Release{ID: 1, Tag: "v0.8.0", Source: strings.Repeat("a", 40), Published: time.Now().Add(-time.Hour), Author: Actor{Login: "github-actions[bot]", Type: "Bot", ID: 41898282}}
+	r.Notes = "## 0.8.0\n\nSource commit: " + r.Source + "\n\n<!-- darkphish-release-source:" + r.Source + " -->\n\nNative binaries, SHA-256 checksums and SPDX SBOM are attached."
 	var manifest strings.Builder
 	names := []string{"darkphish-v0.8.0-darwin-amd64.tar.gz", "darkphish-v0.8.0-darwin-arm64.tar.gz", "darkphish-v0.8.0-linux-amd64.tar.gz", "darkphish-v0.8.0-linux-arm64.tar.gz", "darkphish-v0.8.0-windows-amd64.zip", "darkphish-v0.8.0.spdx.json", "SHA256SUMS", "darkphish-v0.8.0.release.json"}
 	for i, name := range names {

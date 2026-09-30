@@ -263,6 +263,7 @@ function edit(idx) {
         rebuildInlineAssetPreviewRefs(template.attachments)
         $("#html_editor").val(previewInlineAssetRefs(template.html))
         $("#text_editor").val(template.text)
+        setTimeout(function () { templateImagePreview.load() }, 0)
         attachmentRows = []
         $.each(template.attachments, function (i, file) {
             var icon = icons[file.type] || "fa-file-o"
@@ -327,6 +328,7 @@ function copy(idx) {
     rebuildInlineAssetPreviewRefs(template.attachments)
     $("#html_editor").val(previewInlineAssetRefs(template.html))
     $("#text_editor").val(template.text)
+    setTimeout(function () { templateImagePreview.load() }, 0)
     $.each(template.attachments, function (i, file) {
         var icon = icons[file.type] || "fa-file-o"
         // Add the record to the modal
@@ -379,7 +381,9 @@ function importEmail() {
                 "Email content and supported embedded images imported successfully.")
             if (data.html) {
                 CKEDITOR.instances["html_editor"].setData(previewInlineAssetRefs(data.html), function () {
-                    CKEDITOR.instances["html_editor"].setMode('wysiwyg')
+                    CKEDITOR.instances["html_editor"].setMode('wysiwyg', function () {
+                        templateImagePreview.load()
+                    })
                     $('.nav-tabs a[href="#html"]').click()
                 })
             }

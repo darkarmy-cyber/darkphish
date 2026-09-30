@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { api, assertCurrentVersionPublished, expectedReleaseAssetNames, greenCommit, pages, peelTagToCommit, repository, trustedReleaseTarget, versionTag } from "../../scripts/release-lib.mjs"
-import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
+import { releaseBody as canonicalReleaseBody, releaseDisplayName } from "../../scripts/release-notes.mjs"
 import { matchesTrustedReleaseBody } from "../../scripts/release-body-match.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 
@@ -12,7 +12,7 @@ const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(valu
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-function releaseName(version) { return `Darkphish ${version.split(".").slice(0, 2).join(".")}` }
+function releaseName(version) { return releaseDisplayName(version) }
 async function sourceText(repo, path, source) {
   const file = await api(`repos/${repo}/contents/${path}?ref=${source}`)
   if (file?.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") throw new Error(`release source ${path} is unavailable`)

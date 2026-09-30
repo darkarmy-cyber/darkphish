@@ -21,6 +21,7 @@ function fixture() {
     readFileSync: () => '0.12.0', appendFileSync: (_, text) => state.outputs.push(text),
     mkdtempSync: () => 'memory', tmpdir: () => 'memory', join: (...parts) => parts.join('/'), rmSync() {},
     repository: () => 'owner/repo', versionTag: version => `v${version}`,
+    releaseDisplayName: version => { const [major, minor, patch] = version.split("."); return `Darkphish ${patch === "0" ? `${major}.${minor}` : version}` },
     greenCommit: async () => true, verifyCodeQLBaseline: async () => {},
     api: async (path, options = {}) => {
       if(options.method === 'PATCH') { calls.push(path); release.draft = true; return {...release} }

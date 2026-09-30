@@ -23,6 +23,12 @@ const categoryMap = new Map([
 
 export const requiredReleaseSections = Object.freeze([...required])
 
+export function releaseDisplayName(version) {
+  if (!stableSemver.test(version)) throw new Error("release name requires stable SemVer")
+  const [major, minor, patch] = version.split(".")
+  return `Darkphish ${patch === "0" ? `${major}.${minor}` : version}`
+}
+
 export function releaseSection(changelog, version) {
   if (!stableSemver.test(version)) throw new Error("release notes require stable SemVer")
   const normalized = String(changelog).replace(/\r\n/g, "\n")

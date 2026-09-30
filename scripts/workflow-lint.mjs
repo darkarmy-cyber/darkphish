@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url"
 export const protectedWorkflows = Object.freeze([
   "automerge.yml", "dependabot-automerge.yml", "release.yml",
   "release-recover.yml", "release-reconcile.yml", "release-resume.yml",
-  "release-title-repair.yml", "release-0221-draft-title.yml",
+  "release-title-repair.yml", "release-0221-normalize.yml",
 ])
 
 // Temporary, deliberately narrow adapter for actionlint v1.7.12. Validate the

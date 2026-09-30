@@ -7,7 +7,7 @@ import {
   api, assertCurrentVersionPublished, assetDisposition, expectedReleaseAssetNames, generatedPath,
   greenCommit, pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, trustedReleaseTarget, validDraftPublicationState, verifyChecksums, versionTag,
 } from "../../scripts/release-lib.mjs"
-import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
+import { releaseBody as canonicalReleaseBody, releaseDisplayName } from "../../scripts/release-notes.mjs"
 import { matchesTrustedReleaseBody } from "../../scripts/release-body-match.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
@@ -26,7 +26,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const tagRulesetSnapshot = JSON.parse(readFileSync(new URL("../release-tag-ruleset.json", import.meta.url), "utf8"))
 const sameInstant = (left, right) => typeof left === "string" && typeof right === "string" && Number.isFinite(Date.parse(left)) && Date.parse(left) === Date.parse(right)
 
-function releaseName(version) { return `Darkphish ${version.split(".").slice(0, 2).join(".")}` }
+const releaseName = releaseDisplayName
 async function sourceText(repo, path, source) {
   const file = await api(`repos/${repo}/contents/${path}?ref=${source}`)
   if (file?.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") throw new Error(`recovery source ${path} is unavailable`)

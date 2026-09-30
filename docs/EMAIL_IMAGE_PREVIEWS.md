@@ -29,4 +29,4 @@ Importing a message can contact the image hosts referenced by that message and c
 
 The importer is intentionally fail-safe. Unsupported, authenticated, expired, private or oversized images are not fetched around their access controls. The raw source and MIME structure must fit the configured request/attachment limits. External image failures do not discard the rest of the email; the import completes with a concise warning.
 
-The previous authenticated endpoint `POST /api/import/email/images` and its manual preview UI were removed in 0.22. Image localization is now part of the normal `POST /api/import/email` operation, which continues to require template write permission.
+The manual **Load external images** control is removed. Normal raw-email import localizes supported resources directly through `POST /api/import/email`. The authenticated `POST /api/import/email/images` endpoint remains available only for bounded automatic editor previews of legacy/manual templates; it is not exposed as a separate operator action.

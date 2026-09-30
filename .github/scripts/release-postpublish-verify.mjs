@@ -12,7 +12,7 @@ const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(valu
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-const releaseName = releaseDisplayName
+function releaseName(version) { return releaseDisplayName(version) }
 async function sourceText(repo, path, source) {
   const file = await api(`repos/${repo}/contents/${path}?ref=${source}`)
   if (file?.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") throw new Error(`release source ${path} is unavailable`)

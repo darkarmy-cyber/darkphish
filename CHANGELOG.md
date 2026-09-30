@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.22.2 - 2026-09-30
+
+### Changed
+
+- Remove the Email Templates “Load external images” control and automatically preview eligible public HTTPS raster images in the editor while preserving original URLs and existing private-network, size and format restrictions.
+- Remove the manual “Load verified images” step from landing-page import and automatically localize eligible public HTTPS raster images after a static training import, while retaining private-network, active-content, size and format protections.
+- Remove the redundant DarkPhish version row from Settings > Account; version and update information remains available through the dedicated update and CLI surfaces.
+
+### Fixed
+
+- Bind retained SMTP passwords to the saved server, username and TLS settings for test sends and profile updates; changed connections require an explicitly entered password.
+- Complete automatic image batches, preview newly entered template images, and prevent saving imported training pages before image localization finishes.
+- Treat GitHub CRLF-normalized release notes as the same canonical source-derived body during trusted release recovery and post-publication verification.
+- Unify patch-release titles across native publication, recovery and post-publication verification, and safely normalize the duplicate v0.22.1 staging drafts before rebuilding one canonical release.
+- Allow test emails from an edited saved sending profile to reuse its encrypted stored SMTP password server-side while keeping the password write-only and absent from browser/API responses.
+- Reduce update catalogue checks to the release listing request by reading the canonical immutable source marker from trusted release notes, avoiding one GitHub API tag lookup per historical release and preventing avoidable HTTP 403 rate-limit failures.
+- Restore the exact v0.22.1 draft tag together with its canonical title before trusted release recovery.
+- Normalize GitHub release-body line endings before the one-time v0.22.1 draft metadata repair.
+- Repair the withdrawn v0.22.1 draft title under exact release-source, body, actor and asset invariants so the existing trusted recovery path can republish it.
+
 ## 0.22.1 - 2026-09-29
 
 ### Fixed

@@ -135,8 +135,6 @@ func TestUpdateOutcomeSurvivesReleaseChecks(t *testing.T) {
 			switch {
 			case strings.HasSuffix(req.URL.Path, "/releases"):
 				response = body
-			case strings.HasSuffix(req.URL.Path, "/git/ref/tags/"+r.Tag):
-				response = []byte(`{"object":{"type":"commit","sha":"` + r.Source + `"}}`)
 			default:
 				t.Fatalf("unexpected update check request: %s", req.URL.Path)
 			}

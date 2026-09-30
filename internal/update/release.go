@@ -21,7 +21,54 @@ const downloadRoot = "https://github.com/" + repository + "/releases/download/"
 
 var sourceSHA = regexp.MustCompile(`^[a-f0-9]{40}$`)
 var digestSHA = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
-var checksumLine = regexp.MustCompile(`^([a-f0-9]{64})  (darkphish-[A-Za-z0-9._-]+)$`)
+var checksumLine = regexp.MustCompile(`^([a-f0-9]{64})  (darkphish-[A-Za-z0-9._-]+)package update
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+)
+
+const repository = "darkarmy-cyber/darkphish"
+const apiRoot = "https://api.github.com/repos/" + repository
+const downloadRoot = "https://github.com/" + repository + "/releases/download/"
+
+var sourceSHA = regexp.MustCompile(`^[a-f0-9]{40}$`)
+var digestSHA = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+)
+var releaseSourceMarker = regexp.MustCompile(`(?m)^<!-- darkphish-release-source:([a-f0-9]{40}) -->package update
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+)
+
+const repository = "darkarmy-cyber/darkphish"
+const apiRoot = "https://api.github.com/repos/" + repository
+const downloadRoot = "https://github.com/" + repository + "/releases/download/"
+
+var sourceSHA = regexp.MustCompile(`^[a-f0-9]{40}$`)
+var digestSHA = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+)
 
 type Actor struct {
 	Login string `json:"login"`
@@ -77,6 +124,14 @@ func (r *Release) UnmarshalJSON(data []byte) error {
 }
 
 func (r Release) Version() string { return strings.TrimPrefix(r.Tag, "v") }
+
+func sourceFromReleaseNotes(notes string) (string, error) {
+	matches := releaseSourceMarker.FindAllStringSubmatch(strings.ReplaceAll(notes, "\r\n", "\n"), -1)
+	if len(matches) != 1 || len(matches[0]) != 2 || !sourceSHA.MatchString(matches[0][1]) {
+		return "", errors.New("release source marker is unavailable or ambiguous")
+	}
+	return matches[0][1], nil
+}
 
 // Client never accepts a repository, URL, credential, or path from a browser.
 type Client struct{ http *http.Client }
@@ -180,9 +235,9 @@ func (c *Client) Stable(ctx context.Context) ([]Release, error) {
 			if err := validateReleaseMetadata(r); err != nil {
 				continue
 			}
-			source, err := c.resolveTagCommit(ctx, r.Tag)
+			source, err := sourceFromReleaseNotes(r.Notes)
 			if err != nil {
-				return nil, err
+				continue
 			}
 			r.Source = source
 			if err := ValidateRelease(r); err != nil {

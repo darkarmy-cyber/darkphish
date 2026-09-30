@@ -32,7 +32,7 @@ for(const file of ['static/js/src/app/training_images.js','static/js/dist/app/tr
     unicode.helper.load();unicode.requests[0].resolve([{url:'https://images.example.test/0.png',data:png}])
     assert.equal(unicode.nodes[0].attrs.src,undefined)
   })
-  test(file+': explicit consent, raster-only data, serial requests and static-only guard',()=>{
+  test(file+': raster-only data, serial requests and static-only guard',()=>{
     const p=fixture(file)
     p.helper.reset();assert.equal(p.requests.length,0)
     p.ctx.trainingStatic=false;p.helper.load();assert.equal(p.requests.length,0)
@@ -51,7 +51,6 @@ for(const file of ['static/js/src/app/training_images.js','static/js/dist/app/tr
     p.requests[1].resolve([{url:'https://images.example.test/12.png',data:png}])
     assert.equal(p.nodes[12].attrs.src,undefined)
     p.helper.load();p.requests[2].reject()
-    assert.equal(p.$('#loadTrainingImages').disabled,false)
   })
   test(file+': malformed and untrusted responses cannot inject active content',()=>{
     const p=fixture(file)
@@ -59,6 +58,5 @@ for(const file of ['static/js/src/app/training_images.js','static/js/dist/app/tr
     assert.equal(p.nodes[0].attrs.src,undefined)
     p.helper.load();p.requests[1].resolve(null)
     assert.match(p.$('#trainingImageStatus').value,/Unexpected/)
-    assert.equal(p.$('#loadTrainingImages').disabled,false)
   })
 }

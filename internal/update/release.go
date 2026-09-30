@@ -21,54 +21,8 @@ const downloadRoot = "https://github.com/" + repository + "/releases/download/"
 
 var sourceSHA = regexp.MustCompile(`^[a-f0-9]{40}$`)
 var digestSHA = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
-var checksumLine = regexp.MustCompile(`^([a-f0-9]{64})  (darkphish-[A-Za-z0-9._-]+)package update
-
-import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"regexp"
-	"sort"
-	"strings"
-	"time"
-)
-
-const repository = "darkarmy-cyber/darkphish"
-const apiRoot = "https://api.github.com/repos/" + repository
-const downloadRoot = "https://github.com/" + repository + "/releases/download/"
-
-var sourceSHA = regexp.MustCompile(`^[a-f0-9]{40}$`)
-var digestSHA = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
-)
-var releaseSourceMarker = regexp.MustCompile(`(?m)^<!-- darkphish-release-source:([a-f0-9]{40}) -->package update
-
-import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"regexp"
-	"sort"
-	"strings"
-	"time"
-)
-
-const repository = "darkarmy-cyber/darkphish"
-const apiRoot = "https://api.github.com/repos/" + repository
-const downloadRoot = "https://github.com/" + repository + "/releases/download/"
-
-var sourceSHA = regexp.MustCompile(`^[a-f0-9]{40}$`)
-var digestSHA = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
-)
+var checksumLine = regexp.MustCompile(`^([a-f0-9]{64})  (darkphish-[A-Za-z0-9._-]+)$`)
+var releaseSourceMarker = regexp.MustCompile(`(?m)^<!-- darkphish-release-source:([a-f0-9]{40}) -->$`)
 
 type Actor struct {
 	Login string `json:"login"`
@@ -235,7 +189,7 @@ func (c *Client) Stable(ctx context.Context) ([]Release, error) {
 			if err := validateReleaseMetadata(r); err != nil {
 				continue
 			}
-				source, err := sourceFromReleaseNotes(r.Notes)
+			source, err := sourceFromReleaseNotes(r.Notes)
 			if err != nil {
 				continue
 			}

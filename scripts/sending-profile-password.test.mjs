@@ -25,5 +25,5 @@ test("test email from an edited profile identifies the saved profile without exp
 test("new and copied profiles do not silently reuse another stored password", () => {
   assert.match(js, /function copy\(idx\) \{\s*activeProfileId = 0/)
   assert.match(js, /Enter password for copied profile/)
-  assert.match(js, /function dismiss\(\)[\s\\S]*activeProfileId = 0/)
+  assert.match(js, /function dismiss\(\)[\s\S]*activeProfileId = 0/)
 })

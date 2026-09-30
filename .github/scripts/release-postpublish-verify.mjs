@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { api, assertCurrentVersionPublished, expectedReleaseAssetNames, greenCommit, pages, peelTagToCommit, repository, trustedReleaseTarget, versionTag } from "../../scripts/release-lib.mjs"
 import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
+import { matchesTrustedReleaseBody } from "../../scripts/release-body-match.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
@@ -19,7 +20,7 @@ async function sourceText(repo, path, source) {
 }
 async function expectedMetadata(repo, source, version) { return { name: releaseName(version), body: canonicalReleaseBody(await sourceText(repo, "CHANGELOG.md", source), version, source) } }
 function assertExactPublished(release, version, source, expected) {
-  if (!release || release.tag_name !== versionTag(version) || !trustedReleaseTarget(release, source) || release.name !== expected.name || release.body !== expected.body || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) throw new Error("published recovery metadata changed before attestation acceptance")
+  if (!release || release.tag_name !== versionTag(version) || !trustedReleaseTarget(release, source) || release.name !== expected.name || !matchesTrustedReleaseBody(release.body, expected.body) || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) throw new Error("published recovery metadata changed before attestation acceptance")
   return release
 }
 async function readTagState(repo, tag) {

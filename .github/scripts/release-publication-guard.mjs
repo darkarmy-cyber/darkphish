@@ -8,6 +8,7 @@ import {
   pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, trustedReleaseTarget, versionTag,
 } from "../../scripts/release-lib.mjs"
 import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
+import { matchesTrustedReleaseBody } from "../../scripts/release-body-match.mjs"
 import { normalizationHold } from "../../scripts/release-normalization-hold.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
@@ -35,7 +36,7 @@ async function expectedMetadata(repo, source, version) {
 }
 function assertExactPublished(release, version, source, expected) {
   const tag = versionTag(version)
-  if (!release || release.tag_name !== tag || !trustedReleaseTarget(release, source) || release.name !== expected.name || release.body !== expected.body || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) {
+  if (!release || release.tag_name !== tag || !trustedReleaseTarget(release, source) || release.name !== expected.name || !matchesTrustedReleaseBody(release.body, expected.body) || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) {
     throw new Error("published release metadata does not exactly match the verified source")
   }
   return release

@@ -1,5 +1,5 @@
-// Remote images stay blocked by the admin CSP until the operator explicitly
-// requests bounded, raster-only previews. The email's original URLs are saved.
+// Remote images stay blocked by the admin CSP. Safe public raster previews are
+// localized automatically for the editor while the email's original URLs stay saved.
 var templateImagePreview = (function () {
     var cache = Object.create(null)
     var attempted = Object.create(null)
@@ -37,8 +37,7 @@ var templateImagePreview = (function () {
         generation++
         cache = Object.create(null)
         attempted = Object.create(null)
-        $('#templateImageStatus').text('External images are blocked until you load their previews.')
-        $('#loadTemplateImages').prop('disabled', false)
+        $('#templateImageStatus').text('Safe public external images are loaded automatically for preview.')
         if (editor && !editor.darkphishImagePreviewReady) {
             editor.darkphishImagePreviewReady = true
             editor.on('dataReady', function () { apply(editor) })
@@ -75,7 +74,6 @@ var templateImagePreview = (function () {
                     'No additional external images to load.')
                 return
             }
-            $('#loadTemplateImages').prop('disabled', true)
             $('#templateImageStatus').text('Loading image previews…')
             api.preview_email_images({urls: urls})
                 .done(function (results) {
@@ -90,18 +88,15 @@ var templateImagePreview = (function () {
                     })
                     apply(editor)
                     var failed = pending.filter(function (src) { return attempted[src] && !cache[src] }).length
-                    var message = loaded + ' of ' + urls.length + ' image previews loaded. Original email URLs are unchanged.'
+                    var message = loaded + ' of ' + urls.length + ' external image previews loaded automatically. Original email URLs are unchanged.'
                     if (failed || unsupported) message += ' Unavailable, private, unsupported or oversized images remain blocked.'
-                    if (omitted) message += ' Click again to load remaining images (12 per request).'
-                    else if (failed) message += ' Click again to retry unavailable images.'
+                    if (omitted) message += ' Additional images remain after the automatic batch.'
                     $('#templateImageStatus').text(message)
                 })
                 .fail(function () {
                     if (current === generation) $('#templateImageStatus').text('Image previews could not be loaded. Check your session or try again later.')
                 })
-                .always(function () {
-                    if (current === generation) $('#loadTemplateImages').prop('disabled', false)
-                })
+                .always(function () {})
         }
         if (editor.mode !== 'wysiwyg') editor.setMode('wysiwyg', request)
         else request()

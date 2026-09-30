@@ -7,7 +7,7 @@ import {
   api, assertCurrentVersionPublished, expectedReleaseAssetNames, generatedPath, greenCommit,
   pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, trustedReleaseTarget, versionTag,
 } from "../../scripts/release-lib.mjs"
-import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
+import { releaseBody as canonicalReleaseBody, releaseDisplayName } from "../../scripts/release-notes.mjs"
 import { matchesTrustedReleaseBody } from "../../scripts/release-body-match.mjs"
 import { normalizationHold } from "../../scripts/release-normalization-hold.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
@@ -25,7 +25,7 @@ const timestamp = (value, label) => {
 }
 const successfulStep = (job, name) => job?.steps?.some((step) => step.name === name && step.status === "completed" && step.conclusion === "success")
 
-function releaseName(version) { return `Darkphish ${version.split(".").slice(0, 2).join(".")}` }
+const releaseName = releaseDisplayName
 async function sourceText(repo, path, source) {
   const file = await api(`repos/${repo}/contents/${path}?ref=${source}`)
   if (file?.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") throw new Error(`release source ${path} is unavailable`)

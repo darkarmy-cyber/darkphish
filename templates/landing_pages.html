@@ -55,8 +55,7 @@
                 <div id="trainingStaticNotice" class="alert alert-info" hidden>
                     <strong>Static training mode</strong>
                     <p>No credential fields, submissions, redirects or scripts. External stylesheets and dynamic content are removed; layout may differ from the source.</p>
-                    <button type="button" class="btn btn-primary btn-import" id="loadTrainingImages" onclick="trainingImagePreview.load()" aria-describedby="trainingImagePrivacy" disabled>Load verified images</button>
-                    <p id="trainingImagePrivacy">Loads up to 12 public HTTPS PNG, JPEG or GIF images through the server and embeds verified PNG copies. Remote hosts can observe the server request. Private destinations and unsupported images remain blocked.</p>
+                    <p id="trainingImagePrivacy">Public HTTPS raster images are localized automatically after import. Dynamic scripts, credential forms and private/internal resources are not imported.</p>
                     <p id="trainingImageStatus" role="status" aria-live="polite"></p>
                 </div>
                 <ul class="nav nav-tabs" role="tablist">

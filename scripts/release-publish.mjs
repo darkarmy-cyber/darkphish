@@ -4,7 +4,7 @@ import { api, assetDisposition, assertReleaseState, generatedPath, git, greenCom
 import { verifyCodeQLBaseline } from "./codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "./release-maintainer-review.mjs"
 import { discoverRelease, assertStagingMetadata } from "./release-discovery.mjs"
-import { releaseBody } from "./release-notes.mjs"
+import { releaseBody, releaseDisplayName } from "./release-notes.mjs"
 import { uploadReleaseAsset } from "./release-upload.mjs"
 
 const trustedActionsActor = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
@@ -69,7 +69,7 @@ async function source() {
   if (!files.length || files.some((file) => !generatedPath(file.filename))) throw new Error("release PR includes application changes")
   verifyRetainedFragments(version)
   const body = releaseBody(readFileSync("CHANGELOG.md", "utf8"), version, sha)
-  const name = `Darkphish ${version.split(".").slice(0, 2).join(".")}`
+  const name = releaseDisplayName(version)
   let ref = await api(`repos/${repo}/git/ref/tags/${tag}`, { missing: true })
   if (ref?.object.type === "tag") ref = await api(`repos/${repo}/git/tags/${ref.object.sha}`)
   const release = await discoverRelease(repo, tag)

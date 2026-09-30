@@ -1,6 +1,14 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { canonicalReleaseNotes, releaseBody, releaseSection, requiredReleaseSections } from "./release-notes.mjs"
+import { canonicalReleaseNotes, releaseBody, releaseDisplayName, releaseSection, requiredReleaseSections } from "./release-notes.mjs"
+
+test("release display names keep patch versions explicit", () => {
+  assert.equal(releaseDisplayName("0.22.0"), "Darkphish 0.22")
+  assert.equal(releaseDisplayName("0.22.1"), "Darkphish 0.22.1")
+  assert.equal(releaseDisplayName("1.4.0"), "Darkphish 1.4")
+  assert.equal(releaseDisplayName("1.4.7"), "Darkphish 1.4.7")
+  assert.throws(() => releaseDisplayName("0.22"), /stable SemVer/)
+})
 
 const requiredOrder = ["### Changed", "### Fixed", "### Security", "### Migration"]
 

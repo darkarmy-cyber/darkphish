@@ -8,6 +8,7 @@ import {
   greenCommit, pages, peelTagToCommit, publicationReceiptName, repository, requiredChecks, trustedReleaseTarget, validDraftPublicationState, verifyChecksums, versionTag,
 } from "../../scripts/release-lib.mjs"
 import { releaseBody as canonicalReleaseBody } from "../../scripts/release-notes.mjs"
+import { matchesTrustedReleaseBody } from "../../scripts/release-body-match.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
 import { assertNoUnstagedRelease } from "../../scripts/release-pending.mjs"
@@ -168,12 +169,12 @@ async function expectedMetadata(repo, source, version) {
 }
 function assertExactDraft(release, version, source, expected) {
   const tag = versionTag(version)
-  if (!release || !Number.isSafeInteger(release.id) || release.id < 1 || release.tag_name !== tag || !trustedReleaseTarget(release, source) || release.name !== expected.name || release.body !== expected.body || release.draft !== true || release.prerelease !== false || !validDraftPublicationState(release) || !actionsBot(release.author)) throw new Error("pending release draft metadata does not exactly match the verified source")
+  if (!release || !Number.isSafeInteger(release.id) || release.id < 1 || release.tag_name !== tag || !trustedReleaseTarget(release, source) || release.name !== expected.name || !matchesTrustedReleaseBody(release.body, expected.body) || release.draft !== true || release.prerelease !== false || !validDraftPublicationState(release) || !actionsBot(release.author)) throw new Error("pending release draft metadata does not exactly match the verified source")
   return release
 }
 function assertExactPublished(release, version, source, expected) {
   const tag = versionTag(version)
-  if (!release || release.tag_name !== tag || !trustedReleaseTarget(release, source) || release.name !== expected.name || release.body !== expected.body || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) throw new Error("published release metadata does not exactly match the verified source")
+  if (!release || release.tag_name !== tag || !trustedReleaseTarget(release, source) || release.name !== expected.name || !matchesTrustedReleaseBody(release.body, expected.body) || release.draft !== false || release.prerelease !== false || !release.published_at || !actionsBot(release.author)) throw new Error("published release metadata does not exactly match the verified source")
   return release
 }
 function timestamp(value, label) { const parsed = Date.parse(value || ""); if (!Number.isFinite(parsed)) throw new Error(`${label} timestamp is invalid`); return parsed }

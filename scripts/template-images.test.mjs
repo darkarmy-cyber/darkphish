@@ -33,20 +33,17 @@ function page(path, sources) {
 }
 
 for (const path of ['../static/js/src/app/template_images.js', '../static/js/dist/app/template_images.min.js']) {
-  test(`${path}: no fetch before consent, preview preserves original URL for CKEditor output`, () => {
+  test(`${path}: automatic preview preserves original URL for CKEditor output`, () => {
     const url = 'https://images.example.test/logo.png?x=1&y=2'
     const p = page(path, [url, url])
     p.events.dataReady()
-    assert.equal(p.requests.length, 0)
     p.helper.load()
     assert.deepEqual([...p.requests[0].body.urls], [url])
-    assert.equal(p.$('#loadTemplateImages').disabled, true)
     p.requests[0].resolve([{url, data: png}])
     for (const {attrs} of p.nodes) {
       assert.equal(attrs.src, png)
       assert.equal(attrs['data-cke-saved-src'], url)
     }
-    assert.equal(p.$('#loadTemplateImages').disabled, false)
     p.helper.load()
     assert.equal(p.requests.length, 1)
     // Source/wysiwyg round trip resets DOM src; cached preview needs no network.
@@ -74,7 +71,7 @@ for (const path of ['../static/js/src/app/template_images.js', '../static/js/dis
     assert.equal(many.requests[1].body.urls.length, 3)
   })
 
-  test(`${path}: late replies cannot alter another template; errors restore the button`, () => {
+  test(`${path}: late replies cannot alter another template and failures remain retryable`, () => {
     const url = 'https://example.test/a.png'
     const p = page(path, [url])
     p.helper.load()
@@ -83,7 +80,6 @@ for (const path of ['../static/js/src/app/template_images.js', '../static/js/dis
     assert.equal(p.nodes[0].attrs.src, url)
     p.helper.load()
     p.requests[1].reject()
-    assert.equal(p.$('#loadTemplateImages').disabled, false)
     assert.match(p.$('#templateImageStatus').value, /could not/)
     p.helper.load()
     p.requests[2].resolve([{url, data: 'data:image/svg+xml;base64,AAAA'}, {url: 'https://other.test/a', data: png}])
@@ -133,7 +129,7 @@ for (const path of ['../static/js/src/app/template_images.js', '../static/js/dis
 test('image preview is wired to the template editor without relaxing admin CSP', () => {
   const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
   assert.match(read('templates/templates.html'), /template_images.min.js/)
-  assert.match(read('templates/templates.html'), /may register an email open/)
+  assert.match(read('templates/templates.html'), /previewed automatically through the server/)
   assert.match(read('static/js/src/app/templates.js'), /templateImagePreview.reset\(\)/)
   assert.match(read('static/js/src/app/darkphish.js'), /query\("\/import\/email\/images", "POST", req, true\)/)
   assert.match(read('middleware/middleware.go'), /img-src 'self' data:;/)
@@ -141,7 +137,7 @@ test('image preview is wired to the template editor without relaxing admin CSP',
 })
 
 
-test('automatic email import coexists with explicit external image consent', () => {
+test('automatic email import has no manual external-image action', () => {
   const readFeature = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8')
   const html = readFeature('templates/templates.html')
   const api = readFeature('static/js/src/app/darkphish.js')
@@ -150,7 +146,7 @@ test('automatic email import coexists with explicit external image consent', () 
   const apiDist = readFeature('static/js/dist/app/darkphish.min.js')
 
   assert.match(html, /id="importEmailSubmit"/)
-  assert.match(html, /id="loadTemplateImages"/)
+  assert.doesNotMatch(html, /Load external images|id="loadTemplateImages"/)
   assert.match(html, /supported public HTTPS images are imported automatically/)
   assert.match(html, /id="emailImportStatus"[^>]*role="status"/)
   assert.match(api, /query\("\/import\/email", "POST", req, true\)/)

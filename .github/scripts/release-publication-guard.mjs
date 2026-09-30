@@ -25,7 +25,7 @@ const timestamp = (value, label) => {
 }
 const successfulStep = (job, name) => job?.steps?.some((step) => step.name === name && step.status === "completed" && step.conclusion === "success")
 
-const releaseName = releaseDisplayName
+function releaseName(version) { return releaseDisplayName(version) }
 async function sourceText(repo, path, source) {
   const file = await api(`repos/${repo}/contents/${path}?ref=${source}`)
   if (file?.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") throw new Error(`release source ${path} is unavailable`)

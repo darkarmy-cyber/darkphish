@@ -4,6 +4,8 @@ var templateImagePreview = (function () {
     var cache = Object.create(null)
     var attempted = Object.create(null)
     var generation = 0
+    var inFlight = false
+    var activeEditor = null
 
     function images(editor) {
         return editor && editor.mode === 'wysiwyg' && editor.document ?
@@ -35,19 +37,28 @@ var templateImagePreview = (function () {
 
     function reset(editor) {
         generation++
+        inFlight = false
+        activeEditor = editor || null
         cache = Object.create(null)
         attempted = Object.create(null)
         $('#templateImageStatus').text('Safe public external images are loaded automatically for preview.')
         if (editor && !editor.darkphishImagePreviewReady) {
             editor.darkphishImagePreviewReady = true
-            editor.on('dataReady', function () { apply(editor) })
-            editor.on('mode', function () { apply(editor) })
+            function refresh() {
+                if (activeEditor !== editor || editor.mode !== 'wysiwyg') return
+                apply(editor)
+                load(true)
+            }
+            editor.on('dataReady', refresh)
+            editor.on('mode', refresh)
+            editor.on('change', refresh)
         }
     }
 
-    function load() {
+    function load(automatic) {
         var editor = CKEDITOR.instances.html_editor
-        if (!editor) return
+        if (!editor || inFlight) return
+        inFlight = true
         var current = generation
         function request() {
             if (current !== generation) return
@@ -61,13 +72,14 @@ var templateImagePreview = (function () {
             // Try every new URL before retrying failed previews. A failed first
             // batch must not prevent later images from ever being requested.
             var urls = pending.filter(function (src) { return !attempted[src] })
-            if (!urls.length && pending.length) {
+            if (!automatic && !urls.length && pending.length) {
                 attempted = Object.create(null)
                 urls = pending
             }
             var omitted = Math.max(0, urls.length - 12)
             urls = urls.slice(0, 12)
             if (!urls.length) {
+                inFlight = false
                 apply(editor)
                 $('#templateImageStatus').text(unsupported ?
                     'Some images cannot be previewed. Use a public HTTPS PNG, JPEG or GIF image URL without srcset; CID images need their original attachments.' :
@@ -75,13 +87,18 @@ var templateImagePreview = (function () {
                 return
             }
             $('#templateImageStatus').text('Loading image previews…')
+            var continueBatch = false
             api.preview_email_images({urls: urls})
                 .done(function (results) {
                     if (current !== generation) return
+                    if (!Array.isArray(results)) {
+                        $('#templateImageStatus').text('Unexpected image response. No images were changed.')
+                        return
+                    }
                     urls.forEach(function (src) { attempted[src] = true })
                     var loaded = 0
                     results.forEach(function (result) {
-                        if (urls.indexOf(result.url) !== -1 && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(result.data || '')) {
+                        if (result && urls.indexOf(result.url) !== -1 && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(result.data || '')) {
                             cache[result.url] = result.data
                             loaded++
                         }
@@ -92,11 +109,20 @@ var templateImagePreview = (function () {
                     if (failed || unsupported) message += ' Unavailable, private, unsupported or oversized images remain blocked.'
                     if (omitted) message += ' Additional images remain after the automatic batch.'
                     $('#templateImageStatus').text(message)
+                    continueBatch = true
                 })
                 .fail(function () {
                     if (current === generation) $('#templateImageStatus').text('Image previews could not be loaded. Check your session or try again later.')
                 })
-                .always(function () {})
+                .always(function () {
+                    if (current !== generation) return
+                    inFlight = false
+                    // Also pick up images entered while this batch was in flight.
+                    if (continueBatch && images(editor).some(function (img) {
+                        var src = source(img)
+                        return eligible(src) && !img.hasAttribute('srcset') && !attempted[src] && !cache[src]
+                    })) load(true)
+                })
         }
         if (editor.mode !== 'wysiwyg') editor.setMode('wysiwyg', request)
         else request()

@@ -95,8 +95,10 @@ func (as *Server) SendTestEmail(w http.ResponseWriter, r *http.Request) {
 			JSONResponse(w, models.Response{Success: false, Message: "Sending profile not found"}, http.StatusBadRequest)
 			return
 		}
-		s.SMTP.Password = stored.Password
-		s.SMTP.PasswordSet = stored.PasswordSet
+		if err := s.SMTP.ReusePassword(stored); err != nil {
+			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
+			return
+		}
 	}
 
 	// If a complete sending profile is provided use it

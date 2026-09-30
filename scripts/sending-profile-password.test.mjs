@@ -19,7 +19,7 @@ test("test email from an edited profile identifies the saved profile without exp
   assert.match(js, /smtp:\s*\{[\s\S]*id: activeProfileId/)
   assert.match(api, /s\.SMTP\.Id != 0 && s\.SMTP\.Password == ""/)
   assert.match(api, /models\.GetSMTP\(s\.SMTP\.Id, s\.UserId\)/)
-  assert.match(api, /s\.SMTP\.Password = stored\.Password/)
+  assert.match(api, /s\.SMTP\.ReusePassword\(stored\)/)
 })
 
 test("new and copied profiles do not silently reuse another stored password", () => {

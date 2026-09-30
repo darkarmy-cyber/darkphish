@@ -74,7 +74,7 @@ func (as *Server) SendingProfile(w http.ResponseWriter, r *http.Request) {
 		}
 		JSONResponse(w, models.Response{Success: true, Message: "SMTP Deleted Successfully"}, http.StatusOK)
 	case r.Method == "PUT":
-		existingPassword := s.Password
+		stored := s
 		s = models.SMTP{}
 		err = json.NewDecoder(r.Body).Decode(&s)
 		if err != nil {
@@ -82,8 +82,9 @@ func (as *Server) SendingProfile(w http.ResponseWriter, r *http.Request) {
 			JSONResponse(w, models.Response{Success: false, Message: "Invalid request"}, http.StatusBadRequest)
 			return
 		}
-		if s.Password == "" {
-			s.Password = existingPassword
+		if err = s.ReusePassword(stored); err != nil {
+			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
+			return
 		}
 		if s.Id != id {
 			JSONResponse(w, models.Response{Success: false, Message: "/:id and /:smtp_id mismatch"}, http.StatusBadRequest)

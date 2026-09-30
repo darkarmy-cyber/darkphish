@@ -381,9 +381,7 @@ function importEmail() {
                 "Email content and supported embedded images imported successfully.")
             if (data.html) {
                 CKEDITOR.instances["html_editor"].setData(previewInlineAssetRefs(data.html), function () {
-                    CKEDITOR.instances["html_editor"].setMode('wysiwyg', function () {
-                        templateImagePreview.load()
-                    })
+                    templateImagePreview.load()
                     $('.nav-tabs a[href="#html"]').click()
                 })
             }

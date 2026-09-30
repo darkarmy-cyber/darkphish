@@ -53,6 +53,27 @@ type SMTP struct {
 	ModifiedDate     time.Time `json:"modified_date"`
 }
 
+// ReusePassword retains a write-only secret only for its saved connection.
+// Callers must first load stored using the authenticated owner's scope.
+func (s *SMTP) ReusePassword(stored SMTP) error {
+	if s.Password != "" {
+		return nil
+	}
+	transport := func(value string) string {
+		if value == "" {
+			return "SMTP"
+		}
+		return value
+	}
+	if stored.Password != "" && (s.Host != stored.Host || s.Username != stored.Username ||
+		s.IgnoreCertErrors != stored.IgnoreCertErrors || transport(s.Interface) != transport(stored.Interface)) {
+		return errors.New("Enter the SMTP password again when changing the server, username or TLS settings")
+	}
+	s.Password = stored.Password
+	s.PasswordSet = stored.Password != ""
+	return nil
+}
+
 // UnmarshalJSON accepts a write-only password while normal serialization
 // exposes only password_set metadata.
 func (s *SMTP) UnmarshalJSON(data []byte) error {

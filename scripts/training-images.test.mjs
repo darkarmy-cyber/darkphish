@@ -6,8 +6,8 @@ const png='data:image/png;base64,iVBORw0KGgo='
 function fixture(path, count=1) {
   const nodes=Array.from({length:count},(_,i)=>({attrs:{'data-training-image-url':'https://images.example.test/'+i+'.png'},getAttribute(k){return this.attrs[k]},setAttribute(k,v){this.attrs[k]=v}}))
   const elements=new Map(), requests=[]
-  const $=key=>{if(!elements.has(key))elements.set(key,{text(v){this.value=v;return this},prop(k,v){this[k]=v;return this}});return elements.get(key)}
-  const editor={mode:'wysiwyg',document:{$:{querySelectorAll:()=>nodes}},getData(){return '<p>Training</p>'+nodes.map(n=>JSON.stringify(n.attrs)).join('')},fire(){},setMode(mode,callback){this.mode=mode;callback()}}
+  const $=key=>{if(!elements.has(key))elements.set(key,{text(v){this.value=v;return this},prop(k,v){this[k]=v;return this},val(v){if(v===undefined)return this.value;this.value=v;return this},hide(){return this},modal(){return this}});return elements.get(key)}
+  const editor={mode:'wysiwyg',document:{$:{querySelectorAll:()=>nodes}},getData(){return '<p>Training</p>'+nodes.map(n=>JSON.stringify(n.attrs)).join('')},fire(){},setMode(mode,callback){if(this.mode!==mode){this.mode=mode;callback()}}}
   const ctx=vm.createContext({$,URL,TextEncoder,trainingStatic:true,CKEDITOR:{instances:{html_editor:editor}},api:{preview_email_images(body){
     const callbacks={}, request={body,done(fn){callbacks.done=fn;return this},fail(fn){callbacks.fail=fn;return this},always(fn){callbacks.always=fn;return this},
       resolve(data){callbacks.done(data);callbacks.always()},reject(){callbacks.fail();callbacks.always()}}
@@ -45,12 +45,52 @@ for(const file of ['static/js/src/app/training_images.js','static/js/dist/app/tr
   test(file+': failed first batch cannot starve later images; late replies cannot cross pages',()=>{
     const p=fixture(file,13);p.helper.load()
     assert.equal(p.requests[0].body.urls.length,12)
-    p.requests[0].resolve([]);p.helper.load()
+    p.requests[0].resolve([])
     assert.deepEqual([...p.requests[1].body.urls],['https://images.example.test/12.png'])
     p.helper.reset()
     p.requests[1].resolve([{url:'https://images.example.test/12.png',data:png}])
     assert.equal(p.nodes[12].attrs.src,undefined)
     p.helper.load();p.requests[2].reject()
+  })
+  test(file+': save stays blocked across automatic batches and unlocks after completion or failure',()=>{
+    const p=fixture(file,25);p.helper.load()
+    for(let i=0;i<3;i++) {
+      assert.equal(p.requests.length,i+1)
+      assert.equal(p.helper.isPending(),true)
+      assert.equal(p.$('#modalSubmit').disabled,true)
+      p.requests[i].resolve([])
+    }
+    assert.equal(p.requests.length,3,'failed images must not cause an automatic retry loop')
+    assert.equal(p.helper.isPending(),false)
+    assert.equal(p.$('#modalSubmit').disabled,false)
+    p.helper.load();p.requests[3].reject()
+    assert.equal(p.helper.isPending(),false)
+    assert.equal(p.$('#modalSubmit').disabled,false)
+    p.helper.load();p.helper.reset()
+    assert.equal(p.helper.isPending(),false)
+    assert.equal(p.$('#modalSubmit').disabled,false)
+  })
+  test(file+': import in already active WYSIWYG waits for data and blocks early save',()=>{
+    const p=fixture(file)
+    const source=readFileSync(new URL('../static/js/src/app/landing_pages.js',import.meta.url),'utf8')
+    vm.runInContext(source.slice(0,source.indexOf('function edit(idx)')),p.ctx)
+    let dataReady, persisted=0
+    p.editor.setData=(html,callback)=>{dataReady=callback}
+    p.ctx.api.clone_site=()=>({success(callback){callback({training_static:true,html:'<p>imported</p>'});return this},error(){return this}})
+    p.ctx.api.pages={post(){persisted++;return {success(){return this},error(){return this}}}}
+    p.$('#url').val('https://example.test/training')
+    p.ctx.importSite()
+    p.ctx.save(-1)
+    assert.equal(persisted,0)
+    assert.equal(p.$('#modalSubmit').disabled,true)
+    assert.equal(p.requests.length,0)
+    dataReady()
+    assert.equal(p.requests.length,1,'same-mode import must start localization')
+    p.ctx.save(-1)
+    assert.equal(persisted,0)
+    p.requests[0].resolve([{url:'https://images.example.test/0.png',data:png}])
+    p.ctx.save(-1)
+    assert.equal(persisted,1)
   })
   test(file+': malformed and untrusted responses cannot inject active content',()=>{
     const p=fixture(file)

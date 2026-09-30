@@ -6,7 +6,7 @@ const pageJS = readFileSync(new URL("../static/js/src/app/landing_pages.js", imp
 const template = readFileSync(new URL("../templates/landing_pages.html", import.meta.url), "utf8")
 
 test("landing-page import localizes safe public images automatically", () => {
-  assert.match(pageJS, /CKEDITOR\.instances\["html_editor"\]\.setMode\('wysiwyg',[\s\S]*trainingImagePreview\.load\(\)/)
+  assert.match(pageJS, /CKEDITOR\.instances\["html_editor"\]\.setData\(data\.html,[\s\S]*trainingImagePreview\.load\(\)/)
   assert.doesNotMatch(template, /Load verified images/)
   assert.match(template, /Public HTTPS raster images are localized automatically after import/)
 })

@@ -16,7 +16,7 @@ test("saved SMTP passwords remain write-only in the browser", () => {
 test("test email from an edited profile identifies the saved profile without exposing its password", () => {
   assert.match(js, /var activeProfileId = 0/)
   assert.match(js, /activeProfileId = profile\.id/)
-  assert.match(js, /smtp:\s*\{[\s\\S]*id: activeProfileId/)
+  assert.match(js, /smtp:\s*\{[\s\S]*id: activeProfileId/)
   assert.match(api, /s\.SMTP\.Id != 0 && s\.SMTP\.Password == ""/)
   assert.match(api, /models\.GetSMTP\(s\.SMTP\.Id, s\.UserId\)/)
   assert.match(api, /s\.SMTP\.Password = stored\.Password/)

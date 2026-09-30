@@ -67,7 +67,7 @@ jobs:
           process.stdout.write(releaseBody(changelog, "0.22.1", "7d33ed03306772e215ecd2e39227649d9f8ff1a5"))
           NODE
           )"
-          actual_body="$(jq -r '.body // ""' <<<"$before" | tr -d '\\r')"
+          actual_body="$(jq -r '.body // ""' <<<"$before" | tr -d '\r')"
           test "$actual_body" = "$expected_body"
 
           assets_before="$(gh api "repos/$REPO/releases/$RELEASE_ID/assets?per_page=100" | jq -c 'sort_by(.id) | map({id,name,size,digest,state,uploader:.uploader.id})')"
@@ -84,7 +84,7 @@ jobs:
           test "$(jq -r '.name' <<<"$after")" = "$EXPECTED_NAME"
           test "$(jq -r '.draft' <<<"$after")" = "true"
           test "$(jq -r '.prerelease' <<<"$after")" = "false"
-          test "$(jq -r '.body // ""' <<<"$after" | tr -d '\\r')" = "$expected_body"
+          test "$(jq -r '.body // ""' <<<"$after" | tr -d '\r')" = "$expected_body"
 
           assets_after="$(gh api "repos/$REPO/releases/$RELEASE_ID/assets?per_page=100" | jq -c 'sort_by(.id) | map({id,name,size,digest,state,uploader:.uploader.id})')"
           test "$assets_after" = "$assets_before"

@@ -67,7 +67,6 @@ func TestCheckerIgnoresDraftAndPrereleaseWithoutToken(t *testing.T) {
 	}
 }
 
-
 func TestSourceFromReleaseNotesAcceptsCRLFAndRejectsAmbiguity(t *testing.T) {
 	source := strings.Repeat("a", 40)
 	body := "## 0.22.1\r\n\r\n<!-- darkphish-release-source:" + source + " -->\r\n"

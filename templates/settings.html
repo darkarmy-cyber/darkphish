@@ -10,15 +10,6 @@
     <div class="tab-content">
         <div role="tabpanel" class="tab-pane {{if eq .SettingsTab "account"}}active{{end}}" id="mainSettings">
             <br />
-            {{if .ModifySystem }}
-            <div class="row">
-                <label class="col-sm-2 control-label form-label">DarkPhish version</label>
-                <div class="col-md-6">
-                    <label class="form-label">{{.Version}}</label>
-                </div>
-            </div>
-            <br />
-            {{end}}
             <form id="settingsForm">
                 <div class="row">
                     <label for="username" class="col-sm-2 control-label form-label">Username:</label>

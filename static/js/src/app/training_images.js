@@ -1,18 +1,22 @@
-// Only inert training imports use this helper. No image fetch until consent.
+// Only inert training imports use this helper. Safe public raster images are fetched automatically after import.
 var trainingImagePreview = (function () {
     var generation = 0, pending = false, attempted = Object.create(null)
     function reset() {
         generation++
         pending = false
+        $("#modalSubmit").prop("disabled", false)
         attempted = Object.create(null)
-        $("#trainingImageStatus").text("Images have not been requested.")
+        $("#trainingImageStatus").text("Safe public images will be loaded automatically after import.")
     }
-    function load() {
+    function load(automatic) {
         if (!trainingStatic || pending) return
         var editor = CKEDITOR.instances.html_editor, current = generation
         if (!editor) return
+        pending = true
+        $("#modalSubmit").prop("disabled", true)
         function request() {
-            if (!trainingStatic || current !== generation || !editor.document) return
+            if (!trainingStatic || current !== generation) return
+            if (!editor.document) { finish(); return }
             var images = Array.prototype.slice.call(editor.document.$.querySelectorAll("img[data-training-image-url]"))
             var urls = []
             images.forEach(function (img) {
@@ -22,12 +26,12 @@ var trainingImagePreview = (function () {
             })
             var all = urls
             urls = all.filter(function (url) { return !attempted[url] })
-            if (!urls.length && all.length) { attempted = Object.create(null); urls = all }
+            if (!automatic && !urls.length && all.length) { attempted = Object.create(null); urls = all }
             var remaining = Math.max(0, urls.length - 12)
             urls = urls.slice(0, 12)
-            if (!urls.length) { $("#trainingImageStatus").text("No additional supported images to load. Inline SVG and dynamic images are not supported."); return }
+            if (!urls.length) { $("#trainingImageStatus").text("No additional supported images to load. Inline SVG and dynamic images are not supported."); finish(); return }
+            var continueBatch = false
             pending = true
-            $("#loadTrainingImages").prop("disabled", true)
             $("#trainingImageStatus").text("Verifying images…")
             api.preview_email_images({urls: urls}).done(function (results) {
                 if (current !== generation || !trainingStatic) return
@@ -55,15 +59,23 @@ var trainingImagePreview = (function () {
                     })
                 })
                 editor.fire("change")
-                $("#trainingImageStatus").text(loaded + " of " + urls.length + " images embedded. Unavailable, private, oversized or unsupported images remain blocked." + (overBudget ? " Page size budget reached; use fewer or smaller images before loading more." : "") + (remaining ? " Click again for remaining images." : ""))
+                continueBatch = remaining > 0
+                $("#trainingImageStatus").text(loaded + " of " + urls.length + " public raster images embedded." + (overBudget ? " Page size budget reached; some images were skipped." : "") + (remaining ? " Additional images remain after the automatic batch." : ""))
             }).fail(function () {
                 if (current === generation) $("#trainingImageStatus").text("Images could not be verified. Check your session and try again.")
             }).always(function () {
-                if (current === generation) { pending = false; $("#loadTrainingImages").prop("disabled", !trainingStatic) }
+                if (current === generation) {
+                    finish()
+                    if (continueBatch) load(true)
+                }
             })
         }
         if (editor.mode !== "wysiwyg") editor.setMode("wysiwyg", request)
         else request()
+        function finish() {
+            pending = false
+            $("#modalSubmit").prop("disabled", false)
+        }
     }
-    return {reset: reset, load: load}
+    return {reset: reset, load: load, isPending: function () { return pending }}
 })()

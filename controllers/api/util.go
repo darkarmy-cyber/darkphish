@@ -85,6 +85,22 @@ func (as *Server) SendTestEmail(w http.ResponseWriter, r *http.Request) {
 		s.PageId = s.Page.Id
 	}
 
+	// Saved profile passwords are write-only and are never returned to the browser.
+	// When testing an existing profile with a blank password field, restore only
+	// that user's stored password server-side. Any explicitly entered password
+	// remains a one-off test value and is not replaced here.
+	if s.SMTP.Id != 0 && s.SMTP.Password == "" {
+		stored, lookupErr := models.GetSMTP(s.SMTP.Id, s.UserId)
+		if lookupErr != nil {
+			JSONResponse(w, models.Response{Success: false, Message: "Sending profile not found"}, http.StatusBadRequest)
+			return
+		}
+		if err := s.SMTP.ReusePassword(stored); err != nil {
+			JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
+			return
+		}
+	}
+
 	// If a complete sending profile is provided use it
 	if err := s.SMTP.Validate(); err != nil {
 		// Otherwise get the SMTP requested by name

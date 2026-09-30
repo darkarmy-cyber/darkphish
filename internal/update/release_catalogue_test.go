@@ -10,26 +10,32 @@ import (
 	"testing"
 )
 
-func TestStablePropagatesTagLookupFailure(t *testing.T) {
+func TestStableUsesCanonicalSourceMarkerWithoutTagLookup(t *testing.T) {
 	r, _, _ := evidence(t)
+	source := r.Source
 	r.Source = "main"
+	r.Notes = "## 0.8.0\n\nSource commit: " + source + "\n\n<!-- darkphish-release-source:" + source + " -->\n"
 	body, err := json.Marshal([]Release{r})
 	if err != nil {
 		t.Fatal(err)
 	}
+	requests := 0
 	c := &Client{http: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		switch {
-		case strings.Contains(req.URL.Path, "/releases"):
-			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
-		case strings.Contains(req.URL.Path, "/git/ref/tags/"):
-			return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: io.NopCloser(strings.NewReader("unavailable")), Header: make(http.Header)}, nil
-		default:
-			t.Fatalf("unexpected request: %s", req.URL.Path)
-			return nil, nil
+		requests++
+		if !strings.Contains(req.URL.Path, "/releases") {
+			t.Fatalf("catalogue performed unexpected request: %s", req.URL.Path)
 		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
 	})}}
-	if _, err := c.Stable(context.Background()); err == nil {
-		t.Fatal("tag lookup failure was silently converted into a partial stable catalogue")
+	got, err := c.Stable(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Source != source {
+		t.Fatalf("unexpected stable catalogue: %+v", got)
+	}
+	if requests != 1 {
+		t.Fatalf("stable catalogue made %d requests, want 1", requests)
 	}
 }
 

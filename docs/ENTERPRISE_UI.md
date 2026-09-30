@@ -33,7 +33,7 @@ This is the first implementation slice of the approved DarkPhish enterprise rede
 
 The sign-in and reset forms keep their existing POST targets, field names, autocomplete attributes, required inputs, minimum password length, flash rendering and password-strength integration. There is no new SSO/MFA implementation and no alteration to server-side authentication, request validation, permissions, update verification or licensing.
 
-Template content rendered by CKEditor and public landing pages do not inherit the administrative theme. Existing sanitization, image-preview consent, external-address checks and source preservation remain unchanged. No remote images are automatically loaded by this redesign.
+Template content rendered by CKEditor and public landing pages do not inherit the administrative theme. Existing sanitization, external-address checks and source preservation remain unchanged. Email and static-training imports may automatically localize bounded public raster images through the existing restricted server fetch path; private/internal and active resources remain blocked.
 
 ## Editor compatibility
 
@@ -47,7 +47,7 @@ The full proposal is broader than this foundation. Dedicated editor routes with 
 
 DarkPhish 0.22 is being delivered in bounded workstreams so UI changes remain reviewable and security regressions can be isolated:
 
-1. Email Template Import 2.0 — merged in PR #125; automatic bounded image localization while preserving explicit external-image consent and import security limits.
+1. Email Template Import 2.0 — merged in PR #125; automatic bounded image localization with import security limits and no separate manual external-image action.
 2. Dedicated editor routes with unsaved-change protection — tracked in #130 and implemented first after the import workstream.
 3. Multi-step campaign setup and final review — tracked in #131.
 4. Restructured analytics dashboard — tracked in #132.

@@ -5,11 +5,11 @@
 */
 var pages = []
 var trainingStatic = false
+var trainingImportPending = false
 
 function setTrainingStatic(enabled) {
     trainingStatic = !!enabled
     $("#trainingStaticNotice").prop("hidden", !trainingStatic)
-    $("#loadTrainingImages").prop("disabled", !trainingStatic)
     $("#capture_credentials_checkbox, #capture_passwords_checkbox").prop("disabled", trainingStatic)
     if (trainingStatic) {
         $("#capture_credentials_checkbox, #capture_passwords_checkbox").prop("checked", false)
@@ -22,6 +22,7 @@ function setTrainingStatic(enabled) {
 
 // Save attempts to POST to /templates/
 function save(idx) {
+    if (trainingImportPending || trainingImagePreview.isPending()) return
     var page = {}
     page.name = $("#name").val()
     editor = CKEDITOR.instances["html_editor"]
@@ -56,6 +57,7 @@ function save(idx) {
 }
 
 function dismiss() {
+    trainingImportPending = false
     setTrainingStatic(false)
     $("#modal\\.flashes").empty()
     $("#name").val("")
@@ -114,8 +116,14 @@ function importSite() {
             })
             .success(function (data) {
                 setTrainingStatic(data.training_static)
-                $("#html_editor").val(data.html)
-                CKEDITOR.instances["html_editor"].setMode('wysiwyg')
+                trainingImportPending = true
+                $("#modalSubmit").prop("disabled", true)
+                CKEDITOR.instances["html_editor"].setData(data.html, function () {
+                    if (!trainingImportPending) return
+                    trainingImportPending = false
+                    $("#modalSubmit").prop("disabled", false)
+                    trainingImagePreview.load()
+                })
                 $("#importSiteModal").modal("hide")
             })
             .error(function (data) {

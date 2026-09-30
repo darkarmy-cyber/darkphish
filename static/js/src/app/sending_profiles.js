@@ -1,4 +1,5 @@
 var profiles = []
+var activeProfileId = 0
 
 // Presentation only: preserve the server diagnostic without retrying a send.
 function testEmailErrorMessage(data) {
@@ -30,6 +31,7 @@ function sendTestEmail() {
         position: $("input[name=to_position]").val(),
         url: '',
         smtp: {
+            id: activeProfileId,
             from_address: $("#from").val(),
             host: $("#host").val(),
             username: $("#username").val(),
@@ -104,7 +106,8 @@ function dismiss() {
     $("#from").val("")
     $("#host").val("")
     $("#username").val("")
-    $("#password").val("")
+    $("#password").val("").attr("placeholder", "Password")
+    activeProfileId = 0
     $("#ignore_cert_errors").prop("checked", true)
     $("#headersTable").dataTable().DataTable().clear().draw()
     $("#modal").modal('hide')
@@ -165,15 +168,17 @@ function edit(idx) {
         save(idx)
     })
     var profile = {}
+    activeProfileId = 0
     if (idx != -1) {
         $("#profileModalLabel").text("Edit Sending Profile")
         profile = profiles[idx]
+        activeProfileId = profile.id
         $("#name").val(profile.name)
         $("#interface_type").val(profile.interface_type)
         $("#from").val(profile.from_address)
         $("#host").val(profile.host)
         $("#username").val(profile.username)
-        $("#password").val(profile.password)
+        $("#password").val("").attr("placeholder", profile.password_set ? "Stored password - leave blank to keep" : "Password")
         $("#ignore_cert_errors").prop("checked", profile.ignore_cert_errors)
         $.each(profile.headers, function (i, record) {
             addCustomHeader(record.key, record.value)
@@ -184,6 +189,7 @@ function edit(idx) {
 }
 
 function copy(idx) {
+    activeProfileId = 0
     $("#modalSubmit").unbind('click').click(function () {
         save(-1)
     })
@@ -194,7 +200,7 @@ function copy(idx) {
     $("#from").val(profile.from_address)
     $("#host").val(profile.host)
     $("#username").val(profile.username)
-    $("#password").val(profile.password)
+    $("#password").val("").attr("placeholder", "Enter password for copied profile")
     $("#ignore_cert_errors").prop("checked", profile.ignore_cert_errors)
 }
 

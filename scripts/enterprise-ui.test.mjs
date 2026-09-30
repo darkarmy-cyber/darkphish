@@ -48,7 +48,7 @@ test('reduced-motion durations survive the shipped CSS minifier', () => {
   assert.match(rule, /scroll-behavior:auto!important/)
 })
 
-test('wide editors retain modal integration, import IDs and external image consent', () => {
+test('wide editors retain modal integration and automatic import UX', () => {
   for (const name of ['templates','landing_pages']) {
     const html = read(`templates/${name}.html`)
     assert.match(html, /class="modal fade editor-workspace" id="modal"/)
@@ -58,7 +58,7 @@ test('wide editors retain modal integration, import IDs and external image conse
   }
   const email = read('templates/templates.html')
   assert.match(email, /aria-labelledby="templateModalLabel"/)
-  assert.match(email, /id="loadTemplateImages"/)
+  assert.doesNotMatch(email, /Load external images|id="loadTemplateImages"/)
   assert.match(email, /data-target="#importEmailModal"/)
 })
 

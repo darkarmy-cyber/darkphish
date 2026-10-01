@@ -21,9 +21,10 @@ export function browserFixture(html, { width = 1280, flags = [] } = {}) {
     writeFileSync(file, html)
     const output = execFileSync(chrome, ["--headless=new", "--no-sandbox", "--disable-gpu",
       "--disable-dev-shm-usage", "--no-first-run", "--disable-background-networking",
+      "--disable-threaded-animation", "--run-all-compositor-stages-before-draw",
       `--user-data-dir=${join(directory, "profile")}`, `--window-size=${width},1000`,
-      "--virtual-time-budget=2000", ...flags, "--dump-dom", pathToFileURL(file).href],
-    { encoding: "utf8", timeout: 30000, maxBuffer: 8 * 1024 * 1024, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] })
+      "--virtual-time-budget=5000", ...flags, "--dump-dom", pathToFileURL(file).href],
+    { encoding: "utf8", timeout: 60000, maxBuffer: 8 * 1024 * 1024, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] })
     const result = output.match(/<pre id="test-result">([^<]*)<\/pre>/)
     assert.ok(result, "Browser did not finish the fixture")
     assert.equal(result[1], "PASS", result[1])

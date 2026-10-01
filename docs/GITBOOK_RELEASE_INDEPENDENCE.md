@@ -1,9 +1,10 @@
 # GitBook and native audit test reliability
 
-GitBook remains connected to the repository's documentation. Merged content
-continues to synchronize; pull-request previews are informational, not release
-approval. There is no GitBook disconnect, synthetic success status, force import,
-branch-protection bypass, or change to documentation content in this repair.
+The repository owner has requested GitBook disconnection. It is not a required
+release or merge check. GitHub may still display historical GitBook commit
+statuses after an application is disconnected; those records do not establish
+that synchronization remains active. No synthetic success status, force import
+or branch-protection bypass is used.
 
 The protected merge helper accepts `unstable` only when every latest check run
 has completed successfully (or is neutral/skipped), all non-success commit

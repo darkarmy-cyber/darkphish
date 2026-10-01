@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/darkarmy-cyber/darkphish/auth"
 	ctx "github.com/darkarmy-cyber/darkphish/context"
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
+	mid "github.com/darkarmy-cyber/darkphish/middleware"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
@@ -30,9 +32,73 @@ func (as *Server) sensitiveKey(r *http.Request) string {
 	return strconv.FormatInt(user.Id, 10) + ":" + host
 }
 
+func (as *Server) limitAPIRequests(next http.Handler) http.Handler {
+	preflight := as.preflightLimiter.LimitAll(next)
+	authenticated := mid.RequireAPIAuthenticationWithRejectionGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := ctx.Get(r, "user").(models.User)
+		key := "user:" + strconv.FormatInt(user.Id, 10)
+		if tokenID, ok := ctx.Get(r, "pat_id").(int64); ok {
+			key = "pat:" + strconv.FormatInt(tokenID, 10)
+		}
+		decision := as.requestLimiter.Check(key)
+		decision.SetHeaders(w)
+		if !decision.Allowed {
+			JSONResponse(w, models.Response{Success: false, Message: "Request limit exceeded; try again later"}, http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}), func(failure http.Handler) http.Handler { return as.requestLimiter.LimitAll(failure) })
+	admission := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Hash untrusted credentials so repeated invalid tokens are rejected
+		// before database authentication and auditing, without storing secrets.
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
+		credential := r.Header.Get("Authorization")
+		fields := strings.Fields(credential)
+		if len(fields) == 2 && strings.EqualFold(fields[0], "Bearer") {
+			credential = fields[1]
+			if canonical, ok := models.CanonicalPersonalAccessToken(credential); ok {
+				credential = canonical
+			}
+		}
+		if !models.RecognizedPATForAdmission(credential) {
+			credential = host + "\x00" + credential
+		}
+		digest := sha256.Sum256([]byte(credential))
+		decision := as.requestLimiter.Check("authentication:" + string(digest[:]))
+		decision.SetHeaders(w)
+		if !decision.Allowed {
+			JSONResponse(w, models.Response{Success: false, Message: "Request limit exceeded; try again later"}, http.StatusTooManyRequests)
+			return
+		}
+		authenticated.ServeHTTP(w, r)
+	})
+	anonymous := as.authenticationLimiter.LimitAll(admission)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions && r.Header.Get("Origin") != "" {
+			preflight.ServeHTTP(w, r)
+			return
+		}
+		if ctx.Get(r, "user") != nil && r.Header.Get("Authorization") == "" && r.URL.Query().Get("api_key") == "" {
+			authenticated.ServeHTTP(w, r)
+			return
+		}
+		authorization := strings.Fields(r.Header.Get("Authorization"))
+		if len(authorization) != 2 || !strings.EqualFold(authorization[0], "Bearer") || !models.RecognizedPATForAdmission(authorization[1]) {
+			anonymous.ServeHTTP(w, r)
+			return
+		}
+		admission.ServeHTTP(w, r)
+	})
+}
+
 func (as *Server) limitSensitive(next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !as.sensitiveLimiter.AllowKey(as.sensitiveKey(r)) {
+		decision := as.sensitiveLimiter.Check(as.sensitiveKey(r))
+		decision.SetHeaders(w)
+		if !decision.Allowed {
 			if strings.TrimSuffix(r.URL.Path, "/") == "/api/reauthenticate" {
 				user, _ := ctx.Get(r, "user").(models.User)
 				authMethod, _ := ctx.Get(r, "auth_method").(string)

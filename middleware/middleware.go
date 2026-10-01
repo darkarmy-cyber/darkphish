@@ -125,10 +125,13 @@ func Use(handler http.HandlerFunc, mid ...func(http.Handler) http.HandlerFunc) h
 func GetContext(handler http.Handler) http.HandlerFunc {
 	// Set the context here
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Parse the request form
-		err := r.ParseForm()
-		if err != nil {
-			http.Error(w, "Error parsing request", http.StatusInternalServerError)
+		// API handlers decode their own bounded JSON bodies after admission.
+		// Do not eagerly parse attacker-supplied form bodies before API budgets.
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, "Error parsing request", http.StatusInternalServerError)
+				return
+			}
 		}
 		// Set the context appropriately here.
 		// Set the session
@@ -162,10 +165,23 @@ func GetContext(handler http.Handler) http.HandlerFunc {
 // callers with their secure session. Query-string API keys are intentionally
 // rejected because URLs are routinely persisted in logs and browser history.
 func RequireAPIAuthentication(handler http.Handler) http.Handler {
+	return RequireAPIAuthenticationWithRejectionGuard(handler, nil)
+}
+
+// RequireAPIAuthenticationWithRejectionGuard bounds rejected responses without
+// letting an anonymous caller spend an authenticated user's request budget.
+func RequireAPIAuthenticationWithRejectionGuard(handler http.Handler, guard func(http.Handler) http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reject := func(status int, message string) {
+			failure := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { JSONError(w, status, message) }))
+			if guard != nil {
+				failure = guard(failure)
+			}
+			failure.ServeHTTP(w, r)
+		}
 		if r.URL.Query().Get("api_key") != "" {
 			audit.Record(r, "anonymous", 0, "pat.auth.failure", "api", "failure", "pat")
-			JSONError(w, http.StatusUnauthorized, "API keys in URLs are disabled; use Authorization: Bearer")
+			reject(http.StatusUnauthorized, "API keys in URLs are disabled; use Authorization: Bearer")
 			return
 		}
 
@@ -175,13 +191,13 @@ func RequireAPIAuthentication(handler http.Handler) http.Handler {
 			token, ok := bearerToken(authorization)
 			if !ok {
 				audit.Record(r, "anonymous", 0, "pat.auth.failure", "api", "failure", "pat")
-				JSONError(w, http.StatusUnauthorized, "Invalid Authorization header")
+				reject(http.StatusUnauthorized, "Invalid Authorization header")
 				return
 			}
 			authentication, err := models.AuthenticatePersonalAccessToken(token)
 			if err != nil {
 				audit.Record(r, "anonymous", 0, "pat.auth.failure", "api", "failure", "pat")
-				JSONError(w, http.StatusUnauthorized, "Invalid API token")
+				reject(http.StatusUnauthorized, "Invalid API token")
 				return
 			}
 			u = authentication.User
@@ -192,7 +208,7 @@ func RequireAPIAuthentication(handler http.Handler) http.Handler {
 			current := ctx.Get(r, "user")
 			if current == nil {
 				audit.Record(r, "anonymous", 0, "auth.session.failure", "api", "failure", "session")
-				JSONError(w, http.StatusUnauthorized, "Authentication required")
+				reject(http.StatusUnauthorized, "Authentication required")
 				return
 			}
 			u = current.(models.User)
@@ -202,7 +218,7 @@ func RequireAPIAuthentication(handler http.Handler) http.Handler {
 			if authorization != "" {
 				audit.Record(r, u.Username, u.Id, "pat.auth.failure", "api", "failure", "pat")
 			}
-			JSONError(w, http.StatusForbidden, err.Error())
+			reject(http.StatusForbidden, err.Error())
 			return
 		}
 		r = ctx.Set(r, "user", u)
@@ -355,7 +371,8 @@ func loginReturnTarget(r *http.Request) string {
 
 // CORS enables cross-origin administrative API access only for exact,
 // explicitly configured origins. It never emits a wildcard or credentials.
-func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
+// Guards run before preflight handling, after allowed response headers are set.
+func CORS(allowedOrigins []string, guards ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
 	allowed := make(map[string]struct{}, len(allowedOrigins))
 	for _, origin := range allowedOrigins {
 		origin = strings.TrimSpace(origin)
@@ -364,23 +381,13 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 		}
 	}
 	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		protocol := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
-			if origin == "" {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if _, ok := allowed[origin]; !ok {
-				if r.Method == http.MethodOptions {
+			if origin != "" && r.Method == http.MethodOptions {
+				if _, ok := allowed[origin]; !ok {
 					JSONError(w, http.StatusForbidden, "CORS origin is not allowed")
 					return
 				}
-				next.ServeHTTP(w, r)
-				return
-			}
-			w.Header().Add("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			if r.Method == http.MethodOptions {
 				w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE, OPTIONS")
 				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 				w.Header().Set("Access-Control-Max-Age", "600")
@@ -388,6 +395,24 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 				return
 			}
 			next.ServeHTTP(w, r)
+		}))
+		for i := len(guards) - 1; i >= 0; i-- {
+			protocol = guards[i](protocol)
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				protocol.ServeHTTP(w, r)
+				return
+			}
+			if _, ok := allowed[origin]; !ok {
+				protocol.ServeHTTP(w, r)
+				return
+			}
+			w.Header().Add("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Expose-Headers", "X-RateLimit-Limit, X-RateLimit-Remaining, Retry-After")
+			protocol.ServeHTTP(w, r)
 		})
 	}
 }

@@ -91,7 +91,27 @@ func (r gormCredentialRepository) PurgeCredential(id int64, now time.Time) error
 type gormTokenRepository struct{ db *gorm.DB }
 
 func (r gormTokenRepository) CreateToken(value *PersonalAccessToken) error {
-	return r.db.Save(value).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// Lock the owner before counting, including SQLite where a no-op
+		// write acquires the database writer lock. Concurrent inserts cannot
+		// independently admit tokens against the same remaining capacity.
+		owner := tx.Model(&User{}).Where("id=?", value.UserID).UpdateColumn("id", gorm.Expr("id"))
+		if owner.Error != nil {
+			return owner.Error
+		}
+		var ownerUser User
+		if err := tx.Select("id").First(&ownerUser, value.UserID).Error; err != nil {
+			return err
+		}
+		var count int64
+		if err := tx.Model(&PersonalAccessToken{}).Where("user_id=? AND revoked_at IS NULL AND expires_at > ?", value.UserID, time.Now().UTC()).Count(&count).Error; err != nil {
+			return err
+		}
+		if count >= MaxActivePersonalAccessTokens {
+			return ErrPATCapacity
+		}
+		return tx.Create(value).Error
+	})
 }
 
 func (r gormTokenRepository) RevokeToken(id, userID int64, at time.Time) (bool, error) {

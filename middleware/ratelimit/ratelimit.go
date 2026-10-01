@@ -1,12 +1,14 @@
 package ratelimit
 
 import (
+	"encoding/json"
+	"math"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
-	log "github.com/darkarmy-cyber/darkphish/logger"
 	"golang.org/x/time/rate"
 )
 
@@ -97,51 +99,83 @@ func (limiter *PostLimiter) Cleanup() {
 	}
 }
 
-func (limiter *PostLimiter) addBucket(ip string) *bucket {
-	limiter.Lock()
-	defer limiter.Unlock()
-	limit := rate.NewLimiter(rate.Every(time.Minute/time.Duration(limiter.requestLimit)), limiter.requestLimit)
-	b := &bucket{
-		limiter: limit,
-	}
-	limiter.visitors[ip] = b
-	return b
+// Decision describes the bucket immediately after consuming one request.
+type Decision struct {
+	Allowed    bool
+	Limit      int
+	Remaining  int
+	RetryAfter int
 }
 
-func (limiter *PostLimiter) allow(ip string) bool {
-	// Check if we have a limiter already active for this clientIP
-	limiter.RLock()
-	bucket, exists := limiter.visitors[ip]
-	limiter.RUnlock()
-	if !exists {
-		bucket = limiter.addBucket(ip)
-	}
-	// Update the lastSeen for this bucket to assist with cleanup
+// Check atomically finds or creates a bucket and consumes its capacity.
+func (limiter *PostLimiter) Check(key string) Decision {
 	limiter.Lock()
 	defer limiter.Unlock()
-	bucket.lastSeen = time.Now()
-	return bucket.limiter.Allow()
+	now := time.Now()
+	b, exists := limiter.visitors[key]
+	if !exists {
+		b = &bucket{limiter: rate.NewLimiter(rate.Every(time.Minute/time.Duration(limiter.requestLimit)), limiter.requestLimit)}
+		limiter.visitors[key] = b
+	}
+	b.lastSeen = now
+	allowed := b.limiter.AllowN(now, 1)
+	tokens := b.limiter.TokensAt(now)
+	decision := Decision{Allowed: allowed, Limit: limiter.requestLimit, Remaining: int(math.Floor(math.Max(0, tokens)))}
+	if !allowed {
+		decision.RetryAfter = int(math.Max(1, math.Ceil((1-tokens)/float64(b.limiter.Limit()))))
+	}
+	return decision
+}
+
+// SetHeaders exposes capacity without reserving future requests.
+func (decision Decision) SetHeaders(w http.ResponseWriter) {
+	w.Header().Set("X-RateLimit-Limit", strconv.Itoa(decision.Limit))
+	w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(decision.Remaining))
+	if !decision.Allowed {
+		w.Header().Set("Retry-After", strconv.Itoa(decision.RetryAfter))
+	}
 }
 
 // AllowKey checks a caller-defined identity bucket. Sensitive authenticated
 // endpoints use a user-and-source key so one client cannot globally lock out
 // every reviewer.
-func (limiter *PostLimiter) AllowKey(key string) bool { return limiter.allow(key) }
+func (limiter *PostLimiter) AllowKey(key string) bool { return limiter.Check(key).Allowed }
 
 // Limit enforces the configured rate limit for POST requests.
 //
 // TODO: Change the return value to an http.Handler when we clean up the
 // way DarkPhish routing is done.
 func (limiter *PostLimiter) Limit(next http.Handler) http.HandlerFunc {
+	return limiter.limit(next, true)
+}
+
+// LimitAll bounds every method, including failed authentication attempts.
+func (limiter *PostLimiter) LimitAll(next http.Handler) http.HandlerFunc {
+	return limiter.limit(next, false)
+}
+
+func (limiter *PostLimiter) limit(next http.Handler, postOnly bool) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
 			clientIP = r.RemoteAddr
 		}
-		if r.Method == http.MethodPost && !limiter.allow(clientIP) {
-			log.Error("")
-			http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
-			return
+		if !postOnly || r.Method == http.MethodPost {
+			decision := limiter.Check(clientIP)
+			decision.SetHeaders(w)
+			if !decision.Allowed {
+				if postOnly {
+					http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusTooManyRequests)
+					json.NewEncoder(w).Encode(struct {
+						Success bool   `json:"success"`
+						Message string `json:"message"`
+					}{Message: "Request limit exceeded; try again later"})
+				}
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})

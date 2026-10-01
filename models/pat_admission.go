@@ -1,0 +1,81 @@
+package models
+
+import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"sync"
+	"time"
+
+	"gorm.io/gorm"
+)
+
+var patAdmission struct {
+	sync.Mutex
+	database  *gorm.DB
+	refreshAt time.Time
+	tokens    map[string]PersonalAccessToken
+}
+
+func invalidatePATAdmission() {
+	patAdmission.Lock()
+	defer patAdmission.Unlock()
+	patAdmission.refreshAt = time.Time{}
+}
+
+func rememberPATForAdmission(token PersonalAccessToken) {
+	patAdmission.Lock()
+	defer patAdmission.Unlock()
+	if patAdmission.database != db {
+		patAdmission.database = db
+		patAdmission.tokens = make(map[string]PersonalAccessToken)
+		patAdmission.refreshAt = time.Time{}
+	}
+	if patAdmission.tokens == nil {
+		patAdmission.tokens = make(map[string]PersonalAccessToken)
+	}
+	patAdmission.tokens[token.Prefix] = token
+}
+
+// RecognizedPATForAdmission only reserves rate-limit capacity. It never
+// authenticates or authorizes a request: callers must still perform full live
+// token, account, revocation and scope checks. This bounded-refresh snapshot
+// stores persisted digests, never raw tokens or attacker-created entries.
+func RecognizedPATForAdmission(raw string) bool {
+	prefix, secret, ok := parsePAT(raw)
+	if !ok {
+		return false
+	}
+	patAdmission.Lock()
+	defer patAdmission.Unlock()
+	now := time.Now().UTC()
+	if patAdmission.database != db {
+		patAdmission.database = db
+		patAdmission.tokens = make(map[string]PersonalAccessToken)
+		patAdmission.refreshAt = time.Time{}
+	}
+	if !now.Before(patAdmission.refreshAt) {
+		var tokens []PersonalAccessToken
+		if db == nil || db.Select("prefix", "token_hash", "expires_at").Where("revoked_at IS NULL AND expires_at > ?", now).Find(&tokens).Error != nil {
+			// Retain recognized digests on a transient failure; downstream live
+			// authentication still enforces all security checks. Bound retries.
+			patAdmission.refreshAt = now.Add(time.Second)
+		} else {
+			patAdmission.refreshAt = now.Add(time.Minute)
+			patAdmission.tokens = make(map[string]PersonalAccessToken)
+			for _, token := range tokens {
+				patAdmission.tokens[token.Prefix] = token
+			}
+		}
+	}
+	token, ok := patAdmission.tokens[prefix]
+	if !ok || !token.ExpiresAt.After(now) {
+		return false
+	}
+	expected, err := hex.DecodeString(token.TokenHash)
+	if err != nil {
+		return false
+	}
+	actual := sha256.Sum256([]byte(secret))
+	return subtle.ConstantTimeCompare(expected, actual[:]) == 1
+}

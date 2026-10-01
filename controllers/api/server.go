@@ -19,12 +19,15 @@ type ServerOption func(*Server)
 // stopped. Rather, it's meant to be used as an http.Handler in the
 // AdminServer.
 type Server struct {
-	updates          *update.Service
-	handler          http.Handler
-	worker           worker.Worker
-	limiter          *ratelimit.PostLimiter
-	sensitiveLimiter *ratelimit.PostLimiter
-	allowedOrigins   []string
+	updates               *update.Service
+	handler               http.Handler
+	worker                worker.Worker
+	limiter               *ratelimit.PostLimiter
+	sensitiveLimiter      *ratelimit.PostLimiter
+	requestLimiter        *ratelimit.PostLimiter
+	preflightLimiter      *ratelimit.PostLimiter
+	authenticationLimiter *ratelimit.PostLimiter
+	allowedOrigins        []string
 }
 
 // NewServer returns a new instance of the API handler with the provided
@@ -33,9 +36,12 @@ func NewServer(options ...ServerOption) *Server {
 	defaultWorker, _ := worker.New()
 	defaultLimiter := ratelimit.NewPostLimiter()
 	as := &Server{
-		worker:           defaultWorker,
-		limiter:          defaultLimiter,
-		sensitiveLimiter: ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(5)),
+		worker:                defaultWorker,
+		limiter:               defaultLimiter,
+		sensitiveLimiter:      ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(5)),
+		requestLimiter:        ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(100)),
+		preflightLimiter:      ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(1000)),
+		authenticationLimiter: ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(1000)),
 	}
 	for _, opt := range options {
 		opt(as)
@@ -68,7 +74,6 @@ func (as *Server) registerRoutes() {
 	root := mux.NewRouter()
 	root = root.StrictSlash(true)
 	router := root.PathPrefix("/api/").Subrouter()
-	router.Use(mid.RequireAPIAuthentication)
 	router.Use(mid.EnforcePATScopes)
 	router.Use(mid.AuditAPI)
 	router.Use(mid.EnforceViewOnly)
@@ -116,7 +121,7 @@ func (as *Server) registerRoutes() {
 	router.HandleFunc("/webhooks/", mid.Use(as.Webhooks, mid.RequirePermission(models.PermissionModifySystem)))
 	router.HandleFunc("/webhooks/{id:[0-9]+}/validate", mid.Use(as.ValidateWebhook, mid.RequirePermission(models.PermissionModifySystem)))
 	router.HandleFunc("/webhooks/{id:[0-9]+}", mid.Use(as.Webhook, mid.RequirePermission(models.PermissionModifySystem)))
-	as.handler = mid.CORS(as.allowedOrigins)(router)
+	as.handler = mid.CORS(as.allowedOrigins, as.limitAPIRequests)(router)
 }
 
 func (as *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

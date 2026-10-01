@@ -19,8 +19,11 @@ import (
 
 const patTokenPrefix = "darkphish_pat_"
 
+const MaxActivePersonalAccessTokens = 100
+
 var (
 	ErrInvalidPAT        = errors.New("invalid personal access token")
+	ErrPATCapacity       = errors.New("active personal access token limit reached; revoke an unused token first")
 	ErrExpiredPAT        = errors.New("personal access token has expired")
 	ErrRevokedPAT        = errors.New("personal access token has been revoked")
 	ErrInvalidPATScope   = errors.New("invalid personal access token scope")
@@ -114,7 +117,17 @@ func parsePAT(raw string) (string, string, bool) {
 	if decoded, err := base64.RawURLEncoding.DecodeString(secret); err != nil || len(decoded) != 32 {
 		return "", "", false
 	}
-	return prefix, secret, true
+	return strings.ToLower(prefix), secret, true
+}
+
+// CanonicalPersonalAccessToken normalizes the hexadecimal identifier while
+// preserving the case-sensitive secret. It does not validate authentication.
+func CanonicalPersonalAccessToken(raw string) (string, bool) {
+	prefix, secret, ok := parsePAT(raw)
+	if !ok {
+		return "", false
+	}
+	return patTokenPrefix + prefix + "_" + secret, true
 }
 
 func newPersonalAccessToken(userID int64, name string, scopes []string, expiresAt time.Time) (PersonalAccessToken, string, error) {
@@ -164,6 +177,7 @@ func CreatePersonalAccessToken(userID int64, name string, scopes []string, expir
 	if err := (gormTokenRepository{db: db}).CreateToken(&pat); err != nil {
 		return PersonalAccessToken{}, "", err
 	}
+	rememberPATForAdmission(pat)
 	return pat, raw, nil
 }
 
@@ -187,6 +201,7 @@ func CreatePersonalAccessTokenWithAudit(userID int64, name string, scopes []stri
 		return PersonalAccessToken{}, "", err
 	}
 	flushAuditOutboxAfterCommit()
+	rememberPATForAdmission(pat)
 	return pat, raw, nil
 }
 

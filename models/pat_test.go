@@ -2,11 +2,70 @@ package models
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
 	"gopkg.in/check.v1"
+	"gorm.io/gorm"
 )
+
+func (s *ModelsSuite) TestPATAdmissionCreationDoesNotRescan(c *check.C) {
+	_, raw, err := CreatePersonalAccessToken(1, "warm", []string{"landing-pages:read"}, time.Now().UTC().Add(time.Hour))
+	c.Assert(err, check.IsNil)
+	c.Assert(RecognizedPATForAdmission(raw), check.Equals, true)
+	queries := 0
+	name := "test:pat-admission-rescans"
+	c.Assert(db.Callback().Query().Before("gorm:query").Register(name, func(tx *gorm.DB) {
+		if len(tx.Statement.Selects) == 3 && tx.Statement.Selects[0] == "prefix" {
+			queries++
+		}
+	}), check.IsNil)
+	defer db.Callback().Query().Remove(name)
+	for i := 0; i < 8; i++ {
+		_, raw, err := CreatePersonalAccessToken(1, "incremental", []string{"landing-pages:read"}, time.Now().UTC().Add(time.Hour))
+		c.Assert(err, check.IsNil)
+		c.Assert(RecognizedPATForAdmission(raw), check.Equals, true)
+	}
+	c.Assert(queries, check.Equals, 0)
+}
+
+func (s *ModelsSuite) TestPersonalAccessTokenCapacity(c *check.C) {
+	var first PersonalAccessToken
+	for i := 0; i < MaxActivePersonalAccessTokens; i++ {
+		pat, _, err := CreatePersonalAccessToken(1, "capacity", []string{"landing-pages:read"}, time.Now().UTC().Add(time.Hour))
+		c.Assert(err, check.IsNil)
+		if i == 0 {
+			first = pat
+		}
+	}
+	_, raw, err := CreatePersonalAccessToken(1, "overflow", []string{"landing-pages:read"}, time.Now().UTC().Add(time.Hour))
+	c.Assert(err, check.Equals, ErrPATCapacity)
+	c.Assert(raw, check.Equals, "")
+	c.Assert(RevokePersonalAccessToken(first.ID, 1), check.IsNil)
+	_, _, err = CreatePersonalAccessToken(1, "replacement", []string{"landing-pages:read"}, time.Now().UTC().Add(time.Hour))
+	c.Assert(err, check.IsNil)
+}
+
+func (s *ModelsSuite) TestPATAdmissionRetainsSnapshotOnTransientFailure(c *check.C) {
+	_, raw, err := CreatePersonalAccessToken(1, "admission", []string{"landing-pages:read"}, time.Now().UTC().Add(time.Hour))
+	c.Assert(err, check.IsNil)
+	c.Assert(RecognizedPATForAdmission(raw), check.Equals, true)
+	invalidatePATAdmission()
+	queries := 0
+	name := "test:pat-admission-query-failure"
+	c.Assert(db.Callback().Query().Before("gorm:query").Register(name, func(tx *gorm.DB) {
+		queries++
+		tx.AddError(errors.New("temporary database failure"))
+	}), check.IsNil)
+	defer db.Callback().Query().Remove(name)
+	c.Assert(RecognizedPATForAdmission(raw), check.Equals, true)
+	c.Assert(RecognizedPATForAdmission(raw), check.Equals, true)
+	c.Assert(queries, check.Equals, 1)
+	c.Assert(db.Callback().Query().Remove(name), check.IsNil)
+	_, err = AuthenticatePersonalAccessToken(raw)
+	c.Assert(err, check.IsNil)
+}
 
 func (s *ModelsSuite) TestPersonalAccessTokenLifecycle(c *check.C) {
 	pat, raw, err := CreatePersonalAccessToken(1, "automation", []string{"campaigns:read", "reports:read"}, time.Now().UTC().Add(time.Hour))

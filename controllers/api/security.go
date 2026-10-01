@@ -32,7 +32,7 @@ func (as *Server) sensitiveKey(r *http.Request) string {
 }
 
 func (as *Server) limitAPIRequests(next http.Handler) http.Handler {
-	anonymous := as.requestLimiter.LimitAll(next)
+	preflight := as.preflightLimiter.LimitAll(next)
 	authenticated := mid.RequireAPIAuthenticationWithRejectionGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := ctx.Get(r, "user").(models.User)
 		decision := as.requestLimiter.Check("user:" + strconv.FormatInt(user.Id, 10))
@@ -45,7 +45,7 @@ func (as *Server) limitAPIRequests(next http.Handler) http.Handler {
 	}), func(failure http.Handler) http.Handler { return as.requestLimiter.LimitAll(failure) })
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions && r.Header.Get("Origin") != "" {
-			anonymous.ServeHTTP(w, r)
+			preflight.ServeHTTP(w, r)
 			return
 		}
 		authenticated.ServeHTTP(w, r)

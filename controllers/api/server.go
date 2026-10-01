@@ -25,6 +25,7 @@ type Server struct {
 	limiter          *ratelimit.PostLimiter
 	sensitiveLimiter *ratelimit.PostLimiter
 	requestLimiter   *ratelimit.PostLimiter
+	preflightLimiter *ratelimit.PostLimiter
 	allowedOrigins   []string
 }
 
@@ -38,6 +39,7 @@ func NewServer(options ...ServerOption) *Server {
 		limiter:          defaultLimiter,
 		sensitiveLimiter: ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(5)),
 		requestLimiter:   ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(100)),
+		preflightLimiter: ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(1000)),
 	}
 	for _, opt := range options {
 		opt(as)

@@ -76,6 +76,17 @@ func TestAnonymousExhaustionDoesNotBlockAuthenticatedBudget(t *testing.T) {
 			t.Fatal("PAT and session do not share the verified user's budget")
 		}
 	}
+	server.allowedOrigins = []string{"https://admin.example.test"}
+	server.registerRoutes()
+	preflight := httptest.NewRequest(http.MethodOptions, "/api/pages/", nil)
+	preflight.RemoteAddr = "127.0.0.1:54321"
+	preflight.Header.Set("Origin", "https://admin.example.test")
+	preflight.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	preflightResponse := httptest.NewRecorder()
+	server.ServeHTTP(preflightResponse, preflight)
+	if preflightResponse.Code != http.StatusNoContent {
+		t.Fatal("general budget prevents browser from reaching readable refusal")
+	}
 	r := httptest.NewRequest(http.MethodGet, "/api/pages/", nil)
 	r.RemoteAddr = "127.0.0.1:54321"
 	r = ctx.Set(r, "user", models.User{Id: testCtx.admin.Id + 1})
@@ -91,7 +102,7 @@ func TestPreflightRequestsConsumeBudgetAndRefusalsRemainReadable(t *testing.T) {
 		t.Run(origin, func(t *testing.T) {
 			server := setupTest(t).apiServer
 			server.allowedOrigins = []string{"https://admin.example.test"}
-			server.requestLimiter = ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(3))
+			server.preflightLimiter = ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(3))
 			server.registerRoutes()
 			for i := 0; i < 4; i++ {
 				r := httptest.NewRequest(http.MethodOptions, "/api/pages/", nil)

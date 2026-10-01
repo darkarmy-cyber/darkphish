@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -23,6 +24,29 @@ var successHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Reques
 type testContext struct {
 	apiKey string
 	userID int64
+}
+
+type unreadAPIBody struct{ reads int }
+
+func (body *unreadAPIBody) Read([]byte) (int, error) { body.reads++; return 0, io.EOF }
+func (body *unreadAPIBody) Close() error             { return nil }
+
+func TestContextDefersAPIBodyParsingButPreservesLoginForms(t *testing.T) {
+	setupTest(t)
+	for _, path := range []string{"/api/pages/", "/login"} {
+		body := &unreadAPIBody{}
+		r := httptest.NewRequest(http.MethodPost, path, nil)
+		r.Body = body
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		GetContext(successHandler).ServeHTTP(w, r)
+		if path == "/api/pages/" && body.reads != 0 {
+			t.Fatal("API body read before request admission")
+		}
+		if path == "/login" && body.reads == 0 {
+			t.Fatal("login form parsing was removed")
+		}
+	}
 }
 
 func TestCredentialRevealPATScopeAndRoleAreBothRequired(t *testing.T) {

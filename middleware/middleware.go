@@ -125,10 +125,13 @@ func Use(handler http.HandlerFunc, mid ...func(http.Handler) http.HandlerFunc) h
 func GetContext(handler http.Handler) http.HandlerFunc {
 	// Set the context here
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Parse the request form
-		err := r.ParseForm()
-		if err != nil {
-			http.Error(w, "Error parsing request", http.StatusInternalServerError)
+		// API handlers decode their own bounded JSON bodies after admission.
+		// Do not eagerly parse attacker-supplied form bodies before API budgets.
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, "Error parsing request", http.StatusInternalServerError)
+				return
+			}
 		}
 		// Set the context appropriately here.
 		// Set the session

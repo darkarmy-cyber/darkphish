@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { canonicalMainCheckRun, nativeReleaseAttemptStart } from "./release-provenance-checks.mjs"
+import "./release-provenance-0223.test.mjs"
 
 const source = "5a39984942ca8920aca2bf2fc31ca3201a4173be"
 const bot = { login: "github-actions[bot]", type: "Bot", id: 41898282 }

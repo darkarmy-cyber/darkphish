@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { canonicalMainCheckRun } from "../.github/scripts/release-provenance-checks.mjs"
+import { canonicalMainCheckRun } from "./release-provenance-checks.mjs"
 
 const source = "584b266ac824cd1b02e53c3d6a4964211703bd69"
 const maintainer = {login: "oliverkko", id: 309485696, type: "User"}

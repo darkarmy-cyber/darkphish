@@ -1,6 +1,6 @@
 # GitBook and native audit test reliability
 
-GitBook has been disconnected by the repository owner. It is not a required
+The repository owner has requested GitBook disconnection. It is not a required
 release or merge check. GitHub may still display historical GitBook commit
 statuses after an application is disconnected; those records do not establish
 that synchronization remains active. No synthetic success status, force import

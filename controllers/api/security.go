@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -35,7 +36,11 @@ func (as *Server) limitAPIRequests(next http.Handler) http.Handler {
 	preflight := as.preflightLimiter.LimitAll(next)
 	authenticated := mid.RequireAPIAuthenticationWithRejectionGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := ctx.Get(r, "user").(models.User)
-		decision := as.requestLimiter.Check("user:" + strconv.FormatInt(user.Id, 10))
+		key := "user:" + strconv.FormatInt(user.Id, 10)
+		if tokenID, ok := ctx.Get(r, "pat_id").(int64); ok {
+			key = "pat:" + strconv.FormatInt(tokenID, 10)
+		}
+		decision := as.requestLimiter.Check(key)
 		decision.SetHeaders(w)
 		if !decision.Allowed {
 			JSONResponse(w, models.Response{Success: false, Message: "Request limit exceeded; try again later"}, http.StatusTooManyRequests)
@@ -43,12 +48,32 @@ func (as *Server) limitAPIRequests(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	}), func(failure http.Handler) http.Handler { return as.requestLimiter.LimitAll(failure) })
+	admission := as.authenticationLimiter.LimitAll(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Hash untrusted credentials so repeated invalid tokens are rejected
+		// before database authentication and auditing, without storing secrets.
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
+		digest := sha256.Sum256([]byte(host + "\x00" + r.Header.Get("Authorization")))
+		decision := as.requestLimiter.Check("authentication:" + string(digest[:]))
+		decision.SetHeaders(w)
+		if !decision.Allowed {
+			JSONResponse(w, models.Response{Success: false, Message: "Request limit exceeded; try again later"}, http.StatusTooManyRequests)
+			return
+		}
+		authenticated.ServeHTTP(w, r)
+	}))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions && r.Header.Get("Origin") != "" {
 			preflight.ServeHTTP(w, r)
 			return
 		}
-		authenticated.ServeHTTP(w, r)
+		if ctx.Get(r, "user") != nil && r.Header.Get("Authorization") == "" && r.URL.Query().Get("api_key") == "" {
+			authenticated.ServeHTTP(w, r)
+			return
+		}
+		admission.ServeHTTP(w, r)
 	})
 }
 

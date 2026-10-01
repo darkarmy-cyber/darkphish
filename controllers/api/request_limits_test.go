@@ -5,11 +5,74 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	ctx "github.com/darkarmy-cyber/darkphish/context"
+	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	"github.com/darkarmy-cyber/darkphish/middleware/ratelimit"
 	"github.com/darkarmy-cyber/darkphish/models"
 )
+
+func TestInvalidTokenBudgetStopsAuthenticationAuditing(t *testing.T) {
+	testCtx := setupTest(t)
+	server := testCtx.apiServer
+	server.requestLimiter = ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(3))
+	server.registerRoutes()
+	invalid := testCtx.apiKey[:len(testCtx.apiKey)-2] + "AA"
+	if invalid == testCtx.apiKey {
+		invalid = testCtx.apiKey[:len(testCtx.apiKey)-2] + "BA"
+	}
+	var admitted int64
+	for i := 0; i < 8; i++ {
+		r := httptest.NewRequest(http.MethodGet, "/api/pages/", nil)
+		r.Header.Set("Authorization", "Bearer "+invalid)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, r)
+		_, total, err := audit.Query(audit.Filter{Action: "pat.auth.failure", Page: 1, PerPage: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 2 {
+			admitted = total
+		}
+		if i >= 3 && (w.Code != http.StatusTooManyRequests || total != admitted) {
+			t.Fatalf("exhausted authentication still audited: status=%d events=%d expected=%d", w.Code, total, admitted)
+		}
+	}
+}
+
+func TestScopedPATCannotExhaustBrowserOrAnotherToken(t *testing.T) {
+	testCtx := setupTest(t)
+	server := testCtx.apiServer
+	server.requestLimiter = ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(3))
+	server.registerRoutes()
+	_, other, err := models.CreatePersonalAccessToken(testCtx.admin.Id, "independent", []string{"landing-pages:read"}, time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 4; i++ {
+		r := httptest.NewRequest(http.MethodGet, "/api/pages/", nil)
+		r.Header.Set("Authorization", "Bearer "+testCtx.apiKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, r)
+		if i == 3 && w.Code != http.StatusTooManyRequests {
+			t.Fatal("PAT budget not enforced")
+		}
+	}
+	for _, token := range []string{"", other} {
+		r := httptest.NewRequest(http.MethodGet, "/api/pages/", nil)
+		if token == "" {
+			r = ctx.Set(r, "user", testCtx.admin)
+		} else {
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("independent credential blocked: %d %s", w.Code, w.Body.String())
+		}
+	}
+}
 
 func TestAdministrativeAPILimitsUnauthenticatedRequestsAcrossRoutes(t *testing.T) {
 	server := setupTest(t).apiServer
@@ -59,7 +122,7 @@ func TestAnonymousExhaustionDoesNotBlockAuthenticatedBudget(t *testing.T) {
 		w := httptest.NewRecorder()
 		server.ServeHTTP(w, r)
 	}
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 5; i++ {
 		r := httptest.NewRequest(http.MethodGet, "/api/pages/", nil)
 		r.RemoteAddr = "127.0.0.1:54321"
 		if i == 0 {
@@ -69,11 +132,11 @@ func TestAnonymousExhaustionDoesNotBlockAuthenticatedBudget(t *testing.T) {
 		}
 		w := httptest.NewRecorder()
 		server.ServeHTTP(w, r)
-		if i < 3 && w.Code != http.StatusOK {
+		if i < 4 && w.Code != http.StatusOK {
 			t.Fatalf("anonymous traffic blocked authenticated request %d: %d %s", i, w.Code, w.Body.String())
 		}
-		if i == 3 && w.Code != http.StatusTooManyRequests {
-			t.Fatal("PAT and session do not share the verified user's budget")
+		if i == 4 && w.Code != http.StatusTooManyRequests {
+			t.Fatal("browser budget was not enforced independently of PAT requests")
 		}
 	}
 	server.allowedOrigins = []string{"https://admin.example.test"}
@@ -97,7 +160,7 @@ func TestAnonymousExhaustionDoesNotBlockAuthenticatedBudget(t *testing.T) {
 	}
 }
 
-func TestPreflightRequestsConsumeBudgetAndRefusalsRemainReadable(t *testing.T) {
+func TestPreflightAbuseBudgetPreservesOriginPolicy(t *testing.T) {
 	for _, origin := range []string{"https://admin.example.test", "https://untrusted.example.test"} {
 		t.Run(origin, func(t *testing.T) {
 			server := setupTest(t).apiServer

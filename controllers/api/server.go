@@ -19,14 +19,15 @@ type ServerOption func(*Server)
 // stopped. Rather, it's meant to be used as an http.Handler in the
 // AdminServer.
 type Server struct {
-	updates          *update.Service
-	handler          http.Handler
-	worker           worker.Worker
-	limiter          *ratelimit.PostLimiter
-	sensitiveLimiter *ratelimit.PostLimiter
-	requestLimiter   *ratelimit.PostLimiter
-	preflightLimiter *ratelimit.PostLimiter
-	allowedOrigins   []string
+	updates               *update.Service
+	handler               http.Handler
+	worker                worker.Worker
+	limiter               *ratelimit.PostLimiter
+	sensitiveLimiter      *ratelimit.PostLimiter
+	requestLimiter        *ratelimit.PostLimiter
+	preflightLimiter      *ratelimit.PostLimiter
+	authenticationLimiter *ratelimit.PostLimiter
+	allowedOrigins        []string
 }
 
 // NewServer returns a new instance of the API handler with the provided
@@ -35,11 +36,12 @@ func NewServer(options ...ServerOption) *Server {
 	defaultWorker, _ := worker.New()
 	defaultLimiter := ratelimit.NewPostLimiter()
 	as := &Server{
-		worker:           defaultWorker,
-		limiter:          defaultLimiter,
-		sensitiveLimiter: ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(5)),
-		requestLimiter:   ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(100)),
-		preflightLimiter: ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(1000)),
+		worker:                defaultWorker,
+		limiter:               defaultLimiter,
+		sensitiveLimiter:      ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(5)),
+		requestLimiter:        ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(100)),
+		preflightLimiter:      ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(1000)),
+		authenticationLimiter: ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(1000)),
 	}
 	for _, opt := range options {
 		opt(as)

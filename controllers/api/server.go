@@ -118,7 +118,9 @@ func (as *Server) registerRoutes() {
 	router.HandleFunc("/webhooks/", mid.Use(as.Webhooks, mid.RequirePermission(models.PermissionModifySystem)))
 	router.HandleFunc("/webhooks/{id:[0-9]+}/validate", mid.Use(as.ValidateWebhook, mid.RequirePermission(models.PermissionModifySystem)))
 	router.HandleFunc("/webhooks/{id:[0-9]+}", mid.Use(as.Webhook, mid.RequirePermission(models.PermissionModifySystem)))
-	as.handler = mid.CORS(as.allowedOrigins)(as.requestLimiter.LimitAll(router))
+	as.handler = mid.CORS(as.allowedOrigins, func(next http.Handler) http.Handler {
+		return as.requestLimiter.LimitAll(next)
+	})(router)
 }
 
 func (as *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

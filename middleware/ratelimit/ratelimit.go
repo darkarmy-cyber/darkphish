@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"encoding/json"
 	"math"
 	"net"
 	"net/http"
@@ -163,7 +164,16 @@ func (limiter *PostLimiter) limit(next http.Handler, postOnly bool) http.Handler
 			decision := limiter.Check(clientIP)
 			decision.SetHeaders(w)
 			if !decision.Allowed {
-				http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
+				if postOnly {
+					http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusTooManyRequests)
+					json.NewEncoder(w).Encode(struct {
+						Success bool   `json:"success"`
+						Message string `json:"message"`
+					}{Message: "Request limit exceeded; try again later"})
+				}
 				return
 			}
 		}

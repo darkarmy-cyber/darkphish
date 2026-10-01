@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -76,6 +77,15 @@ func TestAllMethodsShareBudgetAndExposeRetry(t *testing.T) {
 		}
 		if i >= 3 && w.Header().Get("Retry-After") != "20" {
 			t.Fatalf("retry=%q want 20", w.Header().Get("Retry-After"))
+		}
+		if i >= 3 {
+			var refusal struct {
+				Success bool   `json:"success"`
+				Message string `json:"message"`
+			}
+			if json.Unmarshal(w.Body.Bytes(), &refusal) != nil || refusal.Success || refusal.Message == "" {
+				t.Fatal("API refusal is not an actionable JSON error")
+			}
 		}
 		if i < 3 && w.Header().Get("Retry-After") != "" {
 			t.Fatal("successful request has retry header")

@@ -355,7 +355,8 @@ func loginReturnTarget(r *http.Request) string {
 
 // CORS enables cross-origin administrative API access only for exact,
 // explicitly configured origins. It never emits a wildcard or credentials.
-func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
+// Guards run before preflight handling, after allowed response headers are set.
+func CORS(allowedOrigins []string, guards ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
 	allowed := make(map[string]struct{}, len(allowedOrigins))
 	for _, origin := range allowedOrigins {
 		origin = strings.TrimSpace(origin)
@@ -364,24 +365,13 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 		}
 	}
 	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		protocol := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
-			if origin == "" {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if _, ok := allowed[origin]; !ok {
-				if r.Method == http.MethodOptions {
+			if origin != "" && r.Method == http.MethodOptions {
+				if _, ok := allowed[origin]; !ok {
 					JSONError(w, http.StatusForbidden, "CORS origin is not allowed")
 					return
 				}
-				next.ServeHTTP(w, r)
-				return
-			}
-			w.Header().Add("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Expose-Headers", "X-RateLimit-Limit, X-RateLimit-Remaining, Retry-After")
-			if r.Method == http.MethodOptions {
 				w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE, OPTIONS")
 				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 				w.Header().Set("Access-Control-Max-Age", "600")
@@ -389,6 +379,24 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 				return
 			}
 			next.ServeHTTP(w, r)
+		}))
+		for i := len(guards) - 1; i >= 0; i-- {
+			protocol = guards[i](protocol)
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				protocol.ServeHTTP(w, r)
+				return
+			}
+			if _, ok := allowed[origin]; !ok {
+				protocol.ServeHTTP(w, r)
+				return
+			}
+			w.Header().Add("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Expose-Headers", "X-RateLimit-Limit, X-RateLimit-Remaining, Retry-After")
+			protocol.ServeHTTP(w, r)
 		})
 	}
 }

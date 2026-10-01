@@ -1,11 +1,13 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	ctx "github.com/darkarmy-cyber/darkphish/context"
+	"github.com/darkarmy-cyber/darkphish/middleware/ratelimit"
 	"github.com/darkarmy-cyber/darkphish/models"
 )
 
@@ -36,6 +38,43 @@ func TestAdministrativeAPILimitsUnauthenticatedRequestsAcrossRoutes(t *testing.T
 	server.ServeHTTP(w, r)
 	if w.Code == http.StatusTooManyRequests {
 		t.Fatal("independent API client blocked")
+	}
+}
+
+func TestPreflightRequestsConsumeBudgetAndRefusalsRemainReadable(t *testing.T) {
+	for _, origin := range []string{"https://admin.example.test", "https://untrusted.example.test"} {
+		t.Run(origin, func(t *testing.T) {
+			server := setupTest(t).apiServer
+			server.allowedOrigins = []string{"https://admin.example.test"}
+			server.requestLimiter = ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(3))
+			server.registerRoutes()
+			for i := 0; i < 4; i++ {
+				r := httptest.NewRequest(http.MethodOptions, "/api/pages/", nil)
+				r.RemoteAddr = "192.0.2.26:54321"
+				r.Header.Set("Origin", origin)
+				r.Header.Set("Access-Control-Request-Method", http.MethodPost)
+				w := httptest.NewRecorder()
+				server.ServeHTTP(w, r)
+				if i == 3 {
+					var refusal struct {
+						Success bool   `json:"success"`
+						Message string `json:"message"`
+					}
+					if w.Code != http.StatusTooManyRequests || w.Header().Get("Content-Type") != "application/json" || json.Unmarshal(w.Body.Bytes(), &refusal) != nil || refusal.Success || refusal.Message == "" {
+						t.Fatalf("refusal is not an actionable JSON error: %d %s", w.Code, w.Body.String())
+					}
+					if w.Header().Get("Retry-After") != "20" {
+						t.Fatal("missing preflight retry information")
+					}
+				}
+				if origin == "https://admin.example.test" && w.Header().Get("Access-Control-Allow-Origin") != origin {
+					t.Fatal("allowed client cannot read refusal")
+				}
+				if origin != "https://admin.example.test" && w.Header().Get("Access-Control-Allow-Origin") != "" {
+					t.Fatal("untrusted origin authorized")
+				}
+			}
+		})
 	}
 }
 

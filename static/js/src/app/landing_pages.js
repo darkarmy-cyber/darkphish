@@ -4,10 +4,12 @@
 	Author: Jordan Wright <github.com/jordan-wright>
 */
 var pages = []
+var importPending = false
 
 
 // Save attempts to POST to /templates/
 function save(idx) {
+    if (importPending) return
     var page = {}
     page.name = $("#name").val()
     editor = CKEDITOR.instances["html_editor"]
@@ -41,6 +43,8 @@ function save(idx) {
 }
 
 function dismiss() {
+    importPending = false
+    $("#modalSubmit").prop("disabled", false)
     $("#modal\\.flashes").empty()
     $("#name").val("")
     $("#html_editor").val("")
@@ -98,7 +102,13 @@ function importSite() {
                 include_resources: false
             })
             .success(function (data) {
-                CKEDITOR.instances["html_editor"].setData(data.html)
+                importPending = true
+                $("#modalSubmit").prop("disabled", true)
+                var html = data.html.replace(/\sdata-darkphish-training=(["'])static-v1\1/i, "")
+                CKEDITOR.instances["html_editor"].setData(html, function () {
+                    importPending = false
+                    $("#modalSubmit").prop("disabled", false)
+                })
                 $("#importSiteModal").modal("hide")
             })
             .error(function (data) {

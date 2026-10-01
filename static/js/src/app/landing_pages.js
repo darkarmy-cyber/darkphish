@@ -4,33 +4,17 @@
 	Author: Jordan Wright <github.com/jordan-wright>
 */
 var pages = []
-var trainingStatic = false
-var trainingImportPending = false
-
-function setTrainingStatic(enabled) {
-    trainingStatic = !!enabled
-    $("#trainingStaticNotice").prop("hidden", !trainingStatic)
-    $("#capture_credentials_checkbox, #capture_passwords_checkbox").prop("disabled", trainingStatic)
-    if (trainingStatic) {
-        $("#capture_credentials_checkbox, #capture_passwords_checkbox").prop("checked", false)
-        $("#redirect_url_input").val("")
-        $("#redirect_url").hide()
-    }
-    trainingImagePreview.reset()
-}
 
 
 // Save attempts to POST to /templates/
 function save(idx) {
-    if (trainingImportPending || trainingImagePreview.isPending()) return
     var page = {}
     page.name = $("#name").val()
     editor = CKEDITOR.instances["html_editor"]
     page.html = editor.getData()
-    page.training_static = trainingStatic
-    page.capture_credentials = !trainingStatic && $("#capture_credentials_checkbox").prop("checked")
-    page.capture_passwords = !trainingStatic && $("#capture_passwords_checkbox").prop("checked")
-    page.redirect_url = trainingStatic ? "" : $("#redirect_url_input").val()
+    page.capture_credentials = $("#capture_credentials_checkbox").prop("checked")
+    page.capture_passwords = $("#capture_passwords_checkbox").prop("checked")
+    page.redirect_url = $("#redirect_url_input").val()
     if (idx != -1) {
         page.id = pages[idx].id
         api.pageId.put(page)
@@ -38,9 +22,6 @@ function save(idx) {
                 successFlash("Page edited successfully!")
                 load()
                 dismiss()
-            })
-            .error(function (data) {
-                modalError(data.responseJSON && data.responseJSON.message || "Unable to save the page")
             })
     } else {
         // Submit the page
@@ -57,14 +38,13 @@ function save(idx) {
 }
 
 function dismiss() {
-    trainingImportPending = false
-    setTrainingStatic(false)
     $("#modal\\.flashes").empty()
     $("#name").val("")
     $("#html_editor").val("")
     $("#url").val("")
     $("#redirect_url_input").val("")
     $("#modal").find("input[type='checkbox']").prop("checked", false)
+    $("#capture_passwords").hide()
     $("#redirect_url").hide()
     $("#modal").modal('hide')
 }
@@ -115,15 +95,8 @@ function importSite() {
                 include_resources: false
             })
             .success(function (data) {
-                setTrainingStatic(data.training_static)
-                trainingImportPending = true
-                $("#modalSubmit").prop("disabled", true)
-                CKEDITOR.instances["html_editor"].setData(data.html, function () {
-                    if (!trainingImportPending) return
-                    trainingImportPending = false
-                    $("#modalSubmit").prop("disabled", false)
-                    trainingImagePreview.load()
-                })
+                $("#html_editor").val(data.html)
+                CKEDITOR.instances["html_editor"].setMode('wysiwyg')
                 $("#importSiteModal").modal("hide")
             })
             .error(function (data) {
@@ -263,8 +236,9 @@ $(document).ready(function () {
         dismiss()
     });
     $("#capture_credentials_checkbox").change(function () {
-        $("#redirect_url").toggle()
-    })
+    $("#capture_passwords").toggle()
+    $("#redirect_url").toggle()
+})
     CKEDITOR.on('dialogDefinition', function (ev) {
         // Take the dialog name and its definition from the event data.
         var dialogName = ev.data.name;

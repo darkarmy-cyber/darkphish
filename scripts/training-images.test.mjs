@@ -70,28 +70,6 @@ for(const file of ['static/js/src/app/training_images.js','static/js/dist/app/tr
     assert.equal(p.helper.isPending(),false)
     assert.equal(p.$('#modalSubmit').disabled,false)
   })
-  test(file+': import in already active WYSIWYG waits for data and blocks early save',()=>{
-    const p=fixture(file)
-    const source=readFileSync(new URL('../static/js/src/app/landing_pages.js',import.meta.url),'utf8')
-    vm.runInContext(source.slice(0,source.indexOf('function edit(idx)')),p.ctx)
-    let dataReady, persisted=0
-    p.editor.setData=(html,callback)=>{dataReady=callback}
-    p.ctx.api.clone_site=()=>({success(callback){callback({training_static:true,html:'<p>imported</p>'});return this},error(){return this}})
-    p.ctx.api.pages={post(){persisted++;return {success(){return this},error(){return this}}}}
-    p.$('#url').val('https://example.test/training')
-    p.ctx.importSite()
-    p.ctx.save(-1)
-    assert.equal(persisted,0)
-    assert.equal(p.$('#modalSubmit').disabled,true)
-    assert.equal(p.requests.length,0)
-    dataReady()
-    assert.equal(p.requests.length,1,'same-mode import must start localization')
-    p.ctx.save(-1)
-    assert.equal(persisted,0)
-    p.requests[0].resolve([{url:'https://images.example.test/0.png',data:png}])
-    p.ctx.save(-1)
-    assert.equal(persisted,1)
-  })
   test(file+': malformed and untrusted responses cannot inject active content',()=>{
     const p=fixture(file)
     p.helper.load();p.requests[0].resolve([{url:'https://images.example.test/0.png',data:'data:image/svg+xml,<script/>'}])

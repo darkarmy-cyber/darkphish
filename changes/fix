@@ -3,3 +3,4 @@ category: Fixed
 version: 0.22.3
 ---
 - Fix Google Chrome execution timeout in browser regression tests.
+- Update landing pages script handling and retain release safety notice.

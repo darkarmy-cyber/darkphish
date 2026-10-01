@@ -13,7 +13,14 @@ import (
 
 func TestAdministrativeAPILimitsUnauthenticatedRequestsAcrossRoutes(t *testing.T) {
 	server := setupTest(t).apiServer
-	for i := 0; i < 101; i++ {
+	initial := httptest.NewRecorder()
+	server.ServeHTTP(initial, httptest.NewRequest(http.MethodGet, "/api/pages/", nil))
+	if initial.Header().Get("X-RateLimit-Limit") != "100" {
+		t.Fatal("default API limit is not 100")
+	}
+	server.requestLimiter = ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(3))
+	server.registerRoutes()
+	for i := 0; i < 4; i++ {
 		path := "/api/pages/"
 		if i%2 == 0 {
 			path = "/api/groups/"
@@ -22,13 +29,13 @@ func TestAdministrativeAPILimitsUnauthenticatedRequestsAcrossRoutes(t *testing.T
 		r.RemoteAddr = "192.0.2.23:54321"
 		w := httptest.NewRecorder()
 		server.ServeHTTP(w, r)
-		if w.Header().Get("X-RateLimit-Limit") != "100" {
+		if w.Header().Get("X-RateLimit-Limit") != "3" {
 			t.Fatalf("missing API budget: %v", w.Header())
 		}
-		if i < 100 && w.Code == http.StatusTooManyRequests {
+		if i < 3 && w.Code == http.StatusTooManyRequests {
 			t.Fatalf("request %d denied too early", i)
 		}
-		if i == 100 && (w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") != "1") {
+		if i == 3 && (w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") != "20") {
 			t.Fatalf("exhausted API: status=%d headers=%v", w.Code, w.Header())
 		}
 	}
@@ -38,6 +45,44 @@ func TestAdministrativeAPILimitsUnauthenticatedRequestsAcrossRoutes(t *testing.T
 	server.ServeHTTP(w, r)
 	if w.Code == http.StatusTooManyRequests {
 		t.Fatal("independent API client blocked")
+	}
+}
+
+func TestAnonymousExhaustionDoesNotBlockAuthenticatedBudget(t *testing.T) {
+	testCtx := setupTest(t)
+	server := testCtx.apiServer
+	server.requestLimiter = ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(3))
+	server.registerRoutes()
+	for i := 0; i < 8; i++ {
+		r := httptest.NewRequest(http.MethodGet, "/api/pages/", nil)
+		r.RemoteAddr = "127.0.0.1:54321"
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, r)
+	}
+	for i := 0; i < 4; i++ {
+		r := httptest.NewRequest(http.MethodGet, "/api/pages/", nil)
+		r.RemoteAddr = "127.0.0.1:54321"
+		if i == 0 {
+			r.Header.Set("Authorization", "Bearer "+testCtx.apiKey)
+		} else {
+			r = ctx.Set(r, "user", testCtx.admin)
+		}
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, r)
+		if i < 3 && w.Code != http.StatusOK {
+			t.Fatalf("anonymous traffic blocked authenticated request %d: %d %s", i, w.Code, w.Body.String())
+		}
+		if i == 3 && w.Code != http.StatusTooManyRequests {
+			t.Fatal("PAT and session do not share the verified user's budget")
+		}
+	}
+	r := httptest.NewRequest(http.MethodGet, "/api/pages/", nil)
+	r.RemoteAddr = "127.0.0.1:54321"
+	r = ctx.Set(r, "user", models.User{Id: testCtx.admin.Id + 1})
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, r)
+	if w.Code == http.StatusTooManyRequests {
+		t.Fatal("another user's authenticated budget was exhausted")
 	}
 }
 

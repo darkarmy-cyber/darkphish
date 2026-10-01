@@ -162,10 +162,23 @@ func GetContext(handler http.Handler) http.HandlerFunc {
 // callers with their secure session. Query-string API keys are intentionally
 // rejected because URLs are routinely persisted in logs and browser history.
 func RequireAPIAuthentication(handler http.Handler) http.Handler {
+	return RequireAPIAuthenticationWithRejectionGuard(handler, nil)
+}
+
+// RequireAPIAuthenticationWithRejectionGuard bounds rejected responses without
+// letting an anonymous caller spend an authenticated user's request budget.
+func RequireAPIAuthenticationWithRejectionGuard(handler http.Handler, guard func(http.Handler) http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reject := func(status int, message string) {
+			failure := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { JSONError(w, status, message) }))
+			if guard != nil {
+				failure = guard(failure)
+			}
+			failure.ServeHTTP(w, r)
+		}
 		if r.URL.Query().Get("api_key") != "" {
 			audit.Record(r, "anonymous", 0, "pat.auth.failure", "api", "failure", "pat")
-			JSONError(w, http.StatusUnauthorized, "API keys in URLs are disabled; use Authorization: Bearer")
+			reject(http.StatusUnauthorized, "API keys in URLs are disabled; use Authorization: Bearer")
 			return
 		}
 
@@ -175,13 +188,13 @@ func RequireAPIAuthentication(handler http.Handler) http.Handler {
 			token, ok := bearerToken(authorization)
 			if !ok {
 				audit.Record(r, "anonymous", 0, "pat.auth.failure", "api", "failure", "pat")
-				JSONError(w, http.StatusUnauthorized, "Invalid Authorization header")
+				reject(http.StatusUnauthorized, "Invalid Authorization header")
 				return
 			}
 			authentication, err := models.AuthenticatePersonalAccessToken(token)
 			if err != nil {
 				audit.Record(r, "anonymous", 0, "pat.auth.failure", "api", "failure", "pat")
-				JSONError(w, http.StatusUnauthorized, "Invalid API token")
+				reject(http.StatusUnauthorized, "Invalid API token")
 				return
 			}
 			u = authentication.User
@@ -192,7 +205,7 @@ func RequireAPIAuthentication(handler http.Handler) http.Handler {
 			current := ctx.Get(r, "user")
 			if current == nil {
 				audit.Record(r, "anonymous", 0, "auth.session.failure", "api", "failure", "session")
-				JSONError(w, http.StatusUnauthorized, "Authentication required")
+				reject(http.StatusUnauthorized, "Authentication required")
 				return
 			}
 			u = current.(models.User)
@@ -202,7 +215,7 @@ func RequireAPIAuthentication(handler http.Handler) http.Handler {
 			if authorization != "" {
 				audit.Record(r, u.Username, u.Id, "pat.auth.failure", "api", "failure", "pat")
 			}
-			JSONError(w, http.StatusForbidden, err.Error())
+			reject(http.StatusForbidden, err.Error())
 			return
 		}
 		r = ctx.Set(r, "user", u)

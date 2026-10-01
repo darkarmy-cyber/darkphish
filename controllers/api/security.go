@@ -11,6 +11,7 @@ import (
 	"github.com/darkarmy-cyber/darkphish/auth"
 	ctx "github.com/darkarmy-cyber/darkphish/context"
 	"github.com/darkarmy-cyber/darkphish/internal/audit"
+	mid "github.com/darkarmy-cyber/darkphish/middleware"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
@@ -28,6 +29,27 @@ func (as *Server) sensitiveKey(r *http.Request) string {
 	}
 	user, _ := ctx.Get(r, "user").(models.User)
 	return strconv.FormatInt(user.Id, 10) + ":" + host
+}
+
+func (as *Server) limitAPIRequests(next http.Handler) http.Handler {
+	anonymous := as.requestLimiter.LimitAll(next)
+	authenticated := mid.RequireAPIAuthenticationWithRejectionGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := ctx.Get(r, "user").(models.User)
+		decision := as.requestLimiter.Check("user:" + strconv.FormatInt(user.Id, 10))
+		decision.SetHeaders(w)
+		if !decision.Allowed {
+			JSONResponse(w, models.Response{Success: false, Message: "Request limit exceeded; try again later"}, http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}), func(failure http.Handler) http.Handler { return as.requestLimiter.LimitAll(failure) })
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions && r.Header.Get("Origin") != "" {
+			anonymous.ServeHTTP(w, r)
+			return
+		}
+		authenticated.ServeHTTP(w, r)
+	})
 }
 
 func (as *Server) limitSensitive(next http.Handler) http.HandlerFunc {

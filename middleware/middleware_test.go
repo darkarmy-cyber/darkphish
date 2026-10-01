@@ -234,6 +234,9 @@ func TestCORSHeaders(t *testing.T) {
 	if got := response.Header().Get("Access-Control-Allow-Origin"); got == "*" {
 		t.Fatal("administrative CORS must never use a wildcard")
 	}
+	if got := response.Header().Get("Access-Control-Expose-Headers"); got != "X-RateLimit-Limit, X-RateLimit-Remaining, Retry-After" {
+		t.Fatalf("rate-limit metadata is not exposed: %q", got)
+	}
 }
 
 func TestCORSDisabledByDefault(t *testing.T) {

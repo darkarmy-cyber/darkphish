@@ -24,6 +24,7 @@ type Server struct {
 	worker           worker.Worker
 	limiter          *ratelimit.PostLimiter
 	sensitiveLimiter *ratelimit.PostLimiter
+	requestLimiter   *ratelimit.PostLimiter
 	allowedOrigins   []string
 }
 
@@ -36,6 +37,7 @@ func NewServer(options ...ServerOption) *Server {
 		worker:           defaultWorker,
 		limiter:          defaultLimiter,
 		sensitiveLimiter: ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(5)),
+		requestLimiter:   ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(100)),
 	}
 	for _, opt := range options {
 		opt(as)
@@ -116,7 +118,7 @@ func (as *Server) registerRoutes() {
 	router.HandleFunc("/webhooks/", mid.Use(as.Webhooks, mid.RequirePermission(models.PermissionModifySystem)))
 	router.HandleFunc("/webhooks/{id:[0-9]+}/validate", mid.Use(as.ValidateWebhook, mid.RequirePermission(models.PermissionModifySystem)))
 	router.HandleFunc("/webhooks/{id:[0-9]+}", mid.Use(as.Webhook, mid.RequirePermission(models.PermissionModifySystem)))
-	as.handler = mid.CORS(as.allowedOrigins)(router)
+	as.handler = mid.CORS(as.allowedOrigins)(as.requestLimiter.LimitAll(router))
 }
 
 func (as *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

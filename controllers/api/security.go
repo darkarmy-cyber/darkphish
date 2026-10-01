@@ -32,7 +32,9 @@ func (as *Server) sensitiveKey(r *http.Request) string {
 
 func (as *Server) limitSensitive(next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !as.sensitiveLimiter.AllowKey(as.sensitiveKey(r)) {
+		decision := as.sensitiveLimiter.Check(as.sensitiveKey(r))
+		decision.SetHeaders(w)
+		if !decision.Allowed {
 			if strings.TrimSuffix(r.URL.Path, "/") == "/api/reauthenticate" {
 				user, _ := ctx.Get(r, "user").(models.User)
 				authMethod, _ := ctx.Get(r, "auth_method").(string)

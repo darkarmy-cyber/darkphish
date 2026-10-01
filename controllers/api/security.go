@@ -48,7 +48,7 @@ func (as *Server) limitAPIRequests(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	}), func(failure http.Handler) http.Handler { return as.requestLimiter.LimitAll(failure) })
-	admission := as.authenticationLimiter.LimitAll(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	admission := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Hash untrusted credentials so repeated invalid tokens are rejected
 		// before database authentication and auditing, without storing secrets.
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -63,7 +63,8 @@ func (as *Server) limitAPIRequests(next http.Handler) http.Handler {
 			return
 		}
 		authenticated.ServeHTTP(w, r)
-	}))
+	})
+	anonymous := as.authenticationLimiter.LimitAll(admission)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions && r.Header.Get("Origin") != "" {
 			preflight.ServeHTTP(w, r)
@@ -71,6 +72,10 @@ func (as *Server) limitAPIRequests(next http.Handler) http.Handler {
 		}
 		if ctx.Get(r, "user") != nil && r.Header.Get("Authorization") == "" && r.URL.Query().Get("api_key") == "" {
 			authenticated.ServeHTTP(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") == "" {
+			anonymous.ServeHTTP(w, r)
 			return
 		}
 		admission.ServeHTTP(w, r)

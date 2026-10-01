@@ -115,6 +115,7 @@ func TestAnonymousExhaustionDoesNotBlockAuthenticatedBudget(t *testing.T) {
 	testCtx := setupTest(t)
 	server := testCtx.apiServer
 	server.requestLimiter = ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(3))
+	server.authenticationLimiter = ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(3))
 	server.registerRoutes()
 	for i := 0; i < 8; i++ {
 		r := httptest.NewRequest(http.MethodGet, "/api/pages/", nil)
@@ -140,6 +141,7 @@ func TestAnonymousExhaustionDoesNotBlockAuthenticatedBudget(t *testing.T) {
 		}
 	}
 	server.allowedOrigins = []string{"https://admin.example.test"}
+	server.authenticationLimiter = ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(3))
 	server.registerRoutes()
 	preflight := httptest.NewRequest(http.MethodOptions, "/api/pages/", nil)
 	preflight.RemoteAddr = "127.0.0.1:54321"
@@ -166,6 +168,7 @@ func TestPreflightAbuseBudgetPreservesOriginPolicy(t *testing.T) {
 			server := setupTest(t).apiServer
 			server.allowedOrigins = []string{"https://admin.example.test"}
 			server.preflightLimiter = ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(3))
+			server.authenticationLimiter = ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(3))
 			server.registerRoutes()
 			for i := 0; i < 4; i++ {
 				r := httptest.NewRequest(http.MethodOptions, "/api/pages/", nil)

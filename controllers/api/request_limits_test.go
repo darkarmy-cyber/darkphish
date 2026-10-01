@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,6 +14,28 @@ import (
 	"github.com/darkarmy-cyber/darkphish/middleware/ratelimit"
 	"github.com/darkarmy-cyber/darkphish/models"
 )
+
+func TestEquivalentBearerHeadersShareAdmissionAcrossIPs(t *testing.T) {
+	testCtx := setupTest(t)
+	server := testCtx.apiServer
+	server.requestLimiter = ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(3))
+	server.registerRoutes()
+	for i := 0; i < 12; i++ {
+		r := httptest.NewRequest(http.MethodGet, "/api/pages/", nil)
+		r.RemoteAddr = fmt.Sprintf("192.0.2.%d:54321", i+1)
+		format := []string{"Bearer %s", "bearer  %s", "  BEARER\t%s  "}[i%3]
+		r.Header.Set("Authorization", fmt.Sprintf(format, testCtx.apiKey))
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, r)
+		if i >= 3 && w.Code != http.StatusTooManyRequests {
+			t.Fatal("equivalent header bypassed admission")
+		}
+	}
+	_, total, err := audit.Query(audit.Filter{Action: "pat.auth.success", Page: 1, PerPage: 100})
+	if err != nil || total != 3 {
+		t.Fatalf("equivalent headers reached live authentication: %d %v", total, err)
+	}
+}
 
 func TestRotatingInvalidTokensCannotSpendRecognizedPATCapacity(t *testing.T) {
 	testCtx := setupTest(t)

@@ -55,7 +55,15 @@ func (as *Server) limitAPIRequests(next http.Handler) http.Handler {
 		if err != nil {
 			host = r.RemoteAddr
 		}
-		digest := sha256.Sum256([]byte(host + "\x00" + r.Header.Get("Authorization")))
+		credential := r.Header.Get("Authorization")
+		fields := strings.Fields(credential)
+		if len(fields) == 2 && strings.EqualFold(fields[0], "Bearer") {
+			credential = fields[1]
+		}
+		if !models.RecognizedPATForAdmission(credential) {
+			credential = host + "\x00" + credential
+		}
+		digest := sha256.Sum256([]byte(credential))
 		decision := as.requestLimiter.Check("authentication:" + string(digest[:]))
 		decision.SetHeaders(w)
 		if !decision.Allowed {

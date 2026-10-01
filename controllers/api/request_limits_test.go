@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,7 +25,12 @@ func TestEquivalentBearerHeadersShareAdmissionAcrossIPs(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/api/pages/", nil)
 		r.RemoteAddr = fmt.Sprintf("192.0.2.%d:54321", i+1)
 		format := []string{"Bearer %s", "bearer  %s", "  BEARER\t%s  "}[i%3]
-		r.Header.Set("Authorization", fmt.Sprintf(format, testCtx.apiKey))
+		token := testCtx.apiKey
+		if i%2 == 1 {
+			prefixEnd := len(token) - 44
+			token = token[:14] + strings.ToUpper(token[14:prefixEnd]) + token[prefixEnd:]
+		}
+		r.Header.Set("Authorization", fmt.Sprintf(format, token))
 		w := httptest.NewRecorder()
 		server.ServeHTTP(w, r)
 		if i >= 3 && w.Code != http.StatusTooManyRequests {

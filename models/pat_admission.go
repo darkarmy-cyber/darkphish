@@ -35,16 +35,23 @@ func RecognizedPATForAdmission(raw string) bool {
 	patAdmission.Lock()
 	defer patAdmission.Unlock()
 	now := time.Now().UTC()
-	if patAdmission.database != db || !now.Before(patAdmission.refreshAt) {
+	if patAdmission.database != db {
 		patAdmission.database = db
-		patAdmission.refreshAt = now.Add(time.Minute)
 		patAdmission.tokens = make(map[string]PersonalAccessToken)
+		patAdmission.refreshAt = time.Time{}
+	}
+	if !now.Before(patAdmission.refreshAt) {
 		var tokens []PersonalAccessToken
 		if db == nil || db.Select("prefix", "token_hash", "expires_at").Where("revoked_at IS NULL AND expires_at > ?", now).Find(&tokens).Error != nil {
-			return false
-		}
-		for _, token := range tokens {
-			patAdmission.tokens[token.Prefix] = token
+			// Retain recognized digests on a transient failure; downstream live
+			// authentication still enforces all security checks. Bound retries.
+			patAdmission.refreshAt = now.Add(time.Second)
+		} else {
+			patAdmission.refreshAt = now.Add(time.Minute)
+			patAdmission.tokens = make(map[string]PersonalAccessToken)
+			for _, token := range tokens {
+				patAdmission.tokens[token.Prefix] = token
+			}
 		}
 	}
 	token, ok := patAdmission.tokens[prefix]

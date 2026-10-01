@@ -114,7 +114,17 @@ func parsePAT(raw string) (string, string, bool) {
 	if decoded, err := base64.RawURLEncoding.DecodeString(secret); err != nil || len(decoded) != 32 {
 		return "", "", false
 	}
-	return prefix, secret, true
+	return strings.ToLower(prefix), secret, true
+}
+
+// CanonicalPersonalAccessToken normalizes the hexadecimal identifier while
+// preserving the case-sensitive secret. It does not validate authentication.
+func CanonicalPersonalAccessToken(raw string) (string, bool) {
+	prefix, secret, ok := parsePAT(raw)
+	if !ok {
+		return "", false
+	}
+	return patTokenPrefix + prefix + "_" + secret, true
 }
 
 func newPersonalAccessToken(userID int64, name string, scopes []string, expiresAt time.Time) (PersonalAccessToken, string, error) {

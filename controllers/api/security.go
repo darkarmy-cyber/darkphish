@@ -59,6 +59,9 @@ func (as *Server) limitAPIRequests(next http.Handler) http.Handler {
 		fields := strings.Fields(credential)
 		if len(fields) == 2 && strings.EqualFold(fields[0], "Bearer") {
 			credential = fields[1]
+			if canonical, ok := models.CanonicalPersonalAccessToken(credential); ok {
+				credential = canonical
+			}
 		}
 		if !models.RecognizedPATForAdmission(credential) {
 			credential = host + "\x00" + credential

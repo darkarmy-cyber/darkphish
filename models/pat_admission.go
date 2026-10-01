@@ -23,6 +23,20 @@ func invalidatePATAdmission() {
 	patAdmission.refreshAt = time.Time{}
 }
 
+func rememberPATForAdmission(token PersonalAccessToken) {
+	patAdmission.Lock()
+	defer patAdmission.Unlock()
+	if patAdmission.database != db {
+		patAdmission.database = db
+		patAdmission.tokens = make(map[string]PersonalAccessToken)
+		patAdmission.refreshAt = time.Time{}
+	}
+	if patAdmission.tokens == nil {
+		patAdmission.tokens = make(map[string]PersonalAccessToken)
+	}
+	patAdmission.tokens[token.Prefix] = token
+}
+
 // RecognizedPATForAdmission only reserves rate-limit capacity. It never
 // authenticates or authorizes a request: callers must still perform full live
 // token, account, revocation and scope checks. This bounded-refresh snapshot

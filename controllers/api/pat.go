@@ -38,6 +38,12 @@ func (as *Server) PersonalAccessTokens(w http.ResponseWriter, r *http.Request) {
 		}
 		JSONResponse(w, values, http.StatusOK)
 	case http.MethodPost:
+		decision := as.sensitiveLimiter.Check("pat-creation:" + strconv.FormatInt(userID, 10))
+		decision.SetHeaders(w)
+		if !decision.Allowed {
+			JSONResponse(w, models.Response{Success: false, Message: "Token creation rate limit exceeded; try again later"}, http.StatusTooManyRequests)
+			return
+		}
 		var request createPATRequest
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			JSONResponse(w, models.Response{Success: false, Message: "Invalid JSON structure"}, http.StatusBadRequest)

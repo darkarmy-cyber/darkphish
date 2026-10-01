@@ -19,8 +19,11 @@ import (
 
 const patTokenPrefix = "darkphish_pat_"
 
+const MaxActivePersonalAccessTokens = 100
+
 var (
 	ErrInvalidPAT        = errors.New("invalid personal access token")
+	ErrPATCapacity       = errors.New("active personal access token limit reached; revoke an unused token first")
 	ErrExpiredPAT        = errors.New("personal access token has expired")
 	ErrRevokedPAT        = errors.New("personal access token has been revoked")
 	ErrInvalidPATScope   = errors.New("invalid personal access token scope")
@@ -174,7 +177,7 @@ func CreatePersonalAccessToken(userID int64, name string, scopes []string, expir
 	if err := (gormTokenRepository{db: db}).CreateToken(&pat); err != nil {
 		return PersonalAccessToken{}, "", err
 	}
-	invalidatePATAdmission()
+	rememberPATForAdmission(pat)
 	return pat, raw, nil
 }
 
@@ -198,7 +201,7 @@ func CreatePersonalAccessTokenWithAudit(userID int64, name string, scopes []stri
 		return PersonalAccessToken{}, "", err
 	}
 	flushAuditOutboxAfterCommit()
-	invalidatePATAdmission()
+	rememberPATForAdmission(pat)
 	return pat, raw, nil
 }
 

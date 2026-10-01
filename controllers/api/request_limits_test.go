@@ -16,6 +16,41 @@ import (
 	"github.com/darkarmy-cyber/darkphish/models"
 )
 
+func TestTokenCreationBudgetIsSharedAcrossMintedTokens(t *testing.T) {
+	testCtx := setupTest(t)
+	server := testCtx.apiServer
+	token := testCtx.apiKey
+	body, err := json.Marshal(createPATRequest{Name: "budget", Scopes: []string{"tokens:manage"}, ExpiresAt: time.Now().UTC().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 6; i++ {
+		r := httptest.NewRequest(http.MethodPost, "/api/pats/", strings.NewReader(string(body)))
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, r)
+		if i < 5 {
+			if w.Code != http.StatusCreated {
+				t.Fatalf("token creation status=%d", w.Code)
+			}
+			var created createPATResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+				t.Fatal(err)
+			}
+			token = created.Token
+		} else if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") != "12" {
+			t.Fatalf("minted tokens bypassed creation budget: %d", w.Code)
+		}
+	}
+	r := httptest.NewRequest(http.MethodGet, "/api/pats/", nil)
+	r = ctx.Set(r, "user", testCtx.admin)
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatal("token management read capacity was exhausted by creation")
+	}
+}
+
 func TestEquivalentBearerHeadersShareAdmissionAcrossIPs(t *testing.T) {
 	testCtx := setupTest(t)
 	server := testCtx.apiServer

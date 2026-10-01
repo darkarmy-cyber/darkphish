@@ -125,7 +125,7 @@ jobs:
       - name: Test release safety and idempotency
         # Browser fixtures launch real Chrome processes. Serialize test files
         # to keep parallel cold starts within the runner resource budget.
-        run: node --test --test-concurrency=1 scripts/*.test.mjs
+        run: node --test --test-concurrency=1 scripts/*.test.mjs .github/scripts/release-provenance-checks.test.mjs
       - name: Lint workflows
         run: |
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12

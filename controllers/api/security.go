@@ -74,7 +74,8 @@ func (as *Server) limitAPIRequests(next http.Handler) http.Handler {
 			authenticated.ServeHTTP(w, r)
 			return
 		}
-		if r.Header.Get("Authorization") == "" {
+		authorization := strings.Fields(r.Header.Get("Authorization"))
+		if len(authorization) != 2 || !strings.EqualFold(authorization[0], "Bearer") || !models.RecognizedPATForAdmission(authorization[1]) {
 			anonymous.ServeHTTP(w, r)
 			return
 		}

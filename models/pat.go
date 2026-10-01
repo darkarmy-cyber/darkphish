@@ -164,6 +164,7 @@ func CreatePersonalAccessToken(userID int64, name string, scopes []string, expir
 	if err := (gormTokenRepository{db: db}).CreateToken(&pat); err != nil {
 		return PersonalAccessToken{}, "", err
 	}
+	invalidatePATAdmission()
 	return pat, raw, nil
 }
 
@@ -187,6 +188,7 @@ func CreatePersonalAccessTokenWithAudit(userID int64, name string, scopes []stri
 		return PersonalAccessToken{}, "", err
 	}
 	flushAuditOutboxAfterCommit()
+	invalidatePATAdmission()
 	return pat, raw, nil
 }
 

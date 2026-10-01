@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,55 @@ import (
 	"github.com/darkarmy-cyber/darkphish/middleware/ratelimit"
 	"github.com/darkarmy-cyber/darkphish/models"
 )
+
+func TestRotatingInvalidTokensCannotSpendRecognizedPATCapacity(t *testing.T) {
+	testCtx := setupTest(t)
+	server := testCtx.apiServer
+	server.authenticationLimiter = ratelimit.NewPostLimiter(ratelimit.WithRequestsPerMinute(3))
+	server.registerRoutes()
+	if !models.RecognizedPATForAdmission(testCtx.apiKey) {
+		t.Fatal("valid token not recognized")
+	}
+	for i := 0; i < 12; i++ {
+		secret := make([]byte, 32)
+		secret[0] = byte(i)
+		invalid := testCtx.apiKey[:len(testCtx.apiKey)-43] + base64.RawURLEncoding.EncodeToString(secret)
+		r := httptest.NewRequest(http.MethodGet, "/api/pages/", nil)
+		r.Header.Set("Authorization", "Bearer "+invalid)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, r)
+		if i >= 3 && w.Code != http.StatusTooManyRequests {
+			t.Fatal("rotating credential bypassed ceiling")
+		}
+	}
+	_, total, err := audit.Query(audit.Filter{Action: "pat.auth.failure", Page: 1, PerPage: 100})
+	if err != nil || total != 3 {
+		t.Fatalf("rotating tokens still reached authentication audit: %d %v", total, err)
+	}
+	pat, fresh, err := models.CreatePersonalAccessToken(testCtx.admin.Id, "fresh after exhaustion", []string{"landing-pages:read"}, time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{testCtx.apiKey, fresh} {
+		r := httptest.NewRequest(http.MethodGet, "/api/pages/", nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("valid PAT admission blocked: %d %s", w.Code, w.Body.String())
+		}
+	}
+	if err := models.RevokePersonalAccessToken(pat.ID, testCtx.admin.Id); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/api/pages/", nil)
+	r.Header.Set("Authorization", "Bearer "+fresh)
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("recognition snapshot bypassed revocation: %d", w.Code)
+	}
+}
 
 func TestInvalidTokenBudgetStopsAuthenticationAuditing(t *testing.T) {
 	testCtx := setupTest(t)

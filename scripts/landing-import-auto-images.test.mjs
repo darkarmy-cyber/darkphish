@@ -5,8 +5,12 @@ import test from "node:test"
 const pageJS = readFileSync(new URL("../static/js/src/app/landing_pages.js", import.meta.url), "utf8")
 const template = readFileSync(new URL("../templates/landing_pages.html", import.meta.url), "utf8")
 
-test("landing-page import writes the response into CKEditor", () => {
-  assert.match(pageJS, /CKEDITOR\.instances\["html_editor"\]\.setData\(data\.html\)/)
+test("landing-page import waits for CKEditor and removes the legacy mode marker", () => {
+  assert.match(pageJS, /var importPending = false/)
+  assert.match(pageJS, /if \(importPending\) return/)
+  assert.match(pageJS, /data-darkphish-training=/)
+  assert.match(pageJS, /setData\(html, function \(\)/)
+  assert.match(pageJS, /#modalSubmit.*disabled/s)
   assert.doesNotMatch(pageJS, /trainingStatic|trainingImportPending|trainingImagePreview|setTrainingStatic/)
 })
 

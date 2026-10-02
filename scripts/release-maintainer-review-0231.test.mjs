@@ -64,6 +64,7 @@ test("v0.23.1 recovery fails closed on identity, manifest, review or chronology 
     f => { f.pr.base.sha = "b".repeat(40) },
     f => { f.pr.merge_commit_sha = "c".repeat(40) },
     f => { f.pr.merged_at = "2026-10-02T12:24:23Z" },
+    f => { f.pr.merged_by = { ...bot } },
     f => { f.files[0].sha = "d".repeat(40) },
     f => { f.files.pop() },
     f => { f.reviews[0].submitted_at = "2026-10-02T12:24:21Z" },
@@ -71,6 +72,7 @@ test("v0.23.1 recovery fails closed on identity, manifest, review or chronology 
     f => { f.reviews[0].body += "\nappended text" },
     f => { f.threads.push({ id: "PRRT_unresolved", isResolved: false }) },
     f => { f.finalPR.merge_commit_sha = "e".repeat(40) },
+    f => { f.finalPR.merged_by = { ...bot } },
   ]
   for (const change of changes) {
     const f = fixture()

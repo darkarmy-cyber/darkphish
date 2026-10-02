@@ -144,7 +144,8 @@ test("publish refuses any main value not equal to immutable execution SHA", () =
 
 test("publish verifies exact tag and rebuilt asset bytes before and after publication", () => {
   const publish = script.slice(script.indexOf("async function publish"), script.indexOf("const command ="))
-  assert.match(publish, /ensureTag\(repo, tag, source, initialTagExpectation\)/)
+  assert.match(publish, /const preexistingTag = await ensureTag\(repo, tag, source, initialTagExpectation\)/)
+  assert.match(publish, /tag_name: tag, target_commitish: source/)
   assert.match(publish, /assertUploadedAssetSet/)
   assert.match(publish, /assertTagState\(repo, tag, immutableTag/)
   assert.match(publish, /verifyPublishedSnapshot/)
@@ -228,7 +229,8 @@ test("duplicate staging drafts are never deleted or used as artifact inputs", ()
   assert.match(publish, /for \(const candidate of tagged\) assertExactDraft\(candidate, version, source, state\.expected\)/)
   assert.match(publish, /release staging set changed during recovery/)
   assert.match(publish, /let release = await api\(`repos\/\$\{repo\}\/releases`, \{ method: "POST"/)
-  assert.doesNotMatch(publish, /method: "POST", body: \{ tag_name: tag, target_commitish:/)
+  assert.match(publish, /method: "POST", body: \{ tag_name: tag, target_commitish: source/)
+  assert.doesNotMatch(script, /api\(`repos\/\$\{repo\}\/git\/refs`, \{ method: "POST"/)
   assert.match(script, /function assertExactDraft[\s\S]*?trustedReleaseTarget\(release, source\)/)
   const protectionChecks = publish.match(/await assertImmutableTagProtection\(repo, tag\)/g) || []
   assert.ok(protectionChecks.length >= 3)

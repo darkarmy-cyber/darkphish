@@ -378,16 +378,17 @@ function assertUploadedAssetSet(assets, local, receiptHash, receiptLength) {
   }
 }
 async function ensureTag(repo, tag, source, expectedInitialState) {
-  let current = await readTagState(repo, tag)
+  const current = await readTagState(repo, tag)
   if (expectedInitialState?.present === true) {
     const expected = { objectType: expectedInitialState.objectType, objectSha: expectedInitialState.objectSha, commit: source }
     if (!sameTagState(current, expected)) throw new Error("release tag ref object changed since recovery metadata verification")
-  } else if (expectedInitialState?.present === false) {
+    return current
+  }
+  if (expectedInitialState?.present === false) {
     if (current) throw new Error("release tag appeared since recovery metadata verification")
-    await api(`repos/${repo}/git/refs`, { method: "POST", body: { ref: `refs/tags/${tag}`, sha: source } }); current = await readTagState(repo, tag)
-  } else if (!current) { await api(`repos/${repo}/git/refs`, { method: "POST", body: { ref: `refs/tags/${tag}`, sha: source } }); current = await readTagState(repo, tag) }
-  if (!current || current.commit !== source) throw new Error("release tag does not resolve to the immutable verified source")
-  return current
+    return null
+  }
+  throw new Error("recovery tag snapshot is required before publication")
 }
 async function metadata() {
   const repo = repository(), version = readFileSync("VERSION", "utf8").trim(), tag = versionTag(version)
@@ -443,16 +444,19 @@ async function publish() {
   }
   await verifyStagingSet(state.tagState)
   await currentProtectedMain(repo, executionSHA)
-  const immutableTag = await ensureTag(repo, tag, source, initialTagExpectation)
+  const preexistingTag = await ensureTag(repo, tag, source, initialTagExpectation)
   main = await currentProtectedMain(repo, executionSHA)
   await verifySourceAncestry(repo, source, main); await verifiedReleasePR(repo, source, version, tag)
   const originalRun = await verifyOriginalNativeRelease(repo, source)
   if (originalRun.id.toString() !== process.env.RECOVERY_ORIGINAL_RUN_ID) throw new Error("selected historical Native release provenance changed")
-  await assertTagState(repo, tag, immutableTag, "immutable release tag ref object changed after recovery tag creation")
-  await verifyStagingSet(immutableTag)
+  if (preexistingTag) await assertTagState(repo, tag, preexistingTag, "immutable release tag ref object changed before recovery metadata creation")
+  else await assertTagSnapshot(repo, tag, null, "release tag appeared before recovery metadata creation")
+  await verifyStagingSet(preexistingTag)
   await assertImmutableTagProtection(repo, tag)
-  let release = await api(`repos/${repo}/releases`, { method: "POST", body: { tag_name: tag, name: state.expected.name, body: state.expected.body, draft: true, prerelease: false, make_latest: "true" } })
+  let release = await api(`repos/${repo}/releases`, { method: "POST", body: { tag_name: tag, target_commitish: source, name: state.expected.name, body: state.expected.body, draft: true, prerelease: false, make_latest: "true" } })
   await assertImmutableTagProtection(repo, tag)
+  const immutableTag = preexistingTag || await readTagState(repo, tag)
+  if (!immutableTag || immutableTag.commit !== source) throw new Error("release creation did not create the immutable tag at the verified source")
   await assertTagState(repo, tag, immutableTag, "immutable release tag ref object changed while creating recovery metadata")
   assertExactDraft(release, version, source, state.expected)
   await verifyStagingSet(immutableTag, release)

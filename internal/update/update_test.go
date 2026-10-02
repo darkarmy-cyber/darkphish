@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -389,7 +390,7 @@ func TestReplacementAllowsOnlyTrustedRetiredTombstones(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		trusted, err := trustedRetiredRuntimeFile(ctx, path, rel, entry)
-		if trusted || err != context.Canceled {
+		if trusted || !errors.Is(err, context.Canceled) {
 			t.Fatalf("cancelled hash: trusted=%v err=%v", trusted, err)
 		}
 	})

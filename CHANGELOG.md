@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.25.0 - 2026-10-02
+
+### Fixed
+
+- Recover and publish the audited tagless v0.24.0 release with exact post-merge attestation and immutable Native release provenance.
+- Align recovery publication with GitHub's draft-release lifecycle by requiring the tag to remain absent during staging and verifying it only after publication.
+- Align recovery invariant tests with the verified draft-reuse and post-publication tag lifecycle.
+- Publish the verified update path after the v0.23.x/v0.24.0 release-gate recovery work, preserving the removed training functionality and compatibility update handling.
+
 ## 0.24.0 - 2026-10-02
 
 ### Fixed

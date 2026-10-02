@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.25.1 - 2026-10-02
+
+### Changed
+
+- Attribute future generated release commits to the GitHub account `oliverkko` instead of `github-actions[bot]` so new contributor attribution stays on the maintainer account.
+
 ## 0.25.0 - 2026-10-02
 
 ### Fixed

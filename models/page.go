@@ -8,6 +8,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Page contains the fields used for a Page model
@@ -140,6 +141,11 @@ func PostPage(p *Page) error {
 // Per the PUT Method RFC, it presumes all data for a page is provided.
 func PutPage(p *Page) error {
 	err := db.Transaction(func(tx *gorm.DB) error {
+		prior := Page{}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id=? AND user_id=?", p.Id, p.UserId).Take(&prior).Error; err != nil {
+			return err
+		}
 		if err := p.Validate(); err != nil {
 			return err
 		}

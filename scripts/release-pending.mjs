@@ -1,13 +1,22 @@
 import { api, assertCurrentVersionPublished, pages, versionTag } from "./release-lib.mjs"
 
-export async function assertReleaseAdvancePublished(repo, current, target, { verify = assertCurrentVersionPublished } = {}) {
+export async function assertReleaseAdvancePublished(repo, current, target, { verify = assertCurrentVersionPublished, request = api } = {}) {
   versionTag(current)
   versionTag(target)
   if (target === current) return
-  // v0.23.1 was fully built, tested and attested, but GitHub refused creation of
-  // its historical release tag/release. Allow exactly one forward bridge to the
-  // next minor line so publication can resume from current protected main.
-  if (current === "0.23.1" && target === "0.24.0") return
+  if (repo === "darkarmy-cyber/darkphish" && current === "0.23.1" && target === "0.24.0") {
+    const tag = await request(`repos/${repo}/git/ref/tags/v0.23.1`, { missing: true })
+    const release = await request(`repos/${repo}/releases/tags/v0.23.1`, { missing: true })
+    const pr = await request(`repos/${repo}/pulls/181`, { missing: true })
+    const audited = pr?.number === 181 && pr.state === "closed" && pr.draft === false &&
+      pr.title === "release: Darkphish 0.23.1" && pr.merged_at === "2026-10-02T12:24:22Z" &&
+      pr.merge_commit_sha === "86cb7173c553d68bc3afac204948aa923a32bc83" &&
+      pr.base?.ref === "main" && pr.base?.sha === "443d247b1636ea8e46c7339378174d3c88a0abf5" &&
+      pr.head?.ref === "release/v0.23.1" && pr.head?.sha === "5f8b6de5a6ed4076b987747c32d615b5b9bd180a" &&
+      pr.head?.repo?.full_name === repo
+    if (!audited || tag || release) throw new Error("audited v0.23.1 bridge state changed; refusing release advance")
+    return
+  }
   await verify(repo, { version: current })
 }
 

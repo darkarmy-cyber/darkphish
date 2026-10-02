@@ -10,6 +10,12 @@ test("landing-page import waits for CKEditor and uses sanitized API HTML", () =>
   assert.match(pageJS, /if \(importPending\) return/)
   assert.match(pageJS, /setData\(data\.html, function \(\)/)
   assert.match(pageJS, /#modalSubmit.*disabled/s)
+  assert.match(pageJS, /function applyImportedCaptureDefaults\(html\)/)
+  assert.match(pageJS, /hasForm = \/<form/)
+  assert.match(pageJS, /hasPassword = \/<input/)
+  assert.match(pageJS, /capture_credentials_checkbox.*hasForm/s)
+  assert.match(pageJS, /capture_passwords_checkbox.*hasForm && hasPassword/s)
+  assert.match(pageJS, /applyImportedCaptureDefaults\(data\.html\)/)
   assert.doesNotMatch(pageJS, /training|data-darkphish-training|static-v1/i)
 })
 

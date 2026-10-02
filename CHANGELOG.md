@@ -8,6 +8,9 @@
 - Align recovery publication with GitHub's draft-release lifecycle by requiring the tag to remain absent during staging and verifying it only after publication.
 - Align recovery invariant tests with the verified draft-reuse and post-publication tag lifecycle.
 - Publish the verified update path after the v0.23.x/v0.24.0 release-gate recovery work, preserving the removed training functionality and compatibility update handling.
+- Restore visual fidelity for imported landing pages by preserving safe HTTPS stylesheets and raster images while keeping scripts, event handlers, unsafe URLs and remote form actions blocked.
+- When an imported page contains a form, automatically enable submitted-data capture controls and preselect password capture only when the imported form contains a password field.
+
 
 ## 0.24.0 - 2026-10-02
 

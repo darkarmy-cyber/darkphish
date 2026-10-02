@@ -93,8 +93,10 @@ var deletePage = function (idx) {
 }
 
 function applyImportedCaptureDefaults(html) {
-    var hasForm = /<form(?:\\s|>)/i.test(html)
-    var hasPassword = /<input\\b[^>]*\\btype\\s*=\\s*["']?password["']?/i.test(html)
+    var hasForm = /<form(?:\s|>)/i.test(html)
+    var hasPasswordType = /<input\b[^>]*\btype\s*=\s*["']?password["']?/i.test(html)
+    var hasPasswordAutocomplete = /<(?:input|textarea)\b[^>]*\bautocomplete\s*=\s*["'][^"']*\b(?:current-password|new-password)\b[^"']*["']/i.test(html)
+    var hasPassword = hasPasswordType || hasPasswordAutocomplete
     $("#capture_credentials_checkbox").prop("checked", hasForm)
     $("#capture_passwords_checkbox").prop("checked", hasForm && hasPassword)
     $("#capture_passwords, #redirect_url").toggle(hasForm)

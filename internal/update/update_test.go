@@ -312,7 +312,6 @@ func TestReplacementRejectsUnbundledRuntimeFiles(t *testing.T) {
 	}
 }
 
-
 func TestReplacementAllowsOnlyTrustedRetiredTombstones(t *testing.T) {
 	setup := func(t *testing.T) (string, string) {
 		t.Helper()
@@ -325,8 +324,12 @@ func TestReplacementAllowsOnlyTrustedRetiredTombstones(t *testing.T) {
 			}
 		}
 		for rel := range retiredRuntimeFileHashes {
-			path := filepath.Join(root, filepath.FromSlash(rel))
+			rel = filepath.FromSlash(rel)
+			path := filepath.Join(root, rel)
 			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(stage, filepath.Dir(rel)), 0700); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.WriteFile(path, nil, 0600); err != nil {

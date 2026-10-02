@@ -8,9 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
-	"net/url"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/darkarmy-cyber/darkphish/dialer"

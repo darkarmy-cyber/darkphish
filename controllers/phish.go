@@ -349,19 +349,9 @@ func setupContext(r *http.Request) (*http.Request, error) {
 		log.Error(err)
 		return r, err
 	}
-	rid := r.Form.Get(models.RecipientParameter)
+	rid := recipientIDFromRequest(r)
 	if rid == "" {
 		return r, ErrInvalidRequest
-	}
-	// Since we want to support the common case of adding a "+" to indicate a
-	// transparency request, we need to take care to handle the case where the
-	// request ends with a space, since a "+" is technically reserved for use
-	// as a URL encoding of a space.
-	if strings.HasSuffix(rid, " ") {
-		// We'll trim off the space
-		rid = strings.TrimRight(rid, " ")
-		// Then we'll add the transparency suffix
-		rid = fmt.Sprintf("%s%s", rid, TransparencySuffix)
 	}
 	// Finally, if this is a transparency request, we'll need to verify that
 	// a valid rid has been provided, so we'll look up the result with a
@@ -409,16 +399,26 @@ func setupContext(r *http.Request) (*http.Request, error) {
 	return r, nil
 }
 
+func recipientIDFromRequest(r *http.Request) string {
+	rid := r.URL.Query().Get(models.RecipientParameter)
+	// Preserve the historical unescaped "+" transparency suffix. URL query
+	// decoding represents it as a trailing space.
+	if strings.HasSuffix(rid, " ") {
+		return strings.TrimRight(rid, " ") + TransparencySuffix
+	}
+	return rid
+}
+
 func submittedFieldNames(form url.Values, enabled bool) url.Values {
 	if !enabled {
 		return nil
 	}
 	fields := make(url.Values)
 	for name := range form {
-		if name == models.RecipientParameter {
+		field := strings.ToLower(strings.TrimSpace(name))
+		if field == strings.ToLower(models.RecipientParameter) {
 			continue
 		}
-		field := strings.ToLower(strings.TrimSpace(name))
 		category := "other"
 		switch {
 		case field == "password" || field == "pass" || field == "passwd" || field == "pwd" || strings.Contains(field, "password"):

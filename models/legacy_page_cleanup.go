@@ -12,6 +12,8 @@ const legacyLandingPageMarker = "data-darkphish-training"
 const legacyLandingPageNotice = "data-training-notice"
 const legacyLandingPageImage = "data-training-image-url"
 const legacyLandingPageNoticeText = "Training simulation — do not enter real credentials. Forms and scripts are disabled."
+const legacyLiteralOpenDelimiter = "{{`{{`}}"
+const legacyLiteralCloseDelimiter = "{{`}`}}{{`}`}}"
 
 func removeAttr(n *html.Node, key string) (string, bool) {
 	for i, a := range n.Attr {
@@ -47,6 +49,47 @@ func textContent(n *html.Node) string {
 	return strings.TrimSpace(value.String())
 }
 
+func legacyNodeContains(n *html.Node, value string) bool {
+	if strings.Contains(n.Data, value) {
+		return true
+	}
+	for _, attribute := range n.Attr {
+		if strings.Contains(attribute.Val, value) {
+			return true
+		}
+	}
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		if legacyNodeContains(child, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func legacyDelimiterTokens(doc *html.Node) (string, string) {
+	open := "DARKPHISHLEGACYOPENDELIMITER"
+	close := "DARKPHISHLEGACYCLOSEDELIMITER"
+	for legacyNodeContains(doc, open) || legacyNodeContains(doc, close) {
+		open += "X"
+		close += "X"
+	}
+	return open, close
+}
+
+func replaceLegacyDelimiters(n *html.Node, open, close string) {
+	if n.Type == html.TextNode {
+		n.Data = strings.ReplaceAll(strings.ReplaceAll(n.Data, "{{", open), "}}", close)
+	}
+	if n.Type == html.ElementNode {
+		for i := range n.Attr {
+			n.Attr[i].Val = strings.ReplaceAll(strings.ReplaceAll(n.Attr[i].Val, "{{", open), "}}", close)
+		}
+	}
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		replaceLegacyDelimiters(child, open, close)
+	}
+}
+
 func stripLegacyLandingPageMarkup(source string) (string, bool, error) {
 	doc, err := html.Parse(strings.NewReader(source))
 	if err != nil {
@@ -67,6 +110,7 @@ func stripLegacyLandingPageMarkup(source string) (string, bool, error) {
 	if legacyBody == nil {
 		return source, false, nil
 	}
+	openDelimiter, closeDelimiter := legacyDelimiterTokens(doc)
 	_, _ = removeAttr(legacyBody, legacyLandingPageMarker)
 	changed := true
 	var walk func(*html.Node)
@@ -104,6 +148,11 @@ func stripLegacyLandingPageMarkup(source string) (string, bool, error) {
 		}
 	}
 	removeLegacyTitle(doc)
+	// These pages were previously rendered literally. Preserve that contract
+	// after retiring the special response mode by quoting delimiters only in
+	// parsed text and attribute values. Placeholders prevent replacement from
+	// recursively rewriting the template expressions introduced below.
+	replaceLegacyDelimiters(doc, openDelimiter, closeDelimiter)
 	if !changed {
 		return source, false, nil
 	}
@@ -111,7 +160,9 @@ func stripLegacyLandingPageMarkup(source string) (string, bool, error) {
 	if err := html.Render(&out, doc); err != nil {
 		return "", false, err
 	}
-	return out.String(), true, nil
+	cleaned := strings.ReplaceAll(out.String(), openDelimiter, legacyLiteralOpenDelimiter)
+	cleaned = strings.ReplaceAll(cleaned, closeDelimiter, legacyLiteralCloseDelimiter)
+	return cleaned, true, nil
 }
 
 // cleanupLegacyLandingPages is an idempotent compatibility migration for

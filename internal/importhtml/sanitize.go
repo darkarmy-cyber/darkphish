@@ -14,6 +14,12 @@ import (
 
 const maxBytes = 8 << 20
 
+// recipientParameter is reserved for DarkPhish result routing and must never
+// be supplied by imported page controls.
+const recipientParameter = "rid"
+const literalOpenDelimiter = "{{`{{`}}"
+const literalCloseDelimiter = "{{`}`}}{{`}`}}"
+
 var ErrSize = errors.New("imported HTML exceeds the 8 MiB limit")
 
 var allowedTags = words("html head body title div span p br hr h1 h2 h3 h4 h5 h6 strong b em i u s small sub sup blockquote pre code ul ol li dl dt dd table thead tbody tfoot tr td th caption colgroup col section article header footer main nav aside figure figcaption details summary a img form label fieldset legend input textarea select option optgroup button")
@@ -30,6 +36,47 @@ func words(s string) map[string]bool {
 		m[word] = true
 	}
 	return m
+}
+
+func nodeContains(n *html.Node, value string) bool {
+	if strings.Contains(n.Data, value) {
+		return true
+	}
+	for _, attribute := range n.Attr {
+		if strings.Contains(attribute.Val, value) {
+			return true
+		}
+	}
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		if nodeContains(child, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func delimiterTokens(doc *html.Node) (string, string) {
+	open := "DARKPHISHIMPORTOPENDELIMITER"
+	close := "DARKPHISHIMPORTCLOSEDELIMITER"
+	for nodeContains(doc, open) || nodeContains(doc, close) {
+		open += "X"
+		close += "X"
+	}
+	return open, close
+}
+
+func neutralizeDelimiters(n *html.Node, open, close string) {
+	if n.Type == html.TextNode {
+		n.Data = strings.ReplaceAll(strings.ReplaceAll(n.Data, "{{", open), "}}", close)
+	}
+	if n.Type == html.ElementNode {
+		for i := range n.Attr {
+			n.Attr[i].Val = strings.ReplaceAll(strings.ReplaceAll(n.Attr[i].Val, "{{", open), "}}", close)
+		}
+	}
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		neutralizeDelimiters(child, open, close)
+	}
 }
 
 func attr(n *html.Node, key string) string {
@@ -119,6 +166,9 @@ func copyAttributes(out, source *html.Node, base *url.URL) {
 			appendBounded(out, a.Key, a.Val, 64)
 		case "name", "value", "type", "min", "max", "step", "pattern":
 			if out.Data == "input" || out.Data == "textarea" || out.Data == "select" || out.Data == "option" || out.Data == "optgroup" || out.Data == "button" {
+				if a.Key == "name" && strings.EqualFold(strings.TrimSpace(a.Val), recipientParameter) {
+					continue
+				}
 				appendBounded(out, a.Key, a.Val, 1024)
 			}
 		case "checked", "selected", "disabled", "readonly", "required", "multiple":
@@ -196,6 +246,7 @@ func Sanitize(source string, base *url.URL) (string, error) {
 		}
 	}
 	find(doc)
+	openDelimiter, closeDelimiter := delimiterTokens(doc)
 	body := &html.Node{Type: html.ElementNode, Data: "body"}
 	if sourceBody != nil {
 		copyAttributes(body, sourceBody, base)
@@ -205,14 +256,17 @@ func Sanitize(source string, base *url.URL) (string, error) {
 			}
 		}
 	}
+	neutralizeDelimiters(body, openDelimiter, closeDelimiter)
 	var out bytes.Buffer
 	_, _ = io.WriteString(&out, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Imported landing page</title></head>`)
 	if err := html.Render(&out, body); err != nil {
 		return "", err
 	}
 	_, _ = io.WriteString(&out, "</html>")
-	if out.Len() > maxBytes {
+	cleaned := strings.ReplaceAll(out.String(), openDelimiter, literalOpenDelimiter)
+	cleaned = strings.ReplaceAll(cleaned, closeDelimiter, literalCloseDelimiter)
+	if len(cleaned) > maxBytes {
 		return "", ErrSize
 	}
-	return out.String(), nil
+	return cleaned, nil
 }

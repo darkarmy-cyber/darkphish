@@ -10,6 +10,7 @@
 ### Security
 
 - Continue removing scripts, embedded active content, event handlers, unsafe URLs and remote form actions from imported sites.
+- Keep imported template delimiters literal, reserve recipient routing identifiers to the URL query, and remove all successful-control names when submitted-data capture is disabled.
 
 ### Migration
 

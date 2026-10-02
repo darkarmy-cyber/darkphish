@@ -42,21 +42,29 @@ func (p *Page) parseHTML() error {
 		f.SetAttr("action", "")
 		if p.CaptureCredentials {
 			// If we don't want to capture passwords,
-			// find all the password fields and remove the "name" attribute.
+			// remove names from password and password-manager fields.
 			if !p.CapturePasswords {
-				inputs := f.Find("input")
-				inputs.Each(func(j int, input *goquery.Selection) {
-					if t, _ := input.Attr("type"); strings.EqualFold(t, "password") {
-						input.RemoveAttr("name")
+				fields := f.Find("input, textarea")
+				fields.Each(func(j int, field *goquery.Selection) {
+					fieldType, _ := field.Attr("type")
+					autocomplete, _ := field.Attr("autocomplete")
+					passwordManagerField := false
+					for _, token := range strings.Fields(autocomplete) {
+						if strings.EqualFold(token, "current-password") || strings.EqualFold(token, "new-password") {
+							passwordManagerField = true
+							break
+						}
+					}
+					if strings.EqualFold(fieldType, "password") || passwordManagerField {
+						field.RemoveAttr("name")
 					}
 				})
 			}
 		} else {
-			// Otherwise, remove the name from all
-			// inputs.
-			inputFields := f.Find("input")
-			inputFields.Each(func(j int, input *goquery.Selection) {
-				input.RemoveAttr("name")
+			// Otherwise, remove the name from every successful form control.
+			fields := f.Find("input, textarea, select, button")
+			fields.Each(func(j int, field *goquery.Selection) {
+				field.RemoveAttr("name")
 			})
 		}
 	})

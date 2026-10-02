@@ -1,9 +1,11 @@
 package importhtml
 
 import (
+	"bytes"
 	"net/url"
 	"strings"
 	"testing"
+	"text/template"
 
 	"golang.org/x/net/html"
 )
@@ -56,5 +58,71 @@ func TestSanitizeRejectsDangerousAttributesAndBoundsInput(t *testing.T) {
 	}
 	if _, err := Sanitize(strings.Repeat("x", maxBytes+1), nil); err != ErrSize {
 		t.Fatal("missing input limit")
+	}
+}
+
+func TestSanitizeRemovesReservedRecipientControlNames(t *testing.T) {
+	got, err := Sanitize(`<form><input name="RID"><textarea name=" rid ">x</textarea><select name="RiD"><option>one</option></select><button name="rid">go</button><input name="email"></form>`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := html.Parse(strings.NewReader(got))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reserved, ordinary int
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			for _, a := range n.Attr {
+				if a.Key == "name" {
+					if strings.EqualFold(strings.TrimSpace(a.Val), recipientParameter) {
+						reserved++
+					} else if a.Val == "email" {
+						ordinary++
+					}
+				}
+			}
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(doc)
+	if reserved != 0 || ordinary != 1 {
+		t.Fatalf("reserved name survived or ordinary name was removed: %s", got)
+	}
+}
+
+func TestSanitizeKeepsTemplateDelimitersLiteral(t *testing.T) {
+	input := `<p>{{.Email}} {{\example}} broken {{ open and }} close DARKPHISHIMPORTOPENDELIMITER</p><input name="email" value="{{.Email}}"><textarea name="message">{{.Email}}</textarea>`
+	got, err := Sanitize(input, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := html.Parse(strings.NewReader(got))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var normalized bytes.Buffer
+	if err := html.Render(&normalized, document); err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := template.New("import").Parse(normalized.String())
+	if err != nil {
+		t.Fatalf("sanitized import is not a valid template: %v\n%s", err, got)
+	}
+	var rendered bytes.Buffer
+	if err := tmpl.Execute(&rendered, map[string]string{"Email": "activated@example.test"}); err != nil {
+		t.Fatal(err)
+	}
+	output := rendered.String()
+	for _, literal := range []string{`{{.Email}}`, `{{\example}}`, `broken {{ open and }} close`, "DARKPHISHIMPORTOPENDELIMITER", `value="{{.Email}}"`, `>{{.Email}}</textarea>`} {
+		if !strings.Contains(output, literal) {
+			t.Fatalf("template delimiter was not preserved literally: %s\n%s", literal, output)
+		}
+	}
+	if strings.Contains(output, "activated@example.test") {
+		t.Fatal("untrusted imported template expression became active")
 	}
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.24.0 - 2026-10-02
+
+### Fixed
+
+- Resume protected publication by bridging the unrecoverable tagless v0.23.1 line to v0.24.0 from current protected main.
+- Recover the audited tagless v0.23.1 release after its protected publication gate failed before artifact creation.
+- Repair the protected release gate for the audited v0.23.1 post-merge maintainer attestation without weakening normal pre-merge approval requirements.
+- Create a missing immutable recovery tag through the GitHub release endpoint at the exact verified source after direct ref creation is denied.
+
 ## 0.23.1 - 2026-10-02
 
 ### Fixed

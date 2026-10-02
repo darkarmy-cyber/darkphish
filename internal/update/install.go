@@ -114,7 +114,7 @@ func copyTree(src, dst string) error {
 
 var retiredRuntimeFileHashes = map[string]string{
 	"static/js/dist/app/training_images.min.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-	"static/js/src/app/training_images.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+	"static/js/src/app/training_images.js":      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 }
 
 func trustedRetiredRuntimeFile(path, rel string, entry os.DirEntry) bool {

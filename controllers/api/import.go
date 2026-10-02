@@ -25,7 +25,9 @@ func (cr *cloneRequest) validate() error {
 }
 
 type cloneResponse struct {
-	HTML string `json:"html"`
+	HTML     string   `json:"html"`
+	Mode     string   `json:"mode"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type emailResponse struct {
@@ -128,11 +130,20 @@ func (as *Server) ImportSite(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
 		return
 	}
+	mode := "static"
+	var warnings []string
+	if rendered, renderedURL, renderErr := renderImportPage(r.Context(), sourceURL.String()); renderErr == nil {
+		content = rendered
+		sourceURL = renderedURL
+		mode = "rendered"
+	} else {
+		warnings = append(warnings, renderedImportWarning(renderErr))
+	}
 	h, err := importhtml.Sanitize(string(content), sourceURL)
 	if err != nil {
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusInternalServerError)
 		return
 	}
-	cs := cloneResponse{HTML: h}
+	cs := cloneResponse{HTML: h, Mode: mode, Warnings: warnings}
 	JSONResponse(w, cs, http.StatusOK)
 }

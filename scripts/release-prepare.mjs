@@ -109,8 +109,8 @@ async function prepare() {
   const tree = git("write-tree")
   let releaseSHA = oldSHA
   if (!oldSHA || tree !== git("rev-parse", `${oldSHA}^{tree}`)) {
-    git("config", "user.name", "github-actions[bot]")
-    git("config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
+    git("config", "user.name", "oliverkko")
+    git("config", "user.email", "309485696+oliverkko@users.noreply.github.com")
     const parents = oldSHA && oldSHA !== sha ? ["-p", oldSHA, "-p", sha] : ["-p", sha]
     releaseSHA = git("commit-tree", tree, ...parents, "-m", `release: Darkphish ${version}`)
     git("push", "origin", `${releaseSHA}:refs/heads/${branch}`)

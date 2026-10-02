@@ -12,23 +12,20 @@ import (
 
 func TestSanitizeKeepsFormsAndRemovesActiveContent(t *testing.T) {
 	base, _ := url.Parse("https://assets.example.test/account/page")
-	input := `<body data-darkphish-training="static-v1"><p data-training-notice="true">obsolete</p><script>alert(1)</script><form action="https://collect.example.test" onsubmit="steal()"><label for="login">Login</label><input id="login" name="username" value="alice" onclick="steal()"><input type="password" name="password"><textarea name="note">hello</textarea><select name="kind"><option value="a" selected>A</option></select><button formaction="https://collect.example.test">Continue</button></form><a href="javascript:alert(1)">bad</a><img src="../logo.png" onerror="steal()"><div style="color:red;background-image:url(https://track.example.test)">content</div></body>`
+	input := `<html><head><link rel="stylesheet" href="/assets/login.css" media="all" onload="steal()"><link rel="preload" href="/evil.js"></head><body data-darkphish-training="static-v1"><p data-training-notice="true">obsolete</p><script>alert(1)</script><form action="https://collect.example.test" onsubmit="steal()"><label for="login">Login</label><input id="login" name="username" value="alice" onclick="steal()"><input type="password" name="password"><textarea name="note">hello</textarea><select name="kind"><option value="a" selected>A</option></select><button formaction="https://collect.example.test">Continue</button></form><a href="javascript:alert(1)">bad</a><img src="../logo.png" onerror="steal()"><div style="color:red;background-image:url(https://track.example.test)">content</div></body></html>`
 	got, err := Sanitize(input, base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, blocked := range []string{"data-darkphish-training", "data-training-notice", "<script", "onsubmit", "onclick", "onerror", "formaction", "javascript:", "background-image", "https://collect.example.test"} {
+	for _, blocked := range []string{"data-darkphish-training", "data-training-notice", "<script", "onsubmit", "onclick", "onerror", "formaction", "javascript:", "background-image", "https://collect.example.test", `rel="preload"`, "evil.js"} {
 		if strings.Contains(got, blocked) {
 			t.Fatalf("unsafe content survived: %s\n%s", blocked, got)
 		}
 	}
-	for _, kept := range []string{`<form action="" method="post">`, `name="username"`, `value="alice"`, `type="password"`, `<textarea name="note">hello</textarea>`, `<select name="kind">`, `<button>Continue</button>`, `style="color:red"`} {
+	for _, kept := range []string{`<link rel="stylesheet" href="https://assets.example.test/assets/login.css" media="all"/>`, `<form action="" method="post">`, `name="username"`, `value="alice"`, `type="password"`, `<textarea name="note">hello</textarea>`, `<select name="kind">`, `<button>Continue</button>`, `src="https://assets.example.test/logo.png"`, `style="color:red"`} {
 		if !strings.Contains(got, kept) {
 			t.Fatalf("expected content missing: %s\n%s", kept, got)
 		}
-	}
-	if strings.Contains(got, "assets.example.test/logo.png") {
-		t.Fatal("remote image URL survived import")
 	}
 }
 

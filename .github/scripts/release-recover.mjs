@@ -456,24 +456,43 @@ async function publish() {
   else await assertTagSnapshot(repo, tag, null, "release tag appeared before recovery metadata creation")
   await verifyStagingSet(preexistingTag)
   await assertImmutableTagProtection(repo, tag)
-  let release = await api(`repos/${repo}/releases`, { method: "POST", body: { tag_name: tag, target_commitish: source, name: state.expected.name, body: state.expected.body, draft: true, prerelease: false, make_latest: "true" } })
+  let release
+  if ((state.drafts || []).length === 1) {
+    release = assertExactDraft(state.drafts[0], version, source, state.expected)
+    const existingAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
+    if (existingAssets.length !== 0) throw new Error("existing recovery draft contains assets and cannot be reused safely")
+  } else {
+    release = await api(`repos/${repo}/releases`, { method: "POST", body: { tag_name: tag, target_commitish: source, name: state.expected.name, body: state.expected.body, draft: true, prerelease: false, make_latest: "true" } })
+    assertExactDraft(release, version, source, state.expected)
+  }
   await assertImmutableTagProtection(repo, tag)
-  const immutableTag = preexistingTag || await readTagState(repo, tag)
-  if (!immutableTag || immutableTag.commit !== source) throw new Error("release creation did not create the immutable tag at the verified source")
-  await assertTagState(repo, tag, immutableTag, "immutable release tag ref object changed while creating recovery metadata")
-  assertExactDraft(release, version, source, state.expected)
-  await verifyStagingSet(immutableTag, release)
+  if (preexistingTag) await assertTagState(repo, tag, preexistingTag, "immutable release tag ref object changed while staging recovery metadata")
+  else await assertTagSnapshot(repo, tag, null, "release tag appeared before the draft was published")
+  await verifyStagingSet(preexistingTag, (state.drafts || []).some((draft) => draft.id === release.id) ? null : release)
   for (const name of local.names) await uploadAsset(release, name, local.bytes.get(name)); await uploadAsset(release, local.receiptName, receipt)
   release = assertExactDraft(await api(`repos/${repo}/releases/${release.id}`), version, source, state.expected)
-  let assets = await pages(`repos/${repo}/releases/${release.id}/assets`); assertUploadedAssetSet(assets, local, receiptHash, receipt.length); await assertTagState(repo, tag, immutableTag, "release tag ref object changed before publication")
+  let assets = await pages(`repos/${repo}/releases/${release.id}/assets`); assertUploadedAssetSet(assets, local, receiptHash, receipt.length)
+  if (preexistingTag) await assertTagState(repo, tag, preexistingTag, "immutable release tag ref object changed before publication")
+  else await assertTagSnapshot(repo, tag, null, "release tag appeared before publication")
   main = await currentProtectedMain(repo, executionSHA)
   await verifySourceAncestry(repo, source, main); await verifiedReleasePR(repo, source, version, tag)
   const finalOriginalRun = await verifyOriginalNativeRelease(repo, source)
   if (finalOriginalRun.id.toString() !== process.env.RECOVERY_ORIGINAL_RUN_ID) throw new Error("historical Native release provenance changed immediately before publication")
-  release = assertExactDraft(await api(`repos/${repo}/releases/${release.id}`), version, source, state.expected); assets = await pages(`repos/${repo}/releases/${release.id}/assets`); assertUploadedAssetSet(assets, local, receiptHash, receipt.length); await assertTagState(repo, tag, immutableTag, "release tag ref object changed immediately before publication")
-  await verifyStagingSet(immutableTag, release)
+  release = assertExactDraft(await api(`repos/${repo}/releases/${release.id}`), version, source, state.expected); assets = await pages(`repos/${repo}/releases/${release.id}/assets`); assertUploadedAssetSet(assets, local, receiptHash, receipt.length)
+  if (preexistingTag) await assertTagState(repo, tag, preexistingTag, "immutable release tag ref object changed immediately before publication")
+  else await assertTagSnapshot(repo, tag, null, "release tag appeared immediately before publication")
+  await verifyStagingSet(preexistingTag, (state.drafts || []).some((draft) => draft.id === release.id) ? null : release)
   try { await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, prerelease: false, make_latest: "true" } }) }
-  catch (error) { await withdrawPublishedRelease(repo, release.id, tag, immutableTag, new Error(`publication PATCH returned an ambiguous failure: ${error.message}`)) }
+  catch (error) {
+    const observedTag = await readTagState(repo, tag)
+    if (observedTag && observedTag.commit !== source) throw new Error("publication PATCH failed and created the release tag at an unexpected source")
+    await withdrawPublishedRelease(repo, release.id, tag, observedTag || preexistingTag, new Error(`publication PATCH returned an ambiguous failure: ${error.message}`))
+  }
+  const immutableTag = preexistingTag || await readTagState(repo, tag)
+  if (!immutableTag || immutableTag.commit !== source) {
+    await withdrawPublishedRelease(repo, release.id, tag, immutableTag, new Error("publishing the release did not create the immutable tag at the verified source"))
+  }
+  await assertTagState(repo, tag, immutableTag, "published release tag does not match the verified source")
   const verifyPublishedSnapshot = async () => {
     const published = assertExactPublished(await api(`repos/${repo}/releases/${release.id}`), version, source, state.expected), byTag = assertExactPublished(await api(`repos/${repo}/releases/tags/${tag}`), version, source, state.expected)
     if (published.id !== release.id || byTag.id !== release.id) throw new Error("published release identity verification failed")

@@ -312,6 +312,71 @@ func TestReplacementRejectsUnbundledRuntimeFiles(t *testing.T) {
 	}
 }
 
+
+func TestReplacementAllowsOnlyTrustedRetiredTombstones(t *testing.T) {
+	setup := func(t *testing.T) (string, string) {
+		t.Helper()
+		root, stage := t.TempDir(), t.TempDir()
+		for _, base := range []string{root, stage} {
+			for _, entry := range []string{"db", "templates", "static"} {
+				if err := os.Mkdir(filepath.Join(base, entry), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		for rel := range retiredRuntimeFileHashes {
+			path := filepath.Join(root, filepath.FromSlash(rel))
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return root, stage
+	}
+
+	t.Run("exact empty tombstones", func(t *testing.T) {
+		root, stage := setup(t)
+		if err := ValidateReplacement(context.Background(), root, stage); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("modified tombstone", func(t *testing.T) {
+		root, stage := setup(t)
+		path := filepath.Join(root, "static", "js", "src", "app", "training_images.js")
+		if err := os.WriteFile(path, []byte("custom"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateReplacement(context.Background(), root, stage); err == nil {
+			t.Fatal("modified retired path bypassed custom-file protection")
+		}
+	})
+
+	t.Run("replacement type mismatch", func(t *testing.T) {
+		root, stage := setup(t)
+		path := filepath.Join(stage, "static", "js", "src", "app", "training_images.js")
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateReplacement(context.Background(), root, stage); err == nil {
+			t.Fatal("directory replaced a retired regular file")
+		}
+	})
+
+	t.Run("lookalike path", func(t *testing.T) {
+		root, stage := setup(t)
+		path := filepath.Join(root, "static", "js", "src", "app", "training_images.js.custom")
+		if err := os.WriteFile(path, nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateReplacement(context.Background(), root, stage); err == nil {
+			t.Fatal("lookalike path bypassed custom-file protection")
+		}
+	})
+}
+
 func TestDatabaseCannotOverlapUpdateState(t *testing.T) {
 	l := Layout{Root: t.TempDir(), Config: "config.json", Database: ".darkphish-updates"}
 	if err := l.Validate(); err == nil {

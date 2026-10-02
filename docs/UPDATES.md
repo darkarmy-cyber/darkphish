@@ -173,9 +173,12 @@ rollback event. Unsupported initial directory syncing disables one-click apply
 without preventing normal startup; pending recovery still fails closed.
 Rejected preparation removes partial staging data before the application continues.
 Local files absent from the incoming runtime trees require manual update, including
-custom campaign assets and files removed upstream. Linux file capabilities are
-also unsupported: use manual updates or systemd ambient capabilities. These checks
-prevent silent removal of custom files and loss of privileges during rollback.
+custom campaign assets and files removed upstream. The only exception is a compiled
+list of exact release-owned retirement paths whose installed content must match its
+expected SHA-256 digest; modified files and every unknown path still fail closed.
+Linux file capabilities are also unsupported: use manual updates or systemd ambient
+capabilities. These checks prevent silent removal of custom files and loss of
+privileges during rollback.
 IMAP report processing is cancellable between database operations and bounded
 to 100 identifiers per message, 20 attachments and 50 messages per rotating
 batch, with a 32 MiB batch parsing budget. Oversized work remains unread for

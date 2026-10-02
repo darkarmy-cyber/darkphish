@@ -4,33 +4,19 @@
 	Author: Jordan Wright <github.com/jordan-wright>
 */
 var pages = []
-var trainingStatic = false
-var trainingImportPending = false
-
-function setTrainingStatic(enabled) {
-    trainingStatic = !!enabled
-    $("#trainingStaticNotice").prop("hidden", !trainingStatic)
-    $("#capture_credentials_checkbox, #capture_passwords_checkbox").prop("disabled", trainingStatic)
-    if (trainingStatic) {
-        $("#capture_credentials_checkbox, #capture_passwords_checkbox").prop("checked", false)
-        $("#redirect_url_input").val("")
-        $("#redirect_url").hide()
-    }
-    trainingImagePreview.reset()
-}
+var importPending = false
 
 
 // Save attempts to POST to /templates/
 function save(idx) {
-    if (trainingImportPending || trainingImagePreview.isPending()) return
+    if (importPending) return
     var page = {}
     page.name = $("#name").val()
     editor = CKEDITOR.instances["html_editor"]
     page.html = editor.getData()
-    page.training_static = trainingStatic
-    page.capture_credentials = !trainingStatic && $("#capture_credentials_checkbox").prop("checked")
-    page.capture_passwords = !trainingStatic && $("#capture_passwords_checkbox").prop("checked")
-    page.redirect_url = trainingStatic ? "" : $("#redirect_url_input").val()
+    page.capture_credentials = $("#capture_credentials_checkbox").prop("checked")
+    page.capture_passwords = $("#capture_passwords_checkbox").prop("checked")
+    page.redirect_url = $("#redirect_url_input").val()
     if (idx != -1) {
         page.id = pages[idx].id
         api.pageId.put(page)
@@ -57,14 +43,15 @@ function save(idx) {
 }
 
 function dismiss() {
-    trainingImportPending = false
-    setTrainingStatic(false)
+    importPending = false
+    $("#modalSubmit").prop("disabled", false)
     $("#modal\\.flashes").empty()
     $("#name").val("")
     $("#html_editor").val("")
     $("#url").val("")
     $("#redirect_url_input").val("")
     $("#modal").find("input[type='checkbox']").prop("checked", false)
+    $("#capture_passwords").hide()
     $("#redirect_url").hide()
     $("#modal").modal('hide')
 }
@@ -115,14 +102,12 @@ function importSite() {
                 include_resources: false
             })
             .success(function (data) {
-                setTrainingStatic(data.training_static)
-                trainingImportPending = true
+                importPending = true
                 $("#modalSubmit").prop("disabled", true)
-                CKEDITOR.instances["html_editor"].setData(data.html, function () {
-                    if (!trainingImportPending) return
-                    trainingImportPending = false
+                var html = data.html.replace(/\sdata-darkphish-training=(["'])static-v1\1/i, "")
+                CKEDITOR.instances["html_editor"].setData(html, function () {
+                    importPending = false
                     $("#modalSubmit").prop("disabled", false)
-                    trainingImagePreview.load()
                 })
                 $("#importSiteModal").modal("hide")
             })
@@ -148,12 +133,11 @@ function edit(idx) {
 		$("#capture_passwords_checkbox").prop("checked", page.capture_passwords)
         $("#redirect_url_input").val(page.redirect_url)
         if (page.capture_credentials) {
-            $("#redirect_url").show()
+            $("#capture_passwords, #redirect_url").show()
         }
     } else {
         $("#modalLabel").text("New Landing Page")
     }
-    setTrainingStatic(page.training_static)
 }
 
 function copy(idx) {
@@ -164,7 +148,6 @@ function copy(idx) {
     var page = pages[idx]
     $("#name").val("Copy of " + page.name)
     $("#html_editor").val(page.html)
-    setTrainingStatic(page.training_static)
 }
 
 function load() {
@@ -263,6 +246,7 @@ $(document).ready(function () {
         dismiss()
     });
     $("#capture_credentials_checkbox").change(function () {
+        $("#capture_passwords").toggle()
         $("#redirect_url").toggle()
     })
     CKEDITOR.on('dialogDefinition', function (ev) {

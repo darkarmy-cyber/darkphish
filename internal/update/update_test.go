@@ -368,6 +368,32 @@ func TestReplacementAllowsOnlyTrustedRetiredTombstones(t *testing.T) {
 		}
 	})
 
+	t.Run("hashing cancellation", func(t *testing.T) {
+		root, _ := setup(t)
+		rel := "static/js/src/app/training_images.js"
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		entries, err := os.ReadDir(filepath.Dir(path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var entry os.DirEntry
+		for _, candidate := range entries {
+			if candidate.Name() == filepath.Base(path) {
+				entry = candidate
+				break
+			}
+		}
+		if entry == nil {
+			t.Fatal("retired tombstone directory entry not found")
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		trusted, err := trustedRetiredRuntimeFile(ctx, path, rel, entry)
+		if trusted || err != context.Canceled {
+			t.Fatalf("cancelled hash: trusted=%v err=%v", trusted, err)
+		}
+	})
+
 	t.Run("lookalike path", func(t *testing.T) {
 		root, stage := setup(t)
 		path := filepath.Join(root, "static", "js", "src", "app", "training_images.js.custom")

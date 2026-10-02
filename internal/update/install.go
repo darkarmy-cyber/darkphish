@@ -117,28 +117,31 @@ var retiredRuntimeFileHashes = map[string]string{
 	"static/js/src/app/training_images.js":      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 }
 
-func trustedRetiredRuntimeFile(path, rel string, entry os.DirEntry) bool {
+func trustedRetiredRuntimeFile(ctx context.Context, path, rel string, entry os.DirEntry) (bool, error) {
 	expected, ok := retiredRuntimeFileHashes[filepath.ToSlash(rel)]
 	if !ok || !entry.Type().IsRegular() {
-		return false
+		return false, nil
 	}
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() {
-		return false
+		return false, nil
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return false
+		return false, nil
 	}
 	openedInfo, statErr := file.Stat()
 	if statErr != nil || !os.SameFile(info, openedInfo) {
 		file.Close()
-		return false
+		return false, nil
 	}
 	hash := sha256.New()
-	_, readErr := io.Copy(hash, file)
+	_, readErr := io.Copy(hash, contextReader{ctx, file})
 	closeErr := file.Close()
-	return errors.Join(readErr, closeErr) == nil && hex.EncodeToString(hash.Sum(nil)) == expected
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return false, err
+	}
+	return hex.EncodeToString(hash.Sum(nil)) == expected, nil
 }
 
 // ValidateReplacement refuses to discard local files absent from the verified
@@ -159,8 +162,14 @@ func ValidateReplacement(ctx context.Context, root, stage string) error {
 			}
 			replacement, replacementErr := os.Lstat(filepath.Join(stage, rel))
 			if replacementErr != nil {
-				if errors.Is(replacementErr, os.ErrNotExist) && trustedRetiredRuntimeFile(path, rel, d) {
-					return nil
+				if errors.Is(replacementErr, os.ErrNotExist) {
+					trusted, trustErr := trustedRetiredRuntimeFile(ctx, path, rel, d)
+					if trustErr != nil {
+						return trustErr
+					}
+					if trusted {
+						return nil
+					}
 				}
 				return errors.New("runtime contains files absent from the release; preserve custom files with a manual update")
 			}

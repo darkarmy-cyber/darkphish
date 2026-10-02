@@ -4,6 +4,7 @@ package importhtml
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"regexp"

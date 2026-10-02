@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/darkarmy-cyber/darkphish/internal/traininghtml"
+	"github.com/darkarmy-cyber/darkphish/internal/importhtml"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/darkarmy-cyber/darkphish/util"
 	"github.com/jordan-wright/email"
@@ -25,9 +25,7 @@ func (cr *cloneRequest) validate() error {
 }
 
 type cloneResponse struct {
-	HTML           string `json:"html"`
-	TrainingStatic bool   `json:"training_static"`
-	Notice         string `json:"notice"`
+	HTML string `json:"html"`
 }
 
 type emailResponse struct {
@@ -109,7 +107,7 @@ func (as *Server) ImportEmail(w http.ResponseWriter, r *http.Request) {
 }
 
 // ImportSite allows for the importing of HTML from a website
-// New imports are inert training material, never live sign-in clones.
+// Downloaded HTML is sanitized before it is returned to the editor.
 func (as *Server) ImportSite(w http.ResponseWriter, r *http.Request) {
 	cr := cloneRequest{}
 	if r.Method != "POST" {
@@ -130,11 +128,11 @@ func (as *Server) ImportSite(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
 		return
 	}
-	h, err := traininghtml.Sanitize(string(content), sourceURL)
+	h, err := importhtml.Sanitize(string(content), sourceURL)
 	if err != nil {
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusInternalServerError)
 		return
 	}
-	cs := cloneResponse{HTML: h, TrainingStatic: true, Notice: traininghtml.Notice + " External stylesheets and dynamic content are not imported. Load verified raster images separately."}
+	cs := cloneResponse{HTML: h}
 	JSONResponse(w, cs, http.StatusOK)
 }

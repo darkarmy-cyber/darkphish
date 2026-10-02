@@ -254,6 +254,9 @@ func Setup(c *config.Config) error {
 		log.Error(err)
 		return err
 	}
+	if err := cleanupLegacyLandingPages(db); err != nil {
+		return fmt.Errorf("clean up legacy landing-page markup: %w", err)
+	}
 	if err := configureAuditStore(); err != nil {
 		return fmt.Errorf("configure audit integrity: %w", err)
 	}

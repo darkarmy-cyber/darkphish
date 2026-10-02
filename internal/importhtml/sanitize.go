@@ -23,8 +23,8 @@ const literalCloseDelimiter = "{{`}`}}{{`}`}}"
 
 var ErrSize = errors.New("imported HTML exceeds the 8 MiB limit")
 
-var allowedTags = words("html head body title link style noscript div span p br hr h1 h2 h3 h4 h5 h6 strong b em i u s small sub sup blockquote pre code ul ol li dl dt dd table thead tbody tfoot tr td th caption colgroup col section article header footer main nav aside figure figcaption details summary a picture source img form label fieldset legend input textarea select option optgroup button")
-var discardedTags = words("script meta base iframe frame frameset object embed svg math template audio video track canvas")
+var allowedTags = words("html head body title link noscript div span p br hr h1 h2 h3 h4 h5 h6 strong b em i u s small sub sup blockquote pre code ul ol li dl dt dd table thead tbody tfoot tr td th caption colgroup col section article header footer main nav aside figure figcaption details summary a picture source img form label fieldset legend input textarea select option optgroup button")
+var discardedTags = words("script style meta base iframe frame frameset object embed svg math template audio video track canvas")
 var styleProperties = words("color background-color font-size font-family font-weight font-style line-height text-align text-decoration letter-spacing white-space word-break overflow-wrap margin margin-top margin-right margin-bottom margin-left padding padding-top padding-right padding-bottom padding-left border border-top border-right border-bottom border-left border-color border-width border-style border-radius width max-width min-width height max-height min-height display vertical-align table-layout border-collapse border-spacing opacity")
 var safeStyleValue = regexp.MustCompile(`^[a-zA-Z0-9#.,% ()'"+/-]+$`)
 var tokenValue = regexp.MustCompile(`^[a-zA-Z0-9_:. -]{1,512}$`)

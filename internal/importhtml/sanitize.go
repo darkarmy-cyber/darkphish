@@ -159,11 +159,15 @@ func copyAttributes(out, source *html.Node, base *url.URL) {
 			if dimension.MatchString(a.Val) {
 				out.Attr = append(out.Attr, html.Attribute{Key: a.Key, Val: a.Val})
 			}
-		case "lang", "dir", "autocomplete", "media":
+		case "lang", "dir", "autocomplete", "media", "as":
 			appendBounded(out, a.Key, a.Val, 64)
 		case "rel":
-			if out.Data == "link" && strings.EqualFold(strings.TrimSpace(a.Val), "stylesheet") {
-				out.Attr = append(out.Attr, html.Attribute{Key: "rel", Val: "stylesheet"})
+			if out.Data == "link" {
+				rel := strings.ToLower(strings.TrimSpace(a.Val))
+				as := strings.ToLower(strings.TrimSpace(attr(source, "as")))
+				if rel == "stylesheet" || (rel == "preload" && as == "style") {
+					out.Attr = append(out.Attr, html.Attribute{Key: "rel", Val: "stylesheet"})
+				}
 			}
 		case "name", "value", "type", "min", "max", "step", "pattern":
 			if out.Data == "input" || out.Data == "textarea" || out.Data == "select" || out.Data == "option" || out.Data == "optgroup" || out.Data == "button" {
@@ -209,8 +213,12 @@ func clean(n *html.Node, base *url.URL) *html.Node {
 			return nil
 		}
 		tag := n.Data
-		if tag == "link" && !strings.EqualFold(strings.TrimSpace(attr(n, "rel")), "stylesheet") {
-			return nil
+		if tag == "link" {
+			rel := strings.ToLower(strings.TrimSpace(attr(n, "rel")))
+			as := strings.ToLower(strings.TrimSpace(attr(n, "as")))
+			if rel != "stylesheet" && !(rel == "preload" && as == "style") {
+				return nil
+			}
 		}
 		if !allowedTags[tag] {
 			tag = "div"

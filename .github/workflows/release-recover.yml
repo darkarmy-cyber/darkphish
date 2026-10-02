@@ -57,7 +57,7 @@ jobs:
         name: Enforce release normalization hold
         run: node scripts/release-resume.mjs guard-rebuild
       - name: Test trusted recovery invariants
-        run: node --test .github/scripts/release-recover-0222-policy.test.mjs .github/scripts/release-recover-0231-policy.test.mjs .github/scripts/release-provenance-checks.test.mjs .github/scripts/release-recover.test.mjs .github/scripts/release-publication-guard.test.mjs .github/scripts/release-missing-tag-guard.test.mjs .github/scripts/release-create-consistency.test.mjs scripts/release-normalization-hold.test.mjs
+        run: node --test .github/scripts/release-recover-0222-policy.test.mjs .github/scripts/release-recover-0231-policy.test.mjs .github/scripts/release-recover-0240-policy.test.mjs .github/scripts/release-provenance-checks.test.mjs .github/scripts/release-recover.test.mjs .github/scripts/release-publication-guard.test.mjs .github/scripts/release-missing-tag-guard.test.mjs .github/scripts/release-create-consistency.test.mjs scripts/release-normalization-hold.test.mjs
       - name: Verify immutable recovery execution before any release mutation
         if: steps.hold.outputs.active != 'true'
         env:

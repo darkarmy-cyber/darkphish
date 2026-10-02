@@ -29,6 +29,11 @@ function nextMinor(value) {
   return `${major}.${minor + 1}.0`
 }
 
+function nextMajor(value) {
+  const [major] = value.split(".").map(Number)
+  return `${major + 1}.0.0`
+}
+
 function fragments() {
   return readdirSync(changesPath, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name !== "README.md" && entry.name.endsWith(".md"))
@@ -87,7 +92,7 @@ function pendingPatchRepairAllowed(current, target, base) {
 }
 
 function allowedTargets(current) {
-  return new Set([current, nextPatch(current), nextMinor(current)])
+  return new Set([current, nextPatch(current), nextMinor(current), nextMajor(current)])
 }
 
 function selectedTarget(values, current) {
@@ -105,7 +110,7 @@ function validate(requirePRFragment = false, base = "") {
   const allowed = allowedTargets(current)
   for (const fragment of values) {
     if (!allowed.has(fragment.version)) {
-      throw new Error(`${fragment.name} targets ${fragment.version}; expected ${current}, next patch ${nextPatch(current)}, or next minor ${nextMinor(current)}`)
+      throw new Error(`${fragment.name} targets ${fragment.version}; expected ${current}, next patch ${nextPatch(current)}, next minor ${nextMinor(current)}, or next major ${nextMajor(current)}`)
     }
   }
   const target = selectedTarget(values, current)

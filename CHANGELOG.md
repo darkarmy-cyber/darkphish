@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.24.1 - 2026-10-02
+
+### Fixed
+
+- Publish the verified update path after the v0.23.x/v0.24.0 release-gate recovery work, preserving the removed training functionality and compatibility update handling.
+
 ## 0.24.0 - 2026-10-02
 
 ### Fixed

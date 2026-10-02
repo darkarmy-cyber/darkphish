@@ -270,7 +270,7 @@ async function verifyAuditedRelease0231Merge(get, repo, pr, files, trusted) {
     pr.head.ref === "release/v0.23.1" && pr.head.sha === "5f8b6de5a6ed4076b987747c32d615b5b9bd180a" &&
     pr.base.sha === "443d247b1636ea8e46c7339378174d3c88a0abf5" &&
     pr.merge_commit_sha === "86cb7173c553d68bc3afac204948aa923a32bc83" &&
-    pr.merged_at === "2026-10-02T12:24:22Z",
+    pr.merged_at === "2026-10-02T12:24:22Z" && trustedReleaseReviewer(pr.merged_by),
   "Release is not the audited v0.23.1 generated-only merge")
 
   const expected = [
@@ -303,7 +303,8 @@ Verified generated-file scope, version/changelog integrity, exact-head CI and Co
   requireReview(finalPR.number === pr.number && trustedActionsActor(finalPR.user) && finalPR.draft === false &&
     finalPR.head?.repo?.full_name === repo && finalPR.head?.ref === pr.head.ref && finalPR.head?.sha === pr.head.sha &&
     finalPR.base?.ref === "main" && finalPR.base?.sha === pr.base.sha && finalPR.title === pr.title &&
-    finalPR.state === pr.state && finalPR.merged_at === pr.merged_at && finalPR.merge_commit_sha === pr.merge_commit_sha,
+    finalPR.state === pr.state && finalPR.merged_at === pr.merged_at && finalPR.merge_commit_sha === pr.merge_commit_sha &&
+    trustedReleaseReviewer(finalPR.merged_by),
   "Audited v0.23.1 release PR changed during provenance verification")
   return { head: pr.head.sha, base: pr.base.sha, auditedRelease0231: true, reviewID: attestation.id, mergeCommit: pr.merge_commit_sha }
 }

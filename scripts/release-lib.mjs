@@ -153,7 +153,7 @@ export function checksPassed(checks, names = requiredChecks) {
   })
 }
 export function assertGeneratedCommits(commits, files, version) {
-  if (!commits.length || commits.some((commit) => commit.author !== "github-actions[bot]" || commit.subject !== `release: Darkphish ${version}`)) throw new Error("release branch contains unknown commits; refusing to overwrite developer work")
+  if (!commits.length || commits.some((commit) => commit.author !== "oliverkko" || commit.subject !== `release: Darkphish ${version}`)) throw new Error("release branch contains unknown commits; refusing to overwrite developer work")
   if (!files.length || files.some((file) => !generatedPath(file))) throw new Error("release branch contains non-generated changes")
 }
 export function assertReleaseState(tagSHA, release, sha) {

@@ -155,6 +155,22 @@ jobs:
           Copy-Item static/images,static/font,static/db,static/endpoint -Recurse -Destination "dist/$name/static"
           Copy-Item static/js/dist,static/js/src -Recurse -Destination "dist/$name/static/js"
           Copy-Item static/css/dist -Recurse -Destination "dist/$name/static/css"
+          # Older supported updaters require every installed runtime path to
+          # exist in the replacement. These empty packaging-only files bridge
+          # the two retired training asset paths without restoring any code.
+          $compatibilityTombstones = @(
+            "static/js/src/app/training_images.js",
+            "static/js/dist/app/training_images.min.js"
+          )
+          foreach ($relativePath in $compatibilityTombstones) {
+            $tombstone = Join-Path "dist/$name" $relativePath
+            New-Item -ItemType Directory -Force -Path (Split-Path $tombstone) | Out-Null
+            [System.IO.File]::WriteAllBytes($tombstone, [byte[]]@())
+            $item = Get-Item -LiteralPath $tombstone
+            if ($item.PSIsContainer -or $item.Length -ne 0) {
+              throw "Compatibility tombstone is not an empty regular file: $relativePath"
+            }
+          }
           if ($env:GOOS -eq 'windows') {
             Compress-Archive -Path "dist/$name/*" -DestinationPath "dist/$name.zip"
           } else {
@@ -197,6 +213,15 @@ jobs:
         env:
           RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
         run: tar -xzf ".cache/native-audit/darkphish-$RELEASE_TAG-linux-amd64.tar.gz" -C .cache/native-audit
+      - name: Verify inert compatibility tombstones
+        env:
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+        run: |
+          root=".cache/native-audit/darkphish-$RELEASE_TAG-linux-amd64"
+          for path in static/js/src/app/training_images.js static/js/dist/app/training_images.min.js; do
+            test -f "$root/$path"
+            test ! -s "$root/$path"
+          done
       - uses: ./.github/actions/audit-binary-smoke
         with:
           binary: .cache/native-audit/darkphish-${{ needs.metadata.outputs.tag }}-linux-amd64/darkphish

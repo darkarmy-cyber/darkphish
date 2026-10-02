@@ -24,6 +24,8 @@ func (cr *cloneRequest) validate() error {
 	return err
 }
 
+var renderImportPageForImport = renderImportPage
+
 type cloneResponse struct {
 	HTML     string   `json:"html"`
 	Mode     string   `json:"mode"`
@@ -132,7 +134,7 @@ func (as *Server) ImportSite(w http.ResponseWriter, r *http.Request) {
 	}
 	mode := "static"
 	var warnings []string
-	if rendered, renderedURL, renderErr := renderImportPage(r.Context(), sourceURL.String()); renderErr == nil {
+	if rendered, renderedURL, renderErr := renderImportPageForImport(r.Context(), sourceURL.String()); renderErr == nil {
 		content = rendered
 		sourceURL = renderedURL
 		mode = "rendered"

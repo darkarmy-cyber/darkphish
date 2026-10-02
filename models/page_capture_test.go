@@ -20,8 +20,11 @@ func parsedPageDocument(t *testing.T, page *Page) *goquery.Document {
 }
 
 func TestPageValidationRemovesAllControlNamesWhenCaptureDisabled(t *testing.T) {
-	page := Page{Name: "No capture", HTML: `<form action="https://collect.example.test"><input name="input"><textarea name="textarea"></textarea><select name="select"><option>one</option></select><button name="button">go</button></form>`}
+	page := Page{Name: "No capture", CapturePasswords: true, HTML: `<form action="https://collect.example.test"><input name="input"><textarea name="textarea"></textarea><select name="select"><option>one</option></select><button name="button">go</button></form>`}
 	document := parsedPageDocument(t, &page)
+	if page.CapturePasswords {
+		t.Fatal("password capture remained enabled while submitted-data capture was disabled")
+	}
 	if document.Find("form input[name], form textarea[name], form select[name], form button[name]").Length() != 0 {
 		t.Fatal("a successful control retained its name while capture was disabled")
 	}

@@ -280,7 +280,7 @@ func (ps *PhishingServer) PhishHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Error(err)
 		}
-		if p.CapturePasswords && c.CredentialCaptureMode != models.CredentialModeDisabled {
+		if passwordCaptureEnabled(p, c) {
 			if credential, ok := submittedPassword(r.Form); ok {
 				if err := models.RecordCredentialSubmission(c, rs, credential); err != nil {
 					log.WithFields(map[string]interface{}{"campaign_id": c.Id}).Error("unable to persist credential policy result")
@@ -294,6 +294,10 @@ func (ps *PhishingServer) PhishHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}
 	renderPhishResponse(w, r, ptx, p)
+}
+
+func passwordCaptureEnabled(page models.Page, campaign models.Campaign) bool {
+	return page.CaptureCredentials && page.CapturePasswords && campaign.CredentialCaptureMode != models.CredentialModeDisabled
 }
 
 // renderPhishResponse handles rendering the correct response to the phishing

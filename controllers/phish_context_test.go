@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/darkarmy-cyber/darkphish/models"
 )
 
 func TestRecipientIDComesOnlyFromURLQuery(t *testing.T) {
@@ -46,5 +48,24 @@ func TestSubmittedFieldNamesHonorsCaptureGateAndDropsReservedName(t *testing.T) 
 	}
 	if _, exists := got["email"]; !exists {
 		t.Fatalf("ordinary field category was lost: %#v", got)
+	}
+}
+
+func TestPasswordCaptureRequiresAllServerSideGates(t *testing.T) {
+	enabledCampaign := models.Campaign{CredentialCaptureMode: "enabled-for-test"}
+	for _, page := range []models.Page{
+		{CaptureCredentials: false, CapturePasswords: true},
+		{CaptureCredentials: true, CapturePasswords: false},
+	} {
+		if passwordCaptureEnabled(page, enabledCampaign) {
+			t.Fatal("password capture bypassed a disabled page gate")
+		}
+	}
+	page := models.Page{CaptureCredentials: true, CapturePasswords: true}
+	if passwordCaptureEnabled(page, models.Campaign{CredentialCaptureMode: models.CredentialModeDisabled}) {
+		t.Fatal("password capture bypassed the campaign policy")
+	}
+	if !passwordCaptureEnabled(page, enabledCampaign) {
+		t.Fatal("fully enabled password capture was rejected")
 	}
 }

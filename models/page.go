@@ -77,6 +77,9 @@ func (p *Page) Validate() error {
 	if p.Name == "" {
 		return ErrPageNameNotSpecified
 	}
+	if !p.CaptureCredentials {
+		p.CapturePasswords = false
+	}
 	if err := ValidateTemplate(p.HTML); err != nil {
 		return err
 	}

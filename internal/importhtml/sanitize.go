@@ -255,12 +255,12 @@ func Sanitize(source string, base *url.URL) (string, error) {
 	}
 	find(doc)
 	openDelimiter, closeDelimiter := delimiterTokens(doc)
-	var stylesheetLinks []*html.Node
+	var headResources []*html.Node
 	if sourceHead != nil {
 		for child := sourceHead.FirstChild; child != nil; child = child.NextSibling {
-			if child.Type == html.ElementNode && child.Data == "link" {
+			if child.Type == html.ElementNode && (child.Data == "link" || child.Data == "style" || child.Data == "noscript") {
 				if copied := clean(child, base); copied != nil {
-					stylesheetLinks = append(stylesheetLinks, copied)
+					headResources = append(headResources, copied)
 				}
 			}
 		}
@@ -275,13 +275,13 @@ func Sanitize(source string, base *url.URL) (string, error) {
 		}
 	}
 	neutralizeDelimiters(body, openDelimiter, closeDelimiter)
-	for _, link := range stylesheetLinks {
-		neutralizeDelimiters(link, openDelimiter, closeDelimiter)
+	for _, resource := range headResources {
+		neutralizeDelimiters(resource, openDelimiter, closeDelimiter)
 	}
 	var out bytes.Buffer
 	_, _ = io.WriteString(&out, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Imported landing page</title>`)
-	for _, link := range stylesheetLinks {
-		if err := html.Render(&out, link); err != nil {
+	for _, resource := range headResources {
+		if err := html.Render(&out, resource); err != nil {
 			return "", err
 		}
 	}

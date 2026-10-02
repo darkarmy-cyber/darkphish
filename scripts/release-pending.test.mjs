@@ -49,14 +49,44 @@ test("discovery errors propagate instead of reporting a successful no-op", async
 })
 
 
-test("allows only the audited v0.23.1 to v0.24.0 publication bridge", async () => {
-  let calls = 0
-  const verify = async () => { calls += 1; throw new Error("must not verify unpublished v0.23.1") }
-  await assertReleaseAdvancePublished("darkarmy-cyber/darkphish", "0.23.1", "0.24.0", { verify })
-  assert.equal(calls, 0)
+test("allows only the exact audited tagless v0.23.1 state to bridge to v0.24.0", async () => {
+  let verifyCalls = 0
+  const verify = async () => { verifyCalls += 1; throw new Error("must not verify unpublished v0.23.1") }
+  const pr = {
+    number: 181, state: "closed", draft: false, title: "release: Darkphish 0.23.1",
+    merged_at: "2026-10-02T12:24:22Z", merge_commit_sha: "86cb7173c553d68bc3afac204948aa923a32bc83",
+    base: { ref: "main", sha: "443d247b1636ea8e46c7339378174d3c88a0abf5" },
+    head: { ref: "release/v0.23.1", sha: "5f8b6de5a6ed4076b987747c32d615b5b9bd180a", repo: { full_name: "darkarmy-cyber/darkphish" } },
+  }
+  const request = async (path) => path.endsWith("/pulls/181") ? structuredClone(pr) : null
+  await assertReleaseAdvancePublished("darkarmy-cyber/darkphish", "0.23.1", "0.24.0", { verify, request })
+  assert.equal(verifyCalls, 0)
+
+  for (const mutate of [
+    value => { value.merge_commit_sha = "a".repeat(40) },
+    value => { value.head.sha = "b".repeat(40) },
+    value => { value.base.sha = "c".repeat(40) },
+  ]) {
+    const changed = structuredClone(pr); mutate(changed)
+    await assert.rejects(
+      assertReleaseAdvancePublished("darkarmy-cyber/darkphish", "0.23.1", "0.24.0", {
+        verify,
+        request: async (path) => path.endsWith("/pulls/181") ? changed : null,
+      }),
+      /audited v0\.23\.1 bridge state changed/,
+    )
+  }
 
   await assert.rejects(
-    assertReleaseAdvancePublished("darkarmy-cyber/darkphish", "0.23.1", "0.24.1", { verify }),
+    assertReleaseAdvancePublished("darkarmy-cyber/darkphish", "0.23.1", "0.24.0", {
+      verify,
+      request: async (path) => path.includes("/git/ref/tags/") ? { object: { sha: "d".repeat(40) } } : path.endsWith("/pulls/181") ? pr : null,
+    }),
+    /audited v0\.23\.1 bridge state changed/,
+  )
+
+  await assert.rejects(
+    assertReleaseAdvancePublished("darkarmy-cyber/darkphish", "0.23.1", "0.24.1", { verify, request }),
     /must not verify unpublished v0\.23\.1/,
   )
 })

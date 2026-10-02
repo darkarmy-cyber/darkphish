@@ -33,7 +33,7 @@ This is the first implementation slice of the approved DarkPhish enterprise rede
 
 The sign-in and reset forms keep their existing POST targets, field names, autocomplete attributes, required inputs, minimum password length, flash rendering and password-strength integration. There is no new SSO/MFA implementation and no alteration to server-side authentication, request validation, permissions, update verification or licensing.
 
-Template content rendered by CKEditor and public landing pages do not inherit the administrative theme. Existing sanitization, external-address checks and source preservation remain unchanged. Email and static-training imports may automatically localize bounded public raster images through the existing restricted server fetch path; private/internal and active resources remain blocked.
+Template content rendered by CKEditor and public landing pages do not inherit the administrative theme. Email imports may automatically localize bounded public raster images through the existing restricted server fetch path; private/internal and active resources remain blocked. Site imports retain forms after removing active content, event handlers, unsafe URLs and remote submission targets.
 
 ## Editor compatibility
 

@@ -16,7 +16,6 @@ import (
 	"github.com/darkarmy-cyber/darkphish/config"
 	ctx "github.com/darkarmy-cyber/darkphish/context"
 	"github.com/darkarmy-cyber/darkphish/controllers/api"
-	"github.com/darkarmy-cyber/darkphish/internal/traininghtml"
 	"github.com/darkarmy-cyber/darkphish/internal/update"
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/models"
@@ -269,11 +268,6 @@ func (ps *PhishingServer) PhishHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if p.TrainingStatic && r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Allow", "GET, HEAD")
-		http.Error(w, "Static training pages do not accept submitted data", http.StatusMethodNotAllowed)
-		return
-	}
 	switch {
 	case r.Method == "GET":
 		err = rs.HandleClickedLink(d)
@@ -286,7 +280,7 @@ func (ps *PhishingServer) PhishHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Error(err)
 		}
-		if p.CapturePasswords && c.CredentialCaptureMode != models.CredentialModeDisabled {
+		if passwordCaptureEnabled(p, c) {
 			if credential, ok := submittedPassword(r.Form); ok {
 				if err := models.RecordCredentialSubmission(c, rs, credential); err != nil {
 					log.WithFields(map[string]interface{}{"campaign_id": c.Id}).Error("unable to persist credential policy result")
@@ -302,31 +296,14 @@ func (ps *PhishingServer) PhishHandler(w http.ResponseWriter, r *http.Request) {
 	renderPhishResponse(w, r, ptx, p)
 }
 
+func passwordCaptureEnabled(page models.Page, campaign models.Campaign) bool {
+	return page.CaptureCredentials && page.CapturePasswords && campaign.CredentialCaptureMode != models.CredentialModeDisabled
+}
+
 // renderPhishResponse handles rendering the correct response to the phishing
 // connection. This usually involves writing out the page HTML or redirecting
 // the user to the correct URL.
 func renderPhishResponse(w http.ResponseWriter, r *http.Request, ptx models.PhishingTemplateContext, p models.Page) {
-	if p.TrainingStatic || traininghtml.IsStatic(p.HTML) {
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src data:; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'; sandbox")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			w.Header().Set("Allow", "GET, HEAD")
-			http.Error(w, "Static training pages do not accept submitted data", http.StatusMethodNotAllowed)
-			return
-		}
-		clean, err := traininghtml.Sanitize(p.HTML, nil)
-		if err != nil {
-			http.Error(w, "Training page is unavailable", http.StatusInternalServerError)
-			return
-		}
-		// Literal text, including {{ and backslashes, must not enter Go templates.
-		if r.Method == http.MethodHead {
-			return
-		}
-		_, _ = w.Write([]byte(clean))
-		return
-	}
 	// If the request was a form submit and a redirect URL was specified, we
 	// should send the user to that URL
 	if r.Method == "POST" {
@@ -376,19 +353,9 @@ func setupContext(r *http.Request) (*http.Request, error) {
 		log.Error(err)
 		return r, err
 	}
-	rid := r.Form.Get(models.RecipientParameter)
+	rid := recipientIDFromRequest(r)
 	if rid == "" {
 		return r, ErrInvalidRequest
-	}
-	// Since we want to support the common case of adding a "+" to indicate a
-	// transparency request, we need to take care to handle the case where the
-	// request ends with a space, since a "+" is technically reserved for use
-	// as a URL encoding of a space.
-	if strings.HasSuffix(rid, " ") {
-		// We'll trim off the space
-		rid = strings.TrimRight(rid, " ")
-		// Then we'll add the transparency suffix
-		rid = fmt.Sprintf("%s%s", rid, TransparencySuffix)
 	}
 	// Finally, if this is a transparency request, we'll need to verify that
 	// a valid rid has been provided, so we'll look up the result with a
@@ -436,16 +403,26 @@ func setupContext(r *http.Request) (*http.Request, error) {
 	return r, nil
 }
 
+func recipientIDFromRequest(r *http.Request) string {
+	rid := r.URL.Query().Get(models.RecipientParameter)
+	// Preserve the historical unescaped "+" transparency suffix. URL query
+	// decoding represents it as a trailing space.
+	if strings.HasSuffix(rid, " ") {
+		return strings.TrimRight(rid, " ") + TransparencySuffix
+	}
+	return rid
+}
+
 func submittedFieldNames(form url.Values, enabled bool) url.Values {
 	if !enabled {
 		return nil
 	}
 	fields := make(url.Values)
 	for name := range form {
-		if name == models.RecipientParameter {
+		field := strings.ToLower(strings.TrimSpace(name))
+		if field == strings.ToLower(models.RecipientParameter) {
 			continue
 		}
-		field := strings.ToLower(strings.TrimSpace(name))
 		category := "other"
 		switch {
 		case field == "password" || field == "pass" || field == "passwd" || field == "pwd" || strings.Contains(field, "password"):

@@ -104,8 +104,7 @@ function importSite() {
             .success(function (data) {
                 importPending = true
                 $("#modalSubmit").prop("disabled", true)
-                var html = data.html.replace(/\sdata-darkphish-training=(["'])static-v1\1/i, "")
-                CKEDITOR.instances["html_editor"].setData(html, function () {
+                CKEDITOR.instances["html_editor"].setData(data.html, function () {
                     importPending = false
                     $("#modalSubmit").prop("disabled", false)
                 })

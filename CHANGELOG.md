@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.23.0 - 2026-10-02
+
+### Changed
+
+- Remove the retired static training landing-page mode, its flags, notices, response restrictions and image helper.
+- Keep forms and ordinary controls when Import Site sanitizes downloaded HTML, while forcing submissions to the DarkPhish landing-page endpoint.
+
+### Security
+
+- Continue removing scripts, embedded active content, event handlers, unsafe URLs and remote form actions from imported sites.
+- Keep imported template delimiters literal, reserve recipient routing identifiers to the URL query, and remove all successful-control names when submitted-data capture is disabled.
+
+### Migration
+
+- Automatically remove legacy landing-page mode markers and notices at startup while preserving page content.
+
 ## 0.22.3 - 2026-10-01
 
 ### Security

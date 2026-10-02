@@ -22,8 +22,8 @@ const literalCloseDelimiter = "{{`}`}}{{`}`}}"
 
 var ErrSize = errors.New("imported HTML exceeds the 8 MiB limit")
 
-var allowedTags = words("html head body title div span p br hr h1 h2 h3 h4 h5 h6 strong b em i u s small sub sup blockquote pre code ul ol li dl dt dd table thead tbody tfoot tr td th caption colgroup col section article header footer main nav aside figure figcaption details summary a img form label fieldset legend input textarea select option optgroup button")
-var discardedTags = words("script style link meta base iframe frame frameset object embed svg math template noscript audio video source track canvas")
+var allowedTags = words("html head body title link div span p br hr h1 h2 h3 h4 h5 h6 strong b em i u s small sub sup blockquote pre code ul ol li dl dt dd table thead tbody tfoot tr td th caption colgroup col section article header footer main nav aside figure figcaption details summary a img form label fieldset legend input textarea select option optgroup button")
+var discardedTags = words("script style meta base iframe frame frameset object embed svg math template noscript audio video source track canvas")
 var styleProperties = words("color background-color font-size font-family font-weight font-style line-height text-align text-decoration letter-spacing white-space word-break overflow-wrap margin margin-top margin-right margin-bottom margin-left padding padding-top padding-right padding-bottom padding-left border border-top border-right border-bottom border-left border-color border-width border-style border-radius width max-width min-width height max-height min-height display vertical-align table-layout border-collapse border-spacing opacity")
 var safeStyleValue = regexp.MustCompile(`^[a-zA-Z0-9#.,% ()'"+/-]+$`)
 var tokenValue = regexp.MustCompile(`^[a-zA-Z0-9_:. -]{1,512}$`)
@@ -110,13 +110,10 @@ func safeStyle(raw string) string {
 
 func safeURL(raw string, base *url.URL, image bool) string {
 	raw = strings.TrimSpace(raw)
-	if image {
-		if len(raw) <= 2<<20 && rasterData.MatchString(raw) {
-			return raw
-		}
-		return ""
+	if image && len(raw) <= 2<<20 && rasterData.MatchString(raw) {
+		return raw
 	}
-	if strings.HasPrefix(raw, "#") && len(raw) <= 512 {
+	if strings.HasPrefix(raw, "#") && len(raw) <= 512 && !image {
 		return raw
 	}
 	if raw == "" || len(raw) > 4096 || strings.ContainsAny(raw, "{}\\\r\n\t ") {
@@ -162,8 +159,12 @@ func copyAttributes(out, source *html.Node, base *url.URL) {
 			if dimension.MatchString(a.Val) {
 				out.Attr = append(out.Attr, html.Attribute{Key: a.Key, Val: a.Val})
 			}
-		case "lang", "dir", "autocomplete":
+		case "lang", "dir", "autocomplete", "media":
 			appendBounded(out, a.Key, a.Val, 64)
+		case "rel":
+			if out.Data == "link" && strings.EqualFold(strings.TrimSpace(a.Val), "stylesheet") {
+				out.Attr = append(out.Attr, html.Attribute{Key: "rel", Val: "stylesheet"})
+			}
 		case "name", "value", "type", "min", "max", "step", "pattern":
 			if out.Data == "input" || out.Data == "textarea" || out.Data == "select" || out.Data == "option" || out.Data == "optgroup" || out.Data == "button" {
 				if a.Key == "name" && strings.EqualFold(strings.TrimSpace(a.Val), recipientParameter) {
@@ -174,14 +175,14 @@ func copyAttributes(out, source *html.Node, base *url.URL) {
 		case "checked", "selected", "disabled", "readonly", "required", "multiple":
 			out.Attr = append(out.Attr, html.Attribute{Key: a.Key})
 		case "href":
-			if out.Data == "a" {
+			if out.Data == "a" || out.Data == "link" {
 				if value := safeURL(a.Val, base, false); value != "" {
 					out.Attr = append(out.Attr, html.Attribute{Key: "href", Val: value})
 				}
 			}
 		case "src":
 			if out.Data == "img" {
-				if value := safeURL(a.Val, nil, true); value != "" {
+				if value := safeURL(a.Val, base, true); value != "" {
 					out.Attr = append(out.Attr, html.Attribute{Key: "src", Val: value})
 				}
 			}
@@ -208,6 +209,9 @@ func clean(n *html.Node, base *url.URL) *html.Node {
 			return nil
 		}
 		tag := n.Data
+		if tag == "link" && !strings.EqualFold(strings.TrimSpace(attr(n, "rel")), "stylesheet") {
+			return nil
+		}
 		if !allowedTags[tag] {
 			tag = "div"
 		}
@@ -234,12 +238,16 @@ func Sanitize(source string, base *url.URL) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var sourceBody *html.Node
+	var sourceHead, sourceBody *html.Node
 	var find func(*html.Node)
 	find = func(n *html.Node) {
-		if sourceBody == nil && n.Type == html.ElementNode && n.Data == "body" {
-			sourceBody = n
-			return
+		if n.Type == html.ElementNode {
+			if sourceHead == nil && n.Data == "head" {
+				sourceHead = n
+			}
+			if sourceBody == nil && n.Data == "body" {
+				sourceBody = n
+			}
 		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
 			find(child)
@@ -247,6 +255,16 @@ func Sanitize(source string, base *url.URL) (string, error) {
 	}
 	find(doc)
 	openDelimiter, closeDelimiter := delimiterTokens(doc)
+	var stylesheetLinks []*html.Node
+	if sourceHead != nil {
+		for child := sourceHead.FirstChild; child != nil; child = child.NextSibling {
+			if child.Type == html.ElementNode && child.Data == "link" {
+				if copied := clean(child, base); copied != nil {
+					stylesheetLinks = append(stylesheetLinks, copied)
+				}
+			}
+		}
+	}
 	body := &html.Node{Type: html.ElementNode, Data: "body"}
 	if sourceBody != nil {
 		copyAttributes(body, sourceBody, base)
@@ -257,8 +275,17 @@ func Sanitize(source string, base *url.URL) (string, error) {
 		}
 	}
 	neutralizeDelimiters(body, openDelimiter, closeDelimiter)
+	for _, link := range stylesheetLinks {
+		neutralizeDelimiters(link, openDelimiter, closeDelimiter)
+	}
 	var out bytes.Buffer
-	_, _ = io.WriteString(&out, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Imported landing page</title></head>`)
+	_, _ = io.WriteString(&out, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Imported landing page</title>`)
+	for _, link := range stylesheetLinks {
+		if err := html.Render(&out, link); err != nil {
+			return "", err
+		}
+	}
+	_, _ = io.WriteString(&out, "</head>")
 	if err := html.Render(&out, body); err != nil {
 		return "", err
 	}

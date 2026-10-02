@@ -37,9 +37,9 @@ test("require every latest trusted check to succeed", () => {
 })
 
 test("generated recovery refuses unknown commits and application files", () => {
-  const commits = [{ author: "github-actions[bot]", subject: "release: Darkphish 0.3.0" }]
+  const commits = [{ author: "oliverkko", subject: "release: Darkphish 0.3.0" }]
   assert.doesNotThrow(() => assertGeneratedCommits(commits, ["CHANGELOG.md", "changes/fix.md"], "0.3.0"))
-  assert.throws(() => assertGeneratedCommits([{ ...commits[0], author: "developer" }], ["CHANGELOG.md"], "0.3.0"))
+  assert.throws(() => assertGeneratedCommits([{ ...commits[0], author: "github-actions[bot]" }], ["CHANGELOG.md"], "0.3.0"))
   assert.throws(() => assertGeneratedCommits(commits, ["models/user.go"], "0.3.0"))
   assert.equal(generatedPath("changes/../models/user.go"), false)
   assert.throws(() => versionTag("0.3.0;echo unsafe"))

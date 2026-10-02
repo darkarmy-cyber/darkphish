@@ -6,7 +6,6 @@
 
 - Remove the retired static training landing-page mode, its flags, notices, response restrictions and image helper.
 - Keep forms and ordinary controls when Import Site sanitizes downloaded HTML, while forcing submissions to the DarkPhish landing-page endpoint.
-- Remove the static training landing-page mode while retaining sanitized site imports with functional forms and automatic legacy-markup cleanup.
 
 ### Security
 
@@ -16,11 +15,6 @@
 ### Migration
 
 - Automatically remove legacy landing-page mode markers and notices at startup while preserving page content.
-
-### Fixed
-
-- Fix Google Chrome execution timeout in browser regression tests.
-- Clarify safe landing-page import fields and use an HTTPS redirect example.
 
 ## 0.22.3 - 2026-10-01
 

@@ -47,3 +47,16 @@ test("discovery errors propagate instead of reporting a successful no-op", async
     throw new Error("GitHub unavailable")
   } }), /GitHub unavailable/)
 })
+
+
+test("allows only the audited v0.23.1 to v0.24.0 publication bridge", async () => {
+  let calls = 0
+  const verify = async () => { calls += 1; throw new Error("must not verify unpublished v0.23.1") }
+  await assertReleaseAdvancePublished("darkarmy-cyber/darkphish", "0.23.1", "0.24.0", { verify })
+  assert.equal(calls, 0)
+
+  await assert.rejects(
+    assertReleaseAdvancePublished("darkarmy-cyber/darkphish", "0.23.1", "0.24.1", { verify }),
+    /must not verify unpublished v0\.23\.1/,
+  )
+})

@@ -4,14 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -214,8 +212,8 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 }
 
 func renderedImportWarning(err error) string {
-	if errors.Is(err, errRenderedImportUnavailable) {
-		return "Rendered snapshot was unavailable on this server; imported the static HTML response instead."
+	if err == nil {
+		return ""
 	}
-	return fmt.Sprintf("Rendered snapshot failed; imported the static HTML response instead. (%s)", strconv.QuoteToASCII("fallback"))
+	return "Rendered snapshot was unavailable; imported the static HTML response instead."
 }

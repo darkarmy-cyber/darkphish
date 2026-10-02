@@ -43,7 +43,7 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.buf.Len()+len(p) > b.limit {
-		return 0, ErrSize
+		return 0, errRenderedImportUnavailable
 	}
 	return b.buf.Write(p)
 }
@@ -192,7 +192,7 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 		"--dump-dom",
 		sourceURL.String(),
 	}
-	if os.Geteuid() == 0 {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("DARKPHISH_CHROMIUM_NO_SANDBOX")), "true") {
 		args = append([]string{"--no-sandbox"}, args...)
 	}
 	cmd := exec.CommandContext(renderCtx, chrome, args...)

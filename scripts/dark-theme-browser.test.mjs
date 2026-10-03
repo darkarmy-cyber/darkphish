@@ -61,6 +61,7 @@ for (const width of [600, 1440]) {
         check(chart.series[0].color === "#1abc9c", "Theme changed metric series meaning");
         check(getComputedStyle(document.getElementById("canvas")).backgroundColor === "rgb(255, 255, 255)", "Editor canvas must preserve authored colors");
         const button = document.getElementById("themeToggle");
+        check(button.getBoundingClientRect().height >= 44, "Theme toggle touch target is too small");
         button.focus(); check(getComputedStyle(button).outlineStyle !== "none", "Keyboard focus is invisible");
         check(button.getAttribute("aria-pressed") === "true", "Toggle state was not announced");
         check(button.getAttribute("aria-label") === "Use light theme", "Toggle accessible label is stale");

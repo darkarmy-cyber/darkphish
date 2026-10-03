@@ -64,10 +64,12 @@ function pendingPatchRepairAllowed(current, target, base) {
   if (!process.env.GITHUB_EVENT_PATH) return false
   try {
     const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"))
-    const comparisonBase = base || event.before
-    const baseSHA = execFileSync("git", ["rev-parse", "--verify", comparisonBase], { cwd: root, encoding: "utf8" }).trim()
     const headSHA = execFileSync("git", ["rev-parse", "--verify", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
     const parentSHAs = execFileSync("git", ["show", "-s", "--format=%P", "HEAD"], { cwd: root, encoding: "utf8" }).trim().split(/\s+/).filter(Boolean)
+    const scheduled = ["schedule", "workflow_run"].includes(process.env.GITHUB_EVENT_NAME)
+    const comparisonBase = base || event.before || (scheduled && parentSHAs.length === 1 ? parentSHAs[0] : "")
+    if (!comparisonBase) return false
+    const baseSHA = execFileSync("git", ["rev-parse", "--verify", comparisonBase], { cwd: root, encoding: "utf8" }).trim()
     const commitTitle = execFileSync("git", ["show", "-s", "--format=%s", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
     return auditedPendingPatchRepair({
       repository: process.env.GITHUB_REPOSITORY,

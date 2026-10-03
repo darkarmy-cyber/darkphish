@@ -109,6 +109,7 @@ export async function verifyReleaseRepair(repo, pr, request) {
   if (repo !== repository || ![56, 58, 59, 117, 118, 120, 129, 135, 203].includes(pr.number) || pr.base?.sha !== expectedBase || pr.base.ref !== "main" ||
     pr.head?.repo?.full_name !== repository || pr.head.ref !== branch ||
     !/^[a-f0-9]{40}$/.test(pr.head.sha || "") || pr.state !== "open" || pr.draft !== false ||
+    (release0251Repair && pr.title !== "fix(release): recover stranded v0.25.1 via v0.25.2") ||
     !["OWNER", "MEMBER", "COLLABORATOR"].includes(pr.author_association)) throw new Error("Not the authorized release repair")
   const files = await request(`repos/${repo}/pulls/${pr.number}/files?per_page=100&page=1`)
   if (!Array.isArray(files) || !files.length || files.length > paths.size ||
@@ -130,8 +131,13 @@ export async function verifyReleaseRepair(repo, pr, request) {
     const tag = await request(`repos/${repo}/git/ref/tags/v0.25.1`, { missing: true })
     const release = await request(`repos/${repo}/releases/tags/v0.25.1`, { missing: true })
     const stranded = await request(`repos/${repo}/pulls/196`, { missing: true })
-    if (tag !== null || release !== null || stranded?.state !== "closed" || stranded?.merged_at !== "2026-10-02T21:03:30Z" ||
-      stranded?.merge_commit_sha !== "98d96c7cc7eebf6ab09bbeffdf109778dd4f3632") {
+    const audited = stranded?.number === 196 && stranded.state === "closed" && stranded.draft === false &&
+      stranded.title === "release: Darkphish 0.25.1" && stranded.merged_at === "2026-10-02T21:03:30Z" &&
+      stranded.merge_commit_sha === "98d96c7cc7eebf6ab09bbeffdf109778dd4f3632" &&
+      stranded.base?.ref === "main" && stranded.base?.sha === "ffba3cab315c4580695d69c72ed0539e8b6a1d46" &&
+      stranded.head?.ref === "release/v0.25.1" && stranded.head?.sha === "d64cd123501fd2d7b5976996a2ddef072d96b041" &&
+      stranded.head?.repo?.full_name === repo
+    if (tag !== null || release !== null || !audited) {
       throw new Error("v0.25.1 repair requires the pinned stranded release and absent tag/release state")
     }
     return

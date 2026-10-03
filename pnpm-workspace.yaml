@@ -1,2 +1,7 @@
-overrides:
-  braces: 3.0.4
+# GHSA-vfj7-8cjw-p6xm currently has no patched braces release.
+# braces is transitive development-only tooling used by Gulp; DarkPhish does
+# not accept user-controlled glob patterns through this dependency at runtime.
+# Remove this exception when an upstream patched release becomes available.
+audit:
+  ignore:
+    - GHSA-vfj7-8cjw-p6xm

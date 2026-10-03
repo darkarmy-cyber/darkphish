@@ -71,6 +71,7 @@ function pendingPatchRepairAllowed(current, target, base) {
     if (!comparisonBase) return false
     const baseSHA = execFileSync("git", ["rev-parse", "--verify", comparisonBase], { cwd: root, encoding: "utf8" }).trim()
     const commitTitle = execFileSync("git", ["show", "-s", "--format=%s", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
+    const treeSHA = execFileSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: root, encoding: "utf8" }).trim()
     return auditedPendingPatchRepair({
       repository: process.env.GITHUB_REPOSITORY,
       eventName: process.env.GITHUB_EVENT_NAME,
@@ -79,6 +80,7 @@ function pendingPatchRepairAllowed(current, target, base) {
       target,
       baseSHA,
       headSHA,
+      treeSHA,
       parentSHAs,
       commitTitle,
       files: changedFiles(comparisonBase),

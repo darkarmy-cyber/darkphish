@@ -107,22 +107,31 @@ function importSite() {
     if (!url) {
         modalError("No URL Specified!")
     } else {
+        importPending = true
+        $("#modalSubmit").prop("disabled", true)
         api.clone_site({
                 url: url,
                 include_resources: false
             })
             .success(function (data) {
                 applyImportedCaptureDefaults(data.html)
-                importPending = true
-                $("#modalSubmit").prop("disabled", true)
                 CKEDITOR.instances["html_editor"].setData(data.html, function () {
                     importPending = false
                     $("#modalSubmit").prop("disabled", false)
                 })
                 $("#importSiteModal").modal("hide")
+                if (data.warnings && data.warnings.length) {
+                    var warning = $("<div>", {
+                        "class": "alert alert-warning",
+                        "style": "text-align:center"
+                    }).text(data.warnings.join(" "))
+                    $("#modal\\.flashes").empty().append(warning)
+                }
             })
             .error(function (data) {
-                modalError(data.responseJSON.message)
+                importPending = false
+                $("#modalSubmit").prop("disabled", false)
+                modalError(data.responseJSON && data.responseJSON.message || "Unable to import site")
             })
     }
 }

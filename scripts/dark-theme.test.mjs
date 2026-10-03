@@ -18,12 +18,17 @@ test("dark theme is explicit, persistent and keyboard accessible", () => {
   const controller = read("static/js/src/app/theme.js")
   assert.match(base, /id="themeToggle"/)
   assert.match(base, /aria-pressed="false"/)
+  assert.match(base, /theme-toggle-track/)
+  assert.match(base, /theme-toggle-orb/)
+  assert.match(base, /theme-toggle-cloud/)
+  assert.match(base, /theme-toggle-stars/)
   assert.match(base, /css\/dist\/darkphish\.css\?v=\{\{\.Version\}\}/)
   assert.doesNotMatch(base, /href="\/css\/dark-theme\.css/)
   assert.match(base, /theme\.js\?v=\{\{\.Version\}\}/)
   assert.match(controller, /darkphish-theme/)
   assert.match(controller, /setAttribute\("data-theme", "dark"\)/)
   assert.match(controller, /addEventListener\("click"/)
+  assert.match(controller, /setAttribute\("aria-label"/)
 })
 
 test("dark theme keeps required contrast for core text and actions", () => {
@@ -39,6 +44,10 @@ test("dark theme preserves reduced motion and a readable CKEditor canvas", () =>
   assert.match(css, /animation-duration: 1ms !important/)
   assert.match(css, /\.cke_contents\s*\{\s*background: #ffffff/)
   assert.match(css, /:focus-visible/)
+  assert.match(css, /darkphish-theme-toggle\[aria-pressed="true"\]/)
+  assert.match(css, /theme-toggle-orb/)
+  assert.match(css, /height: 44px/)
+  assert.match(css, /forced-colors: active/)
 })
 
 test("dark theme assets are included in Docker and native release packages", () => {

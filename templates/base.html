@@ -44,8 +44,18 @@
                     {{end}}
                     {{if .User}}
                     <li>
-                        <button type="button" class="btn btn-default darkphish-theme-toggle" id="themeToggle" aria-pressed="false" title="Toggle dark theme">
-                            <i class="fa fa-moon-o" aria-hidden="true"></i><span class="sr-only">Toggle dark theme</span>
+                        <button type="button" class="darkphish-theme-toggle" id="themeToggle" aria-pressed="false" title="Use dark theme">
+                            <span class="theme-toggle-track" aria-hidden="true">
+                                <span class="theme-toggle-stars">
+                                    <span class="theme-toggle-star theme-toggle-star-one"></span>
+                                    <span class="theme-toggle-star theme-toggle-star-two"></span>
+                                    <span class="theme-toggle-star theme-toggle-star-three"></span>
+                                </span>
+                                <span class="theme-toggle-cloud theme-toggle-cloud-one"></span>
+                                <span class="theme-toggle-cloud theme-toggle-cloud-two"></span>
+                                <span class="theme-toggle-orb"></span>
+                            </span>
+                            <span class="sr-only">Use dark theme</span>
                         </button>
                     </li>
                     {{end}}

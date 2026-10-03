@@ -202,6 +202,7 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 		args = append([]string{"--no-sandbox"}, args...)
 	}
 	cmd := exec.CommandContext(renderCtx, chrome, args...)
+	configureRenderedCommand(cmd)
 	var stdout, stderr boundedBuffer
 	stdout.limit = maxImportedPageBytes
 	stderr.limit = 1 << 20

@@ -2,4 +2,4 @@
 category: Security
 version: 0.25.1
 ---
-- Pin the patched braces 3.0.4 transitive dependency to clear the high-severity nested-pattern denial-of-service advisory in the frontend toolchain.
+- Document and narrowly suppress GHSA-vfj7-8cjw-p6xm for the development-only Gulp dependency chain because the braces package has no patched release; keep the exception scoped to that advisory until upstream publishes a fix.

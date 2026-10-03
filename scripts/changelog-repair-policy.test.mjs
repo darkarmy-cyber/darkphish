@@ -171,3 +171,36 @@ test("pending-patch repair rejects any identity, version, base or file drift", (
     assert.equal(auditedPendingPatchRepair(value), false)
   }
 })
+
+test("only PR203 may stage the exact v0.25.2 repair while v0.25.1 is unpublished", () => {
+  const repairBase = "98d96c7cc7eebf6ab09bbeffdf109778dd4f3632"
+  const repairFiles = [
+    "changes/braces-3-0-4-audit.md",
+    "docs/RELEASE_REPAIR_0251.md",
+    "pnpm-workspace.yaml",
+    "scripts/changelog-repair-policy.mjs",
+    "scripts/changelog-repair-policy.test.mjs",
+    "scripts/release-pending.mjs",
+    "scripts/release-pending.test.mjs",
+    "scripts/release-repair-policy.mjs",
+    "scripts/release-repair-policy.test.mjs",
+  ]
+  const fixture = () => ({
+    repository, eventName: "pull_request", current: "0.25.1", target: "0.25.2",
+    baseSHA: repairBase, files: [...repairFiles], event: { pull_request: {
+      number: 203, state: "open", draft: false, base: { ref: "main", sha: repairBase },
+      head: { ref: "fix/braces-audit-0.25.1", repo: { full_name: repository } },
+    } },
+  })
+  assert.equal(auditedPendingPatchRepair(fixture()), true)
+  for (const change of [
+    value => { value.event.pull_request.number = 204 },
+    value => { value.baseSHA = "a".repeat(40) },
+    value => { value.event.pull_request.head.ref = "fix/other" },
+    value => { value.files.pop() },
+    value => { value.files.push("VERSION") },
+  ]) {
+    const value = fixture(); change(value)
+    assert.equal(auditedPendingPatchRepair(value), false)
+  }
+})

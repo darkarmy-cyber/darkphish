@@ -227,7 +227,7 @@ test("PR205 and only its exact merge may continue scheduled v0.25.2 preparation"
 
   const scheduled = {
     repository, eventName: "schedule", current: "0.25.1", target: "0.25.2",
-    baseSHA: repairBase, headSHA: "e".repeat(40), parentSHAs: [repairBase],
+    baseSHA: repairBase, headSHA: "e".repeat(40), treeSHA: "45b695f14570bac1463dd48322c13382439c4c9d", parentSHAs: [repairBase],
     commitTitle: "fix(release): complete v0.25.2 scheduled preparation bridge (#205)",
     files: [...repairFiles], event: {},
   }
@@ -236,6 +236,7 @@ test("PR205 and only its exact merge may continue scheduled v0.25.2 preparation"
   for (const change of [
     value => { value.baseSHA = "a".repeat(40) },
     value => { value.parentSHAs = ["b".repeat(40)] },
+    value => { value.treeSHA = "c".repeat(40) },
     value => { value.commitTitle = "other" },
     value => { value.files = value.files.slice(1) },
     value => { value.eventName = "schedule"; value.current = "0.25.0" },

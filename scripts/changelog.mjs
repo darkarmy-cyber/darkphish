@@ -69,11 +69,28 @@ function pendingPatchRepairAllowed(current, target, base) {
   if (!process.env.GITHUB_EVENT_PATH) return false
   try {
     const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"))
-    const comparisonBase = base || event.before
-    const baseSHA = execFileSync("git", ["rev-parse", "--verify", comparisonBase], { cwd: root, encoding: "utf8" }).trim()
     const headSHA = execFileSync("git", ["rev-parse", "--verify", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
     const parentSHAs = execFileSync("git", ["show", "-s", "--format=%P", "HEAD"], { cwd: root, encoding: "utf8" }).trim().split(/\s+/).filter(Boolean)
+    const scheduled = ["schedule", "workflow_run"].includes(process.env.GITHUB_EVENT_NAME)
+    const comparisonBase = base || event.before || (scheduled && parentSHAs.length === 1 ? parentSHAs[0] : "")
+    if (!comparisonBase) return false
+    const baseSHA = execFileSync("git", ["rev-parse", "--verify", comparisonBase], { cwd: root, encoding: "utf8" }).trim()
     const commitTitle = execFileSync("git", ["show", "-s", "--format=%s", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
+    let scheduledPRVerified = false
+    if (scheduled && process.env.GITHUB_REPOSITORY === "darkarmy-cyber/darkphish") {
+      const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN
+      if (!token) return false
+      const raw = execFileSync("gh", ["api", "repos/darkarmy-cyber/darkphish/pulls/205"], {
+        cwd: root, encoding: "utf8", env: { ...process.env, GH_TOKEN: token },
+      })
+      const pr = JSON.parse(raw)
+      scheduledPRVerified = pr?.number === 205 && pr.state === "closed" && pr.merged === true &&
+        pr.title === "fix(release): complete v0.25.2 scheduled preparation bridge" &&
+        pr.base?.ref === "main" && pr.base?.sha === "4e24f93277cfc5c14fbfec63a797436018c495f1" &&
+        pr.head?.ref === "fix/release-0252-scheduled-prepare" &&
+        pr.head?.repo?.full_name === "darkarmy-cyber/darkphish" &&
+        pr.merge_commit_sha === headSHA
+    }
     return auditedPendingPatchRepair({
       repository: process.env.GITHUB_REPOSITORY,
       eventName: process.env.GITHUB_EVENT_NAME,
@@ -83,6 +100,7 @@ function pendingPatchRepairAllowed(current, target, base) {
       baseSHA,
       headSHA,
       parentSHAs,
+      scheduledPRVerified,
       commitTitle,
       files: changedFiles(comparisonBase),
     })

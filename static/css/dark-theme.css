@@ -256,11 +256,6 @@ html[data-theme="dark"] .classic-ui .cke_path_item {
 html[data-theme="dark"] .classic-ui .cke_contents {
     background: #ffffff;
 }
-.classic-ui .darkphish-theme-toggle {
-    min-width: 42px;
-    min-height: 42px;
-    margin: 0 8px 0 0;
-}
 html[data-theme="dark"] .classic-ui .table-striped > tbody > tr:nth-of-type(odd),
 html[data-theme="dark"] .classic-ui table.dataTable tbody tr,
 html[data-theme="dark"] .classic-ui table.dataTable tbody td.sorting_1 {
@@ -341,5 +336,202 @@ html[data-theme="dark"] .classic-ui :focus-visible {
         animation-iteration-count: 1 !important;
         transition-duration: 1ms !important;
         scroll-behavior: auto !important;
+    }
+}
+/* Animated day/night theme switch. The visual state follows aria-pressed while
+ * theme persistence and application remain owned by static/js/src/app/theme.js. */
+.classic-ui .darkphish-theme-toggle {
+    position: relative;
+    width: 68px;
+    height: 44px;
+    margin: 0 8px 0 0;
+    padding: 0;
+    border: 0;
+    border-radius: 18px;
+    background: transparent;
+    box-shadow: none;
+    line-height: 1;
+    vertical-align: middle;
+    cursor: pointer;
+}
+.classic-ui .darkphish-theme-toggle:hover,
+.classic-ui .darkphish-theme-toggle:focus {
+    background: transparent;
+}
+.classic-ui .darkphish-theme-toggle:focus {
+    outline: 2px solid #74e0bd;
+    outline-offset: 2px;
+}
+.classic-ui .darkphish-theme-toggle:focus-visible {
+    outline: 2px solid #74e0bd;
+    outline-offset: 2px;
+}
+.classic-ui .theme-toggle-track {
+    position: absolute;
+    top: 5px;
+    right: 0;
+    bottom: 5px;
+    left: 0;
+    overflow: hidden;
+    border: 1px solid rgba(26, 73, 111, .42);
+    border-radius: 18px;
+    background: linear-gradient(180deg, #62b8f2 0%, #9edcf9 100%);
+    box-shadow: inset 0 1px 2px rgba(255, 255, 255, .55), 0 1px 3px rgba(0, 0, 0, .22);
+    transition: background .45s ease, border-color .45s ease, box-shadow .45s ease;
+}
+.classic-ui .theme-toggle-orb {
+    position: absolute;
+    z-index: 4;
+    top: 4px;
+    left: 4px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #ffd55f;
+    box-shadow: 0 0 0 3px rgba(255, 213, 95, .22), 0 2px 5px rgba(77, 63, 26, .3);
+    transition: transform .45s cubic-bezier(.2, .8, .2, 1), background .45s ease, box-shadow .45s ease;
+}
+.classic-ui .theme-toggle-orb::before,
+.classic-ui .theme-toggle-orb::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    opacity: 0;
+    background: rgba(148, 158, 175, .58);
+    transition: opacity .3s ease .08s;
+}
+.classic-ui .theme-toggle-orb::before {
+    width: 6px;
+    height: 6px;
+    top: 5px;
+    left: 6px;
+}
+.classic-ui .theme-toggle-orb::after {
+    width: 4px;
+    height: 4px;
+    right: 5px;
+    bottom: 6px;
+    box-shadow: -8px 3px 0 -1px rgba(148, 158, 175, .48);
+}
+.classic-ui .theme-toggle-cloud {
+    position: absolute;
+    z-index: 3;
+    height: 7px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .92);
+    box-shadow: 0 1px 2px rgba(64, 112, 145, .2);
+    transition: transform .45s ease, opacity .35s ease;
+}
+.classic-ui .theme-toggle-cloud::before,
+.classic-ui .theme-toggle-cloud::after {
+    content: "";
+    position: absolute;
+    bottom: 1px;
+    border-radius: 50%;
+    background: inherit;
+}
+.classic-ui .theme-toggle-cloud::before {
+    width: 10px;
+    height: 10px;
+    left: 5px;
+}
+.classic-ui .theme-toggle-cloud::after {
+    width: 8px;
+    height: 8px;
+    right: 5px;
+}
+.classic-ui .theme-toggle-cloud-one {
+    width: 31px;
+    right: -3px;
+    bottom: 5px;
+}
+.classic-ui .theme-toggle-cloud-two {
+    width: 22px;
+    right: 12px;
+    bottom: 14px;
+    opacity: .82;
+    transform: scale(.78);
+}
+.classic-ui .theme-toggle-stars {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity .32s ease .08s, transform .45s ease;
+}
+.classic-ui .theme-toggle-star {
+    position: absolute;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: #f8fbff;
+    box-shadow: 0 0 4px rgba(255, 255, 255, .9);
+}
+.classic-ui .theme-toggle-star-one {
+    top: 8px;
+    left: 11px;
+}
+.classic-ui .theme-toggle-star-two {
+    top: 19px;
+    left: 20px;
+    width: 2px;
+    height: 2px;
+}
+.classic-ui .theme-toggle-star-three {
+    top: 7px;
+    left: 29px;
+    width: 2px;
+    height: 2px;
+}
+.classic-ui .darkphish-theme-toggle[aria-pressed="true"] .theme-toggle-track {
+    border-color: rgba(73, 83, 121, .68);
+    background: linear-gradient(180deg, #10172e 0%, #26345c 100%);
+    box-shadow: inset 0 1px 2px rgba(255, 255, 255, .12), 0 1px 3px rgba(0, 0, 0, .35);
+}
+.classic-ui .darkphish-theme-toggle[aria-pressed="true"] .theme-toggle-orb {
+    transform: translateX(34px);
+    background: #eef1f7;
+    box-shadow: 0 0 0 3px rgba(221, 229, 244, .12), 0 2px 5px rgba(0, 0, 0, .35);
+}
+.classic-ui .darkphish-theme-toggle[aria-pressed="true"] .theme-toggle-orb::before,
+.classic-ui .darkphish-theme-toggle[aria-pressed="true"] .theme-toggle-orb::after {
+    opacity: 1;
+}
+.classic-ui .darkphish-theme-toggle[aria-pressed="true"] .theme-toggle-cloud {
+    opacity: 0;
+    transform: translateX(25px) translateY(8px);
+}
+.classic-ui .darkphish-theme-toggle[aria-pressed="true"] .theme-toggle-cloud-two {
+    transform: translateX(25px) translateY(8px) scale(.78);
+}
+.classic-ui .darkphish-theme-toggle[aria-pressed="true"] .theme-toggle-stars {
+    opacity: 1;
+    transform: translateY(0);
+}
+@media (forced-colors: active) {
+    .classic-ui .theme-toggle-track {
+        border: 2px solid ButtonText;
+        background: Canvas;
+        forced-color-adjust: none;
+    }
+    .classic-ui .theme-toggle-orb {
+        border: 2px solid ButtonText;
+        background: ButtonText;
+        box-shadow: none;
+        forced-color-adjust: none;
+    }
+    .classic-ui .darkphish-theme-toggle[aria-pressed="true"] .theme-toggle-orb {
+        background: CanvasText;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .classic-ui .theme-toggle-track,
+    .classic-ui .theme-toggle-orb,
+    .classic-ui .theme-toggle-orb::before,
+    .classic-ui .theme-toggle-orb::after,
+    .classic-ui .theme-toggle-cloud,
+    .classic-ui .theme-toggle-stars {
+        transition-duration: 1ms !important;
     }
 }

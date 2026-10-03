@@ -102,3 +102,76 @@ test("PR58 finalization is scoped to its own immutable base and exact hold delet
     const g = make(); change(g); await assert.rejects(verifyReleaseRepair(repo, g.pr, g.request))
   }
 })
+
+test("PR203 repair is pinned to the stranded v0.25.1 state and exact reviewed scope", async () => {
+  const repairBase = "98d96c7cc7eebf6ab09bbeffdf109778dd4f3632"
+  const repairFiles = [
+    "changes/braces-3-0-4-audit.md",
+    "docs/RELEASE_REPAIR_0251.md",
+    "pnpm-workspace.yaml",
+    "scripts/changelog-repair-policy.mjs",
+    "scripts/changelog-repair-policy.test.mjs",
+    "scripts/release-pending.mjs",
+    "scripts/release-pending.test.mjs",
+    "scripts/release-repair-policy.mjs",
+    "scripts/release-repair-policy.test.mjs",
+  ].map(filename => ({ filename, status: ["changes/braces-3-0-4-audit.md", "docs/RELEASE_REPAIR_0251.md", "pnpm-workspace.yaml"].includes(filename) ? "added" : "modified" }))
+  const pr = { number: 203, state: "open", draft: false, author_association: "MEMBER",
+    title: "fix(release): recover stranded v0.25.1 via v0.25.2",
+    head: { sha: head, ref: "fix/braces-audit-0.25.1", repo: { full_name: repo } },
+    base: { ref: "main", sha: repairBase }, labels: [{ name: "codex-automerge" }], mergeable: true, mergeable_state: "clean" }
+  const request = async (path, options = {}) => {
+    if (path.endsWith("/files?per_page=100&page=1")) return repairFiles
+    if (path.includes("/contents/VERSION?")) return { type: "file", encoding: "base64", content: Buffer.from("0.25.1\n").toString("base64") }
+    if (path.includes("/git/ref/tags/v0.25.1")) return null
+    if (path.includes("/releases/tags/v0.25.1")) return null
+    if (path.endsWith("/pulls/196")) return {
+      number: 196, state: "closed", draft: false, title: "release: Darkphish 0.25.1",
+      merged_at: "2026-10-02T21:03:30Z", merge_commit_sha: repairBase,
+      base: { ref: "main", sha: "ffba3cab315c4580695d69c72ed0539e8b6a1d46" },
+      head: { ref: "release/v0.25.1", sha: "d64cd123501fd2d7b5976996a2ddef072d96b041", repo: { full_name: repo } },
+    }
+    throw new Error(`Unexpected request ${path}`)
+  }
+  await verifyReleaseRepair(repo, pr, request)
+  await assert.rejects(verifyReleaseRepair(repo, { ...pr, base: { ref: "main", sha: "b".repeat(40) } }, request))
+  await assert.rejects(verifyReleaseRepair(repo, { ...pr, title: "renamed repair" }, request))
+  const mismatchedRequest = async (path, options = {}) => {
+    if (path.endsWith("/pulls/196")) return {
+      number: 196, state: "closed", draft: false, title: "renamed release",
+      merged_at: "2026-10-02T21:03:30Z", merge_commit_sha: repairBase,
+      base: { ref: "main", sha: "ffba3cab315c4580695d69c72ed0539e8b6a1d46" },
+      head: { ref: "release/v0.25.1", sha: "d64cd123501fd2d7b5976996a2ddef072d96b041", repo: { full_name: repo } },
+    }
+    return request(path, options)
+  }
+  await assert.rejects(verifyReleaseRepair(repo, pr, mismatchedRequest))
+})
+
+test("PR205 continuation repair is pinned to PR203 and its exact reviewed scope", async () => {
+  const repairBase = "4e24f93277cfc5c14fbfec63a797436018c495f1"
+  const names = [
+    "changes/release-prepare-0252-schedule.md",
+    "docs/RELEASE_REPAIR_0251.md",
+    "scripts/changelog-repair-policy.mjs",
+    "scripts/changelog-repair-policy.test.mjs",
+    "scripts/changelog.mjs",
+    "scripts/release-repair-policy.mjs",
+    "scripts/release-repair-policy.test.mjs",
+  ]
+  const files = names.map(filename => ({ filename, status: filename.startsWith("changes/") ? "added" : "modified" }))
+  const pr = { number: 205, state: "open", draft: false, author_association: "MEMBER",
+    title: "fix(release): complete v0.25.2 scheduled preparation bridge",
+    head: { sha: head, ref: "fix/release-0252-scheduled-prepare", repo: { full_name: repo } },
+    base: { ref: "main", sha: repairBase }, labels: [{ name: "codex-automerge" }], mergeable: true, mergeable_state: "clean" }
+  const request = async (path) => {
+    if (path.endsWith("/files?per_page=100&page=1")) return files
+    if (path.includes("/contents/VERSION?")) return { type: "file", encoding: "base64", content: Buffer.from("0.25.1\n").toString("base64") }
+    if (path.includes("/git/ref/tags/v0.25.1") || path.includes("/releases/tags/v0.25.1")) return null
+    if (path.endsWith("/pulls/203")) return { state: "closed", merged_at: "2026-10-03T11:12:00Z", merge_commit_sha: repairBase }
+    throw new Error(`Unexpected request ${path}`)
+  }
+  await verifyReleaseRepair(repo, pr, request)
+  await assert.rejects(verifyReleaseRepair(repo, { ...pr, title: "other" }, request))
+  await assert.rejects(verifyReleaseRepair(repo, { ...pr, base: { ref: "main", sha: "f".repeat(40) } }, request))
+})

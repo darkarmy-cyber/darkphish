@@ -46,6 +46,8 @@ test("dark theme preserves reduced motion and a readable CKEditor canvas", () =>
   assert.match(css, /:focus-visible/)
   assert.match(css, /darkphish-theme-toggle\[aria-pressed="true"\]/)
   assert.match(css, /theme-toggle-orb/)
+  assert.match(css, /height: 44px/)
+  assert.match(css, /forced-colors: active/)
 })
 
 test("dark theme assets are included in Docker and native release packages", () => {

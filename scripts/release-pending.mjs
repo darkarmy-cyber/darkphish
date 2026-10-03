@@ -4,6 +4,19 @@ export async function assertReleaseAdvancePublished(repo, current, target, { ver
   versionTag(current)
   versionTag(target)
   if (target === current) return
+  if (repo === "darkarmy-cyber/darkphish" && current === "0.25.1" && target === "0.25.2") {
+    const tag = await request(`repos/${repo}/git/ref/tags/v0.25.1`, { missing: true })
+    const release = await request(`repos/${repo}/releases/tags/v0.25.1`, { missing: true })
+    const pr = await request(`repos/${repo}/pulls/196`, { missing: true })
+    const audited = pr?.number === 196 && pr.state === "closed" && pr.draft === false &&
+      pr.title === "release: Darkphish 0.25.1" && pr.merged_at === "2026-10-02T21:03:30Z" &&
+      pr.merge_commit_sha === "98d96c7cc7eebf6ab09bbeffdf109778dd4f3632" &&
+      pr.base?.ref === "main" && pr.base?.sha === "ffba3cab315c4580695d69c72ed0539e8b6a1d46" &&
+      pr.head?.ref === "release/v0.25.1" && pr.head?.sha === "d64cd123501fd2d7b5976996a2ddef072d96b041" &&
+      pr.head?.repo?.full_name === repo
+    if (!audited || tag || release) throw new Error("audited v0.25.1 bridge state changed; refusing release advance")
+    return
+  }
   if (repo === "darkarmy-cyber/darkphish" && current === "0.23.1" && target === "0.24.0") {
     const tag = await request(`repos/${repo}/git/ref/tags/v0.23.1`, { missing: true })
     const release = await request(`repos/${repo}/releases/tags/v0.23.1`, { missing: true })

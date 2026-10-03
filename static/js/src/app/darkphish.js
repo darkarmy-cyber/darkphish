@@ -295,7 +295,7 @@ var api = {
     },
     // clone_site handles importing a site by url
     clone_site: function (req) {
-        return query("/import/site", "POST", req, false)
+        return query("/import/site", "POST", req, true)
     },
     // send_test_email sends an email to the specified email address
     send_test_email: function (req) {

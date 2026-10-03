@@ -176,6 +176,11 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 		return nil, nil, errRenderedImportUnavailable
 	}
 	defer closeProxy()
+	profileDir, err := os.MkdirTemp("", "darkphish-render-*")
+	if err != nil {
+		return nil, nil, errRenderedImportUnavailable
+	}
+	defer os.RemoveAll(profileDir)
 
 	args := []string{
 		"--headless=new",
@@ -187,6 +192,7 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--mute-audio",
+		"--user-data-dir=" + profileDir,
 		"--proxy-server=" + proxyURL,
 		"--proxy-bypass-list=<-loopback>",
 		"--dump-dom",

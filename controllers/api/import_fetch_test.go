@@ -120,7 +120,7 @@ func TestImportSanitizesHTMLAndKeepsForms(t *testing.T) {
 	if method, _ := form.Attr("method"); method != "post" {
 		t.Fatal("imported form does not submit through the landing-page endpoint")
 	}
-	if document.Find("script,[onsubmit],[formaction]").Length() != 0 || document.Find("base").Length() != 1 || strings.Contains(imported.HTML, "data-darkphish-training") || strings.Contains(imported.HTML, "data-training-notice") {
+	if document.Find("script,[onsubmit],[formaction]").Length() != 0 || document.Find("base").Length() != 0 || strings.Contains(imported.HTML, "data-darkphish-training") || strings.Contains(imported.HTML, "data-training-notice") {
 		t.Fatal("unsafe or retired mode markup survived import")
 	}
 }

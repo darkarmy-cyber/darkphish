@@ -12,3 +12,10 @@ PR #203 is the narrowly scoped repair boundary. It may advance the repository fr
 The security change documents a temporary pnpm audit exception for GHSA-vfj7-8cjw-p6xm because the upstream `braces` package currently has no patched release. The dependency is transitive development tooling, not a Darkphish runtime path. The exception must be removed when upstream publishes a fix.
 
 After this repair merges, normal release preparation must create a fresh generated v0.25.2 release PR. That release PR must receive all exact-head reviews and maintainer attestation before merge; no retrospective review exception is authorized.
+
+## Scheduled preparation continuation
+
+The first repair merge exposed a narrow automation gap: `scripts/changelog.mjs` could authorize the repair on pull-request and push events, but scheduled release preparation has no `event.before` SHA. The continuation repair permits scheduled/workflow-run preparation only when the protected main history is the exact reviewed continuation of repair commit `4e24f93277cfc5c14fbfec63a797436018c495f1`, the repository is still on VERSION 0.25.1 with only 0.25.2 fragments, and the continuation merge matches its pinned branch, title and file set.
+
+This continuation does not authorize publication by itself. `scripts/release-prepare.mjs` still verifies the remote stranded v0.25.1 identity through `assertReleaseAdvancePublished`, then creates a fresh generated v0.25.2 release PR. That generated PR must pass normal CI, CodeQL, connector reviews and the maintainer attestation before merge.
+

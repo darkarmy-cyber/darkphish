@@ -60,6 +60,17 @@ const files135 = [
   "scripts/release-repair-policy-0211.test.mjs",
   "scripts/release-repair-policy.mjs",
 ].sort()
+const files203 = [
+  "changes/braces-3-0-4-audit.md",
+  "docs/RELEASE_REPAIR_0251.md",
+  "pnpm-workspace.yaml",
+  "scripts/changelog-repair-policy.mjs",
+  "scripts/changelog-repair-policy.test.mjs",
+  "scripts/release-pending.mjs",
+  "scripts/release-pending.test.mjs",
+  "scripts/release-repair-policy.mjs",
+  "scripts/release-repair-policy.test.mjs",
+].sort()
 const repairs = [
   { number: 117, current: "0.20.1", target: "0.20.2", base, branch, files: files117, title: "fix(release): recover v0.20.1 review provenance (#117)" },
   { number: 118, current: "0.20.1", target: "0.20.2", base: "3cc011581698b73c76512f155f7fd78399345efd", branch: "fix/recover-v0.20.1-run-manifest", files: files118,
@@ -70,6 +81,8 @@ const repairs = [
     title: "fix(release): audit v0.21.1 review recovery (#129)" },
   { number: 135, current: "0.21.1", target: "0.22.0", base: "69355444d01c7ef29709ec398fdbacfc4d9b4753", branch: "fix/v0.21.1-recovery-hardening", files: files135,
     title: "fix(release): close v0.21.1 recovery review gaps (#135)" },
+  { number: 203, current: "0.25.1", target: "0.25.2", base: "98d96c7cc7eebf6ab09bbeffdf109778dd4f3632", branch: "fix/braces-audit-0.25.1", files: files203,
+    title: "fix: remediate braces audit advisory (#203)" },
 ]
 
 export function auditedPendingPatchRepair(candidate) {

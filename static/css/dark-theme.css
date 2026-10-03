@@ -343,8 +343,8 @@ html[data-theme="dark"] .classic-ui :focus-visible {
 .classic-ui .darkphish-theme-toggle {
     position: relative;
     width: 68px;
-    height: 34px;
-    margin: 4px 8px 0 0;
+    height: 44px;
+    margin: 0 8px 0 0;
     padding: 0;
     border: 0;
     border-radius: 18px;
@@ -368,7 +368,10 @@ html[data-theme="dark"] .classic-ui :focus-visible {
 }
 .classic-ui .theme-toggle-track {
     position: absolute;
-    inset: 0;
+    top: 5px;
+    right: 0;
+    bottom: 5px;
+    left: 0;
     overflow: hidden;
     border: 1px solid rgba(26, 73, 111, .42);
     border-radius: 18px;
@@ -506,9 +509,20 @@ html[data-theme="dark"] .classic-ui :focus-visible {
     opacity: 1;
     transform: translateY(0);
 }
-@media (max-width: 767px) {
-    .classic-ui .darkphish-theme-toggle {
-        margin-top: 3px;
+@media (forced-colors: active) {
+    .classic-ui .theme-toggle-track {
+        border: 2px solid ButtonText;
+        background: Canvas;
+        forced-color-adjust: none;
+    }
+    .classic-ui .theme-toggle-orb {
+        border: 2px solid ButtonText;
+        background: ButtonText;
+        box-shadow: none;
+        forced-color-adjust: none;
+    }
+    .classic-ui .darkphish-theme-toggle[aria-pressed="true"] .theme-toggle-orb {
+        background: CanvasText;
     }
 }
 @media (prefers-reduced-motion: reduce) {

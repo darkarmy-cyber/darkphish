@@ -17,11 +17,7 @@
         if (!button) return;
         button.setAttribute("aria-pressed", dark ? "true" : "false");
         button.setAttribute("title", dark ? "Use light theme" : "Use dark theme");
-        var icon = button.querySelector(".fa");
-        if (icon) {
-            icon.classList.toggle("fa-moon-o", !dark);
-            icon.classList.toggle("fa-sun-o", dark);
-        }
+        button.setAttribute("aria-label", dark ? "Use light theme" : "Use dark theme");
         var sr = button.querySelector(".sr-only");
         if (sr) sr.textContent = dark ? "Use light theme" : "Use dark theme";
     }

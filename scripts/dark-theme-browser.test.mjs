@@ -4,7 +4,7 @@ import { browserFixture, read, report, script, style } from "./browser-fixture.m
 const themeReport = body => report(body).replace("$(function ()", 'window.addEventListener("load", function ()')
 
 const startup = read("templates/base.html").match(/<script>\s*(try \{[\s\S]*?catch \(e\) \{\})\s*<\/script>/)[1]
-const fixture = `<button class="btn btn-default darkphish-theme-toggle" id="themeToggle" aria-pressed="false"><i class="fa fa-moon-o"></i><span class="sr-only">Toggle dark theme</span></button>
+const fixture = `<button class="darkphish-theme-toggle" id="themeToggle" aria-pressed="false"><span class="theme-toggle-track" aria-hidden="true"><span class="theme-toggle-stars"><span class="theme-toggle-star theme-toggle-star-one"></span><span class="theme-toggle-star theme-toggle-star-two"></span><span class="theme-toggle-star theme-toggle-star-three"></span></span><span class="theme-toggle-cloud theme-toggle-cloud-one"></span><span class="theme-toggle-cloud theme-toggle-cloud-two"></span><span class="theme-toggle-orb"></span></span><span class="sr-only">Use dark theme</span></button>
   <main class="main"><h1>Dashboard</h1><div class="well" id="surface">Operational overview</div>
   <p class="help-block" id="help">Review your settings</p><input class="form-control" id="field" placeholder="Campaign name">
   <button class="btn btn-primary" id="action">Save</button><button class="btn btn-primary test-hover" id="hover">Save</button>
@@ -63,6 +63,8 @@ for (const width of [600, 1440]) {
         const button = document.getElementById("themeToggle");
         button.focus(); check(getComputedStyle(button).outlineStyle !== "none", "Keyboard focus is invisible");
         check(button.getAttribute("aria-pressed") === "true", "Toggle state was not announced");
+        check(button.getAttribute("aria-label") === "Use light theme", "Toggle accessible label is stale");
+        check(getComputedStyle(button.querySelector(".theme-toggle-orb")).transform !== "none", "Moon orb did not animate to dark position");
         button.click(); check(!document.documentElement.hasAttribute("data-theme") && localStorage.getItem("darkphish-theme") === "light", "Light choice was not persisted");
         button.click(); check(document.documentElement.dataset.theme === "dark", "Dark toggle failed");
         check(getComputedStyle(document.getElementById("action")).transitionDuration.split(",").every(x => parseFloat(x) <= .001), "Reduced motion is ignored");

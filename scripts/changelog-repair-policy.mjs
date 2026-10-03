@@ -93,7 +93,7 @@ const repairs = [
   { number: 203, current: "0.25.1", target: "0.25.2", base: "98d96c7cc7eebf6ab09bbeffdf109778dd4f3632", branch: "fix/braces-audit-0.25.1", files: files203,
     title: "fix(release): recover stranded v0.25.1 via v0.25.2 (#203)" },
   { number: 205, current: "0.25.1", target: "0.25.2", base: "4e24f93277cfc5c14fbfec63a797436018c495f1", branch: "fix/release-0252-scheduled-prepare", files: files205,
-    title: "fix(release): complete v0.25.2 scheduled preparation bridge (#205)", tree: "45b695f14570bac1463dd48322c13382439c4c9d" },
+    title: "fix(release): complete v0.25.2 scheduled preparation bridge (#205)" },
 ]
 
 export function auditedPendingPatchRepair(candidate) {
@@ -117,7 +117,7 @@ export function auditedPendingPatchRepair(candidate) {
       candidate.commitTitle === repair.title
   }
   return repair.number === 205 && ["schedule", "workflow_run"].includes(candidate.eventName) &&
-    candidate.baseSHA === repair.base && candidate.treeSHA === repair.tree &&
+    candidate.baseSHA === repair.base && candidate.scheduledPRVerified === true &&
     Array.isArray(candidate.parentSHAs) && candidate.parentSHAs.length === 1 && candidate.parentSHAs[0] === repair.base &&
     candidate.commitTitle === repair.title
 }

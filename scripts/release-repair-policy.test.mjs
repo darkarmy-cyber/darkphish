@@ -102,3 +102,31 @@ test("PR58 finalization is scoped to its own immutable base and exact hold delet
     const g = make(); change(g); await assert.rejects(verifyReleaseRepair(repo, g.pr, g.request))
   }
 })
+
+test("PR203 repair is pinned to the stranded v0.25.1 state and exact reviewed scope", async () => {
+  const repairBase = "98d96c7cc7eebf6ab09bbeffdf109778dd4f3632"
+  const repairFiles = [
+    "changes/braces-3-0-4-audit.md",
+    "docs/RELEASE_REPAIR_0251.md",
+    "pnpm-workspace.yaml",
+    "scripts/changelog-repair-policy.mjs",
+    "scripts/changelog-repair-policy.test.mjs",
+    "scripts/release-pending.mjs",
+    "scripts/release-pending.test.mjs",
+    "scripts/release-repair-policy.mjs",
+    "scripts/release-repair-policy.test.mjs",
+  ].map(filename => ({ filename, status: ["changes/braces-3-0-4-audit.md", "docs/RELEASE_REPAIR_0251.md", "pnpm-workspace.yaml"].includes(filename) ? "added" : "modified" }))
+  const pr = { number: 203, state: "open", draft: false, author_association: "MEMBER",
+    head: { sha: head, ref: "fix/braces-audit-0.25.1", repo: { full_name: repo } },
+    base: { ref: "main", sha: repairBase }, labels: [{ name: "codex-automerge" }], mergeable: true, mergeable_state: "clean" }
+  const request = async (path, options = {}) => {
+    if (path.endsWith("/files?per_page=100&page=1")) return repairFiles
+    if (path.includes("/contents/VERSION?")) return { type: "file", encoding: "base64", content: Buffer.from("0.25.1\n").toString("base64") }
+    if (path.includes("/git/ref/tags/v0.25.1")) return null
+    if (path.includes("/releases/tags/v0.25.1")) return null
+    if (path.endsWith("/pulls/196")) return { state: "closed", merged_at: "2026-10-02T21:03:30Z", merge_commit_sha: repairBase }
+    throw new Error(`Unexpected request ${path}`)
+  }
+  await verifyReleaseRepair(repo, pr, request)
+  await assert.rejects(verifyReleaseRepair(repo, { ...pr, base: { ref: "main", sha: "b".repeat(40) } }, request))
+})

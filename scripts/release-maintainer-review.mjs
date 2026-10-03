@@ -358,6 +358,53 @@ Verified generated-file scope, version/changelog integrity, exact-head CI and Co
   return { head: pr.head.sha, base: pr.base.sha, auditedRelease0240: true, reviewID: attestation.id, mergeCommit: pr.merge_commit_sha }
 }
 
+async function verifyAuditedRelease0252Merge(get, repo, pr, files, trusted) {
+  requireReview(pr.state === "closed" && pr.merged_at && /^[a-f0-9]{40}$/.test(pr.merge_commit_sha || ""),
+    "Audited v0.25.2 release PR lacks immutable merge provenance")
+  requireReview(repo === "darkarmy-cyber/darkphish" && pr.number === 206 &&
+    pr.head.ref === "release/v0.25.2" && pr.head.sha === "5e10e7f894b62f84fbe0685f8cffd631bda328ed" &&
+    pr.base.sha === "a9bae16aa396edd3f19856142abbd763add09674" &&
+    pr.merge_commit_sha === "eb0fe18b9fde19fea159961cb9e3c863cb58b437" &&
+    pr.merged_at === "2026-10-03T20:45:16Z" && trustedReleaseReviewer(pr.merged_by),
+  "Release is not the audited v0.25.2 generated-only merge")
+
+  const expected = [
+    ["CHANGELOG.md", "modified", "94feb1ef2fa32a9f64f3925e914e468c744c08f2", 10, 0],
+    ["VERSION", "modified", "166c9e29b70b1e6a84168e2e608430f62da4254a", 1, 1],
+    ["changes/braces-3-0-4-audit.md", "removed", "1772ecdc8dbde8267f6e3952257dd68357433ad8", 0, 5],
+    ["changes/release-prepare-0252-schedule.md", "removed", "f9ab2d96726f32e7ddbfcf35c23c123807caa20e", 0, 5],
+  ].sort((left, right) => left[0].localeCompare(right[0]))
+  const actual = files.map(file => [file.filename, file.status, file.sha, file.additions, file.deletions])
+    .sort((left, right) => left[0].localeCompare(right[0]))
+  requireReview(JSON.stringify(actual) === JSON.stringify(expected),
+    "Audited v0.25.2 generated file manifest changed")
+
+  const attestation = trusted.find(review => review.id === 5402865109)
+  const expectedAttestationBody = `Darkphish generated-release review completed for this exact head.
+
+Verified generated-file scope, version/changelog integrity, exact-head CI and CodeQL provenance, resolved review state, and absence of unrelated executable or workflow changes.
+
+<!-- darkphish-release-maintainer-review:v1 {"repository":"darkarmy-cyber/darkphish","pullRequestNumber":206,"headSha":"5e10e7f894b62f84fbe0685f8cffd631bda328ed","baseSha":"a9bae16aa396edd3f19856142abbd763add09674","scope":"generated-release-only","codeReview":"completed","securityReview":"completed","decision":"approved"} -->`
+  requireReview(attestation?.state === "APPROVED" && attestation.commit_id === pr.head.sha &&
+    attestation.submitted_at === "2026-10-03T21:40:03Z" && attestation.body === expectedAttestationBody,
+  "Audited v0.25.2 generated-release attestation changed")
+  requireReview(timestamp(attestation.submitted_at) > timestamp(pr.merged_at),
+    "Audited v0.25.2 post-merge review chronology changed")
+
+  parseAttestation(repo, pr, attestation)
+  await verifyReviewGraphQL(get, attestation)
+  await verifyResolvedThreads(get, repo, pr)
+
+  const finalPR = await get(`repos/${repo}/pulls/${pr.number}`)
+  requireReview(finalPR.number === pr.number && trustedActionsActor(finalPR.user) && finalPR.draft === false &&
+    finalPR.head?.repo?.full_name === repo && finalPR.head?.ref === pr.head.ref && finalPR.head?.sha === pr.head.sha &&
+    finalPR.base?.ref === "main" && finalPR.base?.sha === pr.base.sha && finalPR.title === pr.title &&
+    finalPR.state === pr.state && finalPR.merged_at === pr.merged_at && finalPR.merge_commit_sha === pr.merge_commit_sha &&
+    trustedReleaseReviewer(finalPR.merged_by),
+  "Audited v0.25.2 release PR changed during provenance verification")
+  return { head: pr.head.sha, base: pr.base.sha, auditedRelease0252: true, reviewID: attestation.id, mergeCommit: pr.merge_commit_sha }
+}
+
 export function releaseReviewBody(repo, pr) {
   requireReview(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) && Number.isSafeInteger(pr?.number) && pr.number > 0 &&
     /^[a-f0-9]{40}$/.test(pr?.head?.sha || "") && /^[a-f0-9]{40}$/.test(pr?.base?.sha || ""), "Invalid release review body target")
@@ -405,6 +452,9 @@ export async function verifyReleaseMaintainerReview(repo, pr, { get }) {
   }
   if (repo === "darkarmy-cyber/darkphish" && pr.number === 186) {
     return verifyAuditedRelease0240Merge(get, repo, pr, files, trusted)
+  }
+  if (repo === "darkarmy-cyber/darkphish" && pr.number === 206) {
+    return verifyAuditedRelease0252Merge(get, repo, pr, files, trusted)
   }
   if (trusted.length === 0) {
     if (repo === "darkarmy-cyber/darkphish" && pr.number === 20) return verifyLegacyProtectedAutoMerge(get, repo, pr)

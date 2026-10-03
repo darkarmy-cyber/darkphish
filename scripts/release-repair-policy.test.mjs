@@ -117,6 +117,7 @@ test("PR203 repair is pinned to the stranded v0.25.1 state and exact reviewed sc
     "scripts/release-repair-policy.test.mjs",
   ].map(filename => ({ filename, status: ["changes/braces-3-0-4-audit.md", "docs/RELEASE_REPAIR_0251.md", "pnpm-workspace.yaml"].includes(filename) ? "added" : "modified" }))
   const pr = { number: 203, state: "open", draft: false, author_association: "MEMBER",
+    title: "fix(release): recover stranded v0.25.1 via v0.25.2",
     head: { sha: head, ref: "fix/braces-audit-0.25.1", repo: { full_name: repo } },
     base: { ref: "main", sha: repairBase }, labels: [{ name: "codex-automerge" }], mergeable: true, mergeable_state: "clean" }
   const request = async (path, options = {}) => {
@@ -124,9 +125,25 @@ test("PR203 repair is pinned to the stranded v0.25.1 state and exact reviewed sc
     if (path.includes("/contents/VERSION?")) return { type: "file", encoding: "base64", content: Buffer.from("0.25.1\n").toString("base64") }
     if (path.includes("/git/ref/tags/v0.25.1")) return null
     if (path.includes("/releases/tags/v0.25.1")) return null
-    if (path.endsWith("/pulls/196")) return { state: "closed", merged_at: "2026-10-02T21:03:30Z", merge_commit_sha: repairBase }
+    if (path.endsWith("/pulls/196")) return {
+      number: 196, state: "closed", draft: false, title: "release: Darkphish 0.25.1",
+      merged_at: "2026-10-02T21:03:30Z", merge_commit_sha: repairBase,
+      base: { ref: "main", sha: "ffba3cab315c4580695d69c72ed0539e8b6a1d46" },
+      head: { ref: "release/v0.25.1", sha: "d64cd123501fd2d7b5976996a2ddef072d96b041", repo: { full_name: repo } },
+    }
     throw new Error(`Unexpected request ${path}`)
   }
   await verifyReleaseRepair(repo, pr, request)
   await assert.rejects(verifyReleaseRepair(repo, { ...pr, base: { ref: "main", sha: "b".repeat(40) } }, request))
+  await assert.rejects(verifyReleaseRepair(repo, { ...pr, title: "renamed repair" }, request))
+  const mismatchedRequest = async (path, options = {}) => {
+    if (path.endsWith("/pulls/196")) return {
+      number: 196, state: "closed", draft: false, title: "renamed release",
+      merged_at: "2026-10-02T21:03:30Z", merge_commit_sha: repairBase,
+      base: { ref: "main", sha: "ffba3cab315c4580695d69c72ed0539e8b6a1d46" },
+      head: { ref: "release/v0.25.1", sha: "d64cd123501fd2d7b5976996a2ddef072d96b041", repo: { full_name: repo } },
+    }
+    return request(path, options)
+  }
+  await assert.rejects(verifyReleaseRepair(repo, pr, mismatchedRequest))
 })

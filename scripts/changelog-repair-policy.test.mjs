@@ -171,3 +171,77 @@ test("pending-patch repair rejects any identity, version, base or file drift", (
     assert.equal(auditedPendingPatchRepair(value), false)
   }
 })
+
+test("only PR203 may stage the exact v0.25.2 repair while v0.25.1 is unpublished", () => {
+  const repairBase = "98d96c7cc7eebf6ab09bbeffdf109778dd4f3632"
+  const repairFiles = [
+    "changes/braces-3-0-4-audit.md",
+    "docs/RELEASE_REPAIR_0251.md",
+    "pnpm-workspace.yaml",
+    "scripts/changelog-repair-policy.mjs",
+    "scripts/changelog-repair-policy.test.mjs",
+    "scripts/release-pending.mjs",
+    "scripts/release-pending.test.mjs",
+    "scripts/release-repair-policy.mjs",
+    "scripts/release-repair-policy.test.mjs",
+  ]
+  const fixture = () => ({
+    repository, eventName: "pull_request", current: "0.25.1", target: "0.25.2",
+    baseSHA: repairBase, files: [...repairFiles], event: { pull_request: {
+      number: 203, state: "open", draft: false, base: { ref: "main", sha: repairBase },
+      head: { ref: "fix/braces-audit-0.25.1", repo: { full_name: repository } },
+    } },
+  })
+  assert.equal(auditedPendingPatchRepair(fixture()), true)
+  for (const change of [
+    value => { value.event.pull_request.number = 204 },
+    value => { value.baseSHA = "a".repeat(40) },
+    value => { value.event.pull_request.head.ref = "fix/other" },
+    value => { value.files.pop() },
+    value => { value.files.push("VERSION") },
+  ]) {
+    const value = fixture(); change(value)
+    assert.equal(auditedPendingPatchRepair(value), false)
+  }
+})
+
+test("PR205 and only its exact merge may continue scheduled v0.25.2 preparation", () => {
+  const repairBase = "4e24f93277cfc5c14fbfec63a797436018c495f1"
+  const repairFiles = [
+    "changes/release-prepare-0252-schedule.md",
+    "docs/RELEASE_REPAIR_0251.md",
+    "scripts/changelog-repair-policy.mjs",
+    "scripts/changelog-repair-policy.test.mjs",
+    "scripts/changelog.mjs",
+    "scripts/release-repair-policy.mjs",
+    "scripts/release-repair-policy.test.mjs",
+  ]
+  const pull = {
+    repository, eventName: "pull_request", current: "0.25.1", target: "0.25.2",
+    baseSHA: repairBase, files: [...repairFiles], event: { pull_request: {
+      number: 205, state: "open", draft: false, base: { ref: "main", sha: repairBase },
+      head: { ref: "fix/release-0252-scheduled-prepare", repo: { full_name: repository } },
+    } },
+  }
+  assert.equal(auditedPendingPatchRepair(pull), true)
+
+  const scheduled = {
+    repository, eventName: "schedule", current: "0.25.1", target: "0.25.2",
+    baseSHA: repairBase, headSHA: "e".repeat(40), parentSHAs: [repairBase], scheduledPRVerified: true,
+    commitTitle: "fix(release): complete v0.25.2 scheduled preparation bridge (#205)",
+    files: [...repairFiles], event: {},
+  }
+  assert.equal(auditedPendingPatchRepair(scheduled), true)
+  assert.equal(auditedPendingPatchRepair({ ...scheduled, eventName: "workflow_run" }), true)
+  for (const change of [
+    value => { value.baseSHA = "a".repeat(40) },
+    value => { value.parentSHAs = ["b".repeat(40)] },
+    value => { value.scheduledPRVerified = false },
+    value => { value.commitTitle = "other" },
+    value => { value.files = value.files.slice(1) },
+    value => { value.eventName = "schedule"; value.current = "0.25.0" },
+  ]) {
+    const value = structuredClone(scheduled); change(value)
+    assert.equal(auditedPendingPatchRepair(value), false)
+  }
+})

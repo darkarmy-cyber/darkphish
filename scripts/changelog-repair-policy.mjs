@@ -71,6 +71,15 @@ const files203 = [
   "scripts/release-repair-policy.mjs",
   "scripts/release-repair-policy.test.mjs",
 ].sort()
+const files205 = [
+  "changes/release-prepare-0252-schedule.md",
+  "docs/RELEASE_REPAIR_0251.md",
+  "scripts/changelog-repair-policy.mjs",
+  "scripts/changelog-repair-policy.test.mjs",
+  "scripts/changelog.mjs",
+  "scripts/release-repair-policy.mjs",
+  "scripts/release-repair-policy.test.mjs",
+].sort()
 const repairs = [
   { number: 117, current: "0.20.1", target: "0.20.2", base, branch, files: files117, title: "fix(release): recover v0.20.1 review provenance (#117)" },
   { number: 118, current: "0.20.1", target: "0.20.2", base: "3cc011581698b73c76512f155f7fd78399345efd", branch: "fix/recover-v0.20.1-run-manifest", files: files118,
@@ -83,6 +92,8 @@ const repairs = [
     title: "fix(release): close v0.21.1 recovery review gaps (#135)" },
   { number: 203, current: "0.25.1", target: "0.25.2", base: "98d96c7cc7eebf6ab09bbeffdf109778dd4f3632", branch: "fix/braces-audit-0.25.1", files: files203,
     title: "fix(release): recover stranded v0.25.1 via v0.25.2 (#203)" },
+  { number: 205, current: "0.25.1", target: "0.25.2", base: "4e24f93277cfc5c14fbfec63a797436018c495f1", branch: "fix/release-0252-scheduled-prepare", files: files205,
+    title: "fix(release): complete v0.25.2 scheduled preparation bridge (#205)" },
 ]
 
 export function auditedPendingPatchRepair(candidate) {
@@ -98,9 +109,15 @@ export function auditedPendingPatchRepair(candidate) {
       pull.head?.ref === repair.branch && pull.head?.repo?.full_name === repository
   }
   const event = candidate.event
-  return candidate.eventName === "push" && event?.ref === "refs/heads/main" &&
-    event.before === repair.base && event.after === candidate.headSHA && event.deleted === false &&
-    event.forced === false && event.repository?.full_name === repository &&
+  if (candidate.eventName === "push") {
+    return event?.ref === "refs/heads/main" &&
+      event.before === repair.base && event.after === candidate.headSHA && event.deleted === false &&
+      event.forced === false && event.repository?.full_name === repository &&
+      Array.isArray(candidate.parentSHAs) && candidate.parentSHAs.length === 1 && candidate.parentSHAs[0] === repair.base &&
+      candidate.commitTitle === repair.title
+  }
+  return repair.number === 205 && ["schedule", "workflow_run"].includes(candidate.eventName) &&
+    candidate.baseSHA === repair.base &&
     Array.isArray(candidate.parentSHAs) && candidate.parentSHAs.length === 1 && candidate.parentSHAs[0] === repair.base &&
     candidate.commitTitle === repair.title
 }

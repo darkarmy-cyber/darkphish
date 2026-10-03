@@ -82,7 +82,7 @@ const repairs = [
   { number: 135, current: "0.21.1", target: "0.22.0", base: "69355444d01c7ef29709ec398fdbacfc4d9b4753", branch: "fix/v0.21.1-recovery-hardening", files: files135,
     title: "fix(release): close v0.21.1 recovery review gaps (#135)" },
   { number: 203, current: "0.25.1", target: "0.25.2", base: "98d96c7cc7eebf6ab09bbeffdf109778dd4f3632", branch: "fix/braces-audit-0.25.1", files: files203,
-    title: "fix: remediate braces audit advisory (#203)" },
+    title: "fix(release): recover stranded v0.25.1 via v0.25.2 (#203)" },
 ]
 
 export function auditedPendingPatchRepair(candidate) {

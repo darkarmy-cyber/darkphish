@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -89,6 +90,11 @@ func TestImportCancelledRequest(t *testing.T) {
 }
 
 func TestImportSanitizesHTMLAndKeepsForms(t *testing.T) {
+	originalRenderer := renderImportPageForImport
+	renderImportPageForImport = func(context.Context, string) ([]byte, *url.URL, error) {
+		return nil, nil, errRenderedImportUnavailable
+	}
+	t.Cleanup(func() { renderImportPageForImport = originalRenderer })
 	page := `<html><head><base href="https://evil.example.test"></head><body><script>window.bad=true</script><form action="https://collect.example.test" onsubmit="bad()"><input name="field"><textarea name="note">text</textarea><button formaction="https://collect.example.test">Submit</button></form></body></html>`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, page) }))
 	defer server.Close()
@@ -114,7 +120,7 @@ func TestImportSanitizesHTMLAndKeepsForms(t *testing.T) {
 	if method, _ := form.Attr("method"); method != "post" {
 		t.Fatal("imported form does not submit through the landing-page endpoint")
 	}
-	if document.Find("script,base,[onsubmit],[formaction]").Length() != 0 || strings.Contains(imported.HTML, "data-darkphish-training") || strings.Contains(imported.HTML, "data-training-notice") {
+	if document.Find("script,[onsubmit],[formaction]").Length() != 0 || document.Find("base").Length() != 0 || strings.Contains(imported.HTML, "data-darkphish-training") || strings.Contains(imported.HTML, "data-training-notice") {
 		t.Fatal("unsafe or retired mode markup survived import")
 	}
 }

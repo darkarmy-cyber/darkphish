@@ -22,8 +22,8 @@ const literalCloseDelimiter = "{{`}`}}{{`}`}}"
 
 var ErrSize = errors.New("imported HTML exceeds the 8 MiB limit")
 
-var allowedTags = words("html head body title link div span p br hr h1 h2 h3 h4 h5 h6 strong b em i u s small sub sup blockquote pre code ul ol li dl dt dd table thead tbody tfoot tr td th caption colgroup col section article header footer main nav aside figure figcaption details summary a img form label fieldset legend input textarea select option optgroup button")
-var discardedTags = words("script style meta base iframe frame frameset object embed svg math template noscript audio video source track canvas")
+var allowedTags = words("html head body title link style noscript div span p br hr h1 h2 h3 h4 h5 h6 strong b em i u s small sub sup blockquote pre code ul ol li dl dt dd table thead tbody tfoot tr td th caption colgroup col section article header footer main nav aside figure figcaption details summary a picture source img form label fieldset legend input textarea select option optgroup button")
+var discardedTags = words("script meta base iframe frame frameset object embed svg math template audio video track canvas")
 var styleProperties = words("color background-color font-size font-family font-weight font-style line-height text-align text-decoration letter-spacing white-space word-break overflow-wrap margin margin-top margin-right margin-bottom margin-left padding padding-top padding-right padding-bottom padding-left border border-top border-right border-bottom border-left border-color border-width border-style border-radius width max-width min-width height max-height min-height display vertical-align table-layout border-collapse border-spacing opacity")
 var safeStyleValue = regexp.MustCompile(`^[a-zA-Z0-9#.,% ()'"+/-]+$`)
 var tokenValue = regexp.MustCompile(`^[a-zA-Z0-9_:. -]{1,512}$`)
@@ -159,11 +159,15 @@ func copyAttributes(out, source *html.Node, base *url.URL) {
 			if dimension.MatchString(a.Val) {
 				out.Attr = append(out.Attr, html.Attribute{Key: a.Key, Val: a.Val})
 			}
-		case "lang", "dir", "autocomplete", "media":
+		case "lang", "dir", "autocomplete", "media", "as":
 			appendBounded(out, a.Key, a.Val, 64)
 		case "rel":
-			if out.Data == "link" && strings.EqualFold(strings.TrimSpace(a.Val), "stylesheet") {
-				out.Attr = append(out.Attr, html.Attribute{Key: "rel", Val: "stylesheet"})
+			if out.Data == "link" {
+				rel := strings.ToLower(strings.TrimSpace(a.Val))
+				as := strings.ToLower(strings.TrimSpace(attr(source, "as")))
+				if rel == "stylesheet" || (rel == "preload" && as == "style") {
+					out.Attr = append(out.Attr, html.Attribute{Key: "rel", Val: "stylesheet"})
+				}
 			}
 		case "name", "value", "type", "min", "max", "step", "pattern":
 			if out.Data == "input" || out.Data == "textarea" || out.Data == "select" || out.Data == "option" || out.Data == "optgroup" || out.Data == "button" {
@@ -209,8 +213,12 @@ func clean(n *html.Node, base *url.URL) *html.Node {
 			return nil
 		}
 		tag := n.Data
-		if tag == "link" && !strings.EqualFold(strings.TrimSpace(attr(n, "rel")), "stylesheet") {
-			return nil
+		if tag == "link" {
+			rel := strings.ToLower(strings.TrimSpace(attr(n, "rel")))
+			as := strings.ToLower(strings.TrimSpace(attr(n, "as")))
+			if rel != "stylesheet" && !(rel == "preload" && as == "style") {
+				return nil
+			}
 		}
 		if !allowedTags[tag] {
 			tag = "div"
@@ -255,12 +263,12 @@ func Sanitize(source string, base *url.URL) (string, error) {
 	}
 	find(doc)
 	openDelimiter, closeDelimiter := delimiterTokens(doc)
-	var stylesheetLinks []*html.Node
+	var headResources []*html.Node
 	if sourceHead != nil {
 		for child := sourceHead.FirstChild; child != nil; child = child.NextSibling {
-			if child.Type == html.ElementNode && child.Data == "link" {
+			if child.Type == html.ElementNode && (child.Data == "link" || child.Data == "style" || child.Data == "noscript") {
 				if copied := clean(child, base); copied != nil {
-					stylesheetLinks = append(stylesheetLinks, copied)
+					headResources = append(headResources, copied)
 				}
 			}
 		}
@@ -275,13 +283,13 @@ func Sanitize(source string, base *url.URL) (string, error) {
 		}
 	}
 	neutralizeDelimiters(body, openDelimiter, closeDelimiter)
-	for _, link := range stylesheetLinks {
-		neutralizeDelimiters(link, openDelimiter, closeDelimiter)
+	for _, resource := range headResources {
+		neutralizeDelimiters(resource, openDelimiter, closeDelimiter)
 	}
 	var out bytes.Buffer
 	_, _ = io.WriteString(&out, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Imported landing page</title>`)
-	for _, link := range stylesheetLinks {
-		if err := html.Render(&out, link); err != nil {
+	for _, resource := range headResources {
+		if err := html.Render(&out, resource); err != nil {
 			return "", err
 		}
 	}

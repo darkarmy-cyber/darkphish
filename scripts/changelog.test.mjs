@@ -41,8 +41,8 @@ test("release recovery aggregates additional 0.3 fragments without losing histor
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-test("release metadata accepts current, next patch, and next minor targets", () => {
-  for (const [current, target] of [["0.3.0", "0.4.0"], ["0.3.0", "0.3.1"], ["0.3.1", "0.3.2"], ["0.3.1", "0.3.1"], ["0.3.0", "0.3.0"]]) {
+test("release metadata accepts current, next patch, next minor, and next major targets", () => {
+  for (const [current, target] of [["0.25.1", "1.0.0"], ["0.3.0", "0.4.0"], ["0.3.0", "0.3.1"], ["0.3.1", "0.3.2"], ["0.3.1", "0.3.1"], ["0.3.0", "0.3.0"]]) {
     const root = mkdtempSync(join(tmpdir(), "darkphish-target-test-"))
     try {
       mkdirSync(join(root, "scripts"))
@@ -83,7 +83,7 @@ test("release metadata rejects mixed patch and next-minor targets", () => {
 })
 
 test("release metadata rejects skipped patch and other unsupported targets", () => {
-  for (const target of ["0.3.2", "0.5.0", "1.0.0"]) {
+  for (const target of ["0.3.2", "0.5.0", "2.0.0"]) {
     const root = mkdtempSync(join(tmpdir(), "darkphish-invalid-target-test-"))
     try {
       mkdirSync(join(root, "scripts"))
@@ -94,7 +94,7 @@ test("release metadata rejects skipped patch and other unsupported targets", () 
       writeFileSync(join(root, "changes/fix.md"), `---\ncategory: Fixed\nversion: ${target}\n---\n- invalid release target\n`)
       const result = spawnSync(process.execPath, [join(root, "scripts/changelog.mjs"), "validate"], { encoding: "utf8" })
       assert.notEqual(result.status, 0)
-      assert.match(result.stderr, /expected 0\.3\.0, next patch 0\.3\.1, or next minor 0\.4\.0/)
+      assert.match(result.stderr, /expected 0\.3\.0, next patch 0\.3\.1, next minor 0\.4\.0, or next major 1\.0\.0/)
     } finally { rmSync(root, { recursive: true, force: true }) }
   }
 })

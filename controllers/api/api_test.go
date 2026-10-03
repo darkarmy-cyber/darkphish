@@ -69,8 +69,14 @@ func TestSiteImportSanitizesRemoteResources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error decoding response: %v", err)
 	}
-	if strings.Contains(cs.HTML, "<base") || strings.Contains(cs.HTML, `src="/test.png"`) || strings.Contains(cs.HTML, "onerror") || strings.Contains(cs.HTML, "attacker.example.test/collect") {
+	if strings.Contains(cs.HTML, `href="https://attacker.example.test/`) || strings.Contains(cs.HTML, `src="/test.png"`) || strings.Contains(cs.HTML, "onerror") || strings.Contains(cs.HTML, "attacker.example.test/collect") {
 		t.Fatal("import retained unsafe remote metadata")
+	}
+	if strings.Contains(cs.HTML, "<base ") {
+		t.Fatal("import retained a remote base element")
+	}
+	if !strings.Contains(cs.HTML, `src="`+ts.URL+`/test.png"`) {
+		t.Fatal("import did not resolve the trusted resource URL absolutely")
 	}
 	if !strings.Contains(cs.HTML, "<form") || !strings.Contains(cs.HTML, `name="email"`) || !strings.Contains(cs.HTML, `action=""`) {
 		t.Fatal("import removed the landing-page form")

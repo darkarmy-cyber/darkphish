@@ -1,0 +1,226 @@
+package api
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/darkarmy-cyber/darkphish/dialer"
+)
+
+var errRenderedImportUnavailable = errors.New("rendered site import unavailable")
+
+func chromiumExecutable() string {
+	if configured := strings.TrimSpace(os.Getenv("DARKPHISH_CHROMIUM_PATH")); configured != "" {
+		if info, err := os.Stat(configured); err == nil && !info.IsDir() {
+			return configured
+		}
+	}
+	for _, name := range []string{"chromium", "chromium-browser", "google-chrome", "google-chrome-stable"} {
+		if path, err := exec.LookPath(name); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
+type boundedBuffer struct {
+	mu    sync.Mutex
+	buf   bytes.Buffer
+	limit int
+}
+
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.buf.Len()+len(p) > b.limit {
+		return 0, errRenderedImportUnavailable
+	}
+	return b.buf.Write(p)
+}
+
+func (b *boundedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func startRenderedImportProxy(ctx context.Context) (string, func(), error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", nil, err
+	}
+	server := &http.Server{
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       15 * time.Second,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodConnect {
+				handleRenderedConnect(ctx, w, r)
+				return
+			}
+			handleRenderedHTTP(ctx, w, r)
+		}),
+	}
+	go func() {
+		<-ctx.Done()
+		_ = server.Close()
+	}()
+	go func() { _ = server.Serve(listener) }()
+	closeFn := func() { _ = server.Close() }
+	return "http://" + listener.Addr().String(), closeFn, nil
+}
+
+func renderedTarget(raw string) (string, error) {
+	parsed, err := parseImportURL(raw)
+	if err != nil {
+		return "", err
+	}
+	port := parsed.Port()
+	if port == "" {
+		if parsed.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return net.JoinHostPort(parsed.Hostname(), port), nil
+}
+
+func handleRenderedConnect(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	target, err := renderedTarget("https://" + r.Host)
+	if err != nil {
+		http.Error(w, "destination denied", http.StatusForbidden)
+		return
+	}
+	upstream, err := dialer.Dialer().DialContext(ctx, "tcp", target)
+	if err != nil {
+		http.Error(w, "destination denied", http.StatusForbidden)
+		return
+	}
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		upstream.Close()
+		http.Error(w, "proxy unavailable", http.StatusInternalServerError)
+		return
+	}
+	client, _, err := hijacker.Hijack()
+	if err != nil {
+		upstream.Close()
+		return
+	}
+	_, _ = client.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+	go func() {
+		defer client.Close()
+		defer upstream.Close()
+		_, _ = io.Copy(upstream, client)
+	}()
+	go func() {
+		defer client.Close()
+		defer upstream.Close()
+		_, _ = io.Copy(client, upstream)
+	}()
+}
+
+func handleRenderedHTTP(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	if _, err := parseImportURL(r.URL.String()); err != nil {
+		http.Error(w, "destination denied", http.StatusForbidden)
+		return
+	}
+	request := r.Clone(ctx)
+	request.RequestURI = ""
+	request.Header.Del("Proxy-Connection")
+	request.Header.Del("Proxy-Authorization")
+	transport := &http.Transport{
+		DialContext:           dialer.Dialer().DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
+	}
+	defer transport.CloseIdleConnections()
+	response, err := transport.RoundTrip(request)
+	if err != nil {
+		http.Error(w, "destination denied", http.StatusBadGateway)
+		return
+	}
+	defer response.Body.Close()
+	for key, values := range response.Header {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	w.WriteHeader(response.StatusCode)
+	_, _ = io.CopyN(w, response.Body, maxImportedPageBytes+1)
+}
+
+func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error) {
+	chrome := chromiumExecutable()
+	if chrome == "" {
+		return nil, nil, errRenderedImportUnavailable
+	}
+	sourceURL, err := parseImportURL(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	renderCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	proxyURL, closeProxy, err := startRenderedImportProxy(renderCtx)
+	if err != nil {
+		return nil, nil, errRenderedImportUnavailable
+	}
+	defer closeProxy()
+	profileDir, err := os.MkdirTemp("", "darkphish-render-*")
+	if err != nil {
+		return nil, nil, errRenderedImportUnavailable
+	}
+	defer os.RemoveAll(profileDir)
+
+	args := []string{
+		"--headless=new",
+		"--disable-gpu",
+		"--disable-background-networking",
+		"--disable-default-apps",
+		"--disable-extensions",
+		"--disable-sync",
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--mute-audio",
+		"--user-data-dir=" + profileDir,
+		"--proxy-server=" + proxyURL,
+		"--proxy-bypass-list=<-loopback>",
+		"--dump-dom",
+		sourceURL.String(),
+	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("DARKPHISH_CHROMIUM_NO_SANDBOX")), "true") {
+		args = append([]string{"--no-sandbox"}, args...)
+	}
+	cmd := exec.CommandContext(renderCtx, chrome, args...)
+	configureRenderedCommand(cmd)
+	var stdout, stderr boundedBuffer
+	stdout.limit = maxImportedPageBytes
+	stderr.limit = 1 << 20
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, nil, errRenderedImportUnavailable
+	}
+	rendered := strings.TrimSpace(stdout.String())
+	if rendered == "" || len(rendered) > maxImportedPageBytes {
+		return nil, nil, errRenderedImportUnavailable
+	}
+	return []byte(rendered), sourceURL, nil
+}
+
+func renderedImportWarning(err error) string {
+	if err == nil {
+		return ""
+	}
+	return "Rendered snapshot was unavailable; imported the static HTML response instead."
+}

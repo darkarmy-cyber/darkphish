@@ -33,5 +33,10 @@
   },
   "dependencies": {
     "zxcvbn": "4.4.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "braces": "3.0.4"
+    }
   }
 }

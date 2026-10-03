@@ -90,3 +90,29 @@ test("allows only the exact audited tagless v0.23.1 state to bridge to v0.24.0",
     /must not verify unpublished v0\.23\.1/,
   )
 })
+
+test("allows only the exact audited tagless v0.25.1 state to bridge to v0.25.2", async () => {
+  let verifyCalls = 0
+  const verify = async () => { verifyCalls += 1; throw new Error("must not verify unpublished v0.25.1") }
+  const pr = {
+    number: 196, state: "closed", draft: false, title: "release: Darkphish 0.25.1",
+    merged_at: "2026-10-02T21:03:30Z", merge_commit_sha: "98d96c7cc7eebf6ab09bbeffdf109778dd4f3632",
+    base: { ref: "main", sha: "ffba3cab315c4580695d69c72ed0539e8b6a1d46" },
+    head: { ref: "release/v0.25.1", sha: "d64cd123501fd2d7b5976996a2ddef072d96b041", repo: { full_name: repo } },
+  }
+  const request = async path => path.endsWith("/pulls/196") ? structuredClone(pr) : null
+  await assertReleaseAdvancePublished(repo, "0.25.1", "0.25.2", { verify, request })
+  assert.equal(verifyCalls, 0)
+  for (const mutate of [
+    value => { value.merge_commit_sha = "a".repeat(40) },
+    value => { value.head.sha = "b".repeat(40) },
+    value => { value.base.sha = "c".repeat(40) },
+  ]) {
+    const changed = structuredClone(pr); mutate(changed)
+    await assert.rejects(
+      assertReleaseAdvancePublished(repo, "0.25.1", "0.25.2", { verify,
+        request: async path => path.endsWith("/pulls/196") ? changed : null }),
+      /audited v0\.25\.1 bridge state changed/,
+    )
+  }
+})

@@ -128,18 +128,18 @@ func TestSanitizeKeepsFragmentLinksLocalAndOmitsBase(t *testing.T) {
 	base, _ := url.Parse("https://example.test/path/page?x={{.Email}}")
 	got, err := Sanitize(`<html><body><a href="#pricing">Pricing</a><img src="img/logo.png"></body></html>`, base)
 	if err != nil {
-	\tt.Fatal(err)
+		t.Fatal(err)
 	}
 	if strings.Contains(got, "<base ") {
-	\tt.Fatalf("generated base element must be omitted: %s", got)
+		t.Fatalf("generated base element must be omitted: %s", got)
 	}
 	if !strings.Contains(got, `href="#pricing"`) {
-	\tt.Fatalf("fragment link must remain document-local: %s", got)
+		t.Fatalf("fragment link must remain document-local: %s", got)
 	}
 	if !strings.Contains(got, `src="https://example.test/path/img/logo.png"`) {
-	\tt.Fatalf("relative resource must still resolve absolutely: %s", got)
+		t.Fatalf("relative resource must still resolve absolutely: %s", got)
 	}
 	if strings.Contains(got, "{{.Email}}") {
-	\tt.Fatalf("attacker-controlled template action survived sanitization: %s", got)
+		t.Fatalf("attacker-controlled template action survived sanitization: %s", got)
 	}
 }

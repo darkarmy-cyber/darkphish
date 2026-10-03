@@ -288,9 +288,6 @@ func Sanitize(source string, base *url.URL) (string, error) {
 	}
 	var out bytes.Buffer
 	_, _ = io.WriteString(&out, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Imported landing page</title>`)
-	if base != nil {
-		_, _ = io.WriteString(&out, `<base href="`+html.EscapeString(base.String())+`">`)
-	}
 	for _, resource := range headResources {
 		if err := html.Render(&out, resource); err != nil {
 			return "", err

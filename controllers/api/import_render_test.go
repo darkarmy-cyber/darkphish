@@ -64,7 +64,6 @@ func TestRenderedImportWarningDoesNotExposeDiagnostics(t *testing.T) {
 	}
 }
 
-
 func TestRenderTransferBudgetFailsClosed(t *testing.T) {
 	budget := newRenderTransferBudget(4)
 	if err := budget.consume(4); err != nil {

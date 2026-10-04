@@ -190,7 +190,6 @@ func TestRenderObservationTracksLatestMainDocumentNavigation(t *testing.T) {
 	}
 }
 
-
 func TestPausedRequestCommandEnforcesHTTPSAndSafeMethods(t *testing.T) {
 	event := func(method, rawURL string) map[string]any {
 		return map[string]any{

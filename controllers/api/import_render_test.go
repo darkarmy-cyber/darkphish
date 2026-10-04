@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -186,5 +187,49 @@ func TestRenderObservationTracksLatestMainDocumentNavigation(t *testing.T) {
 	}
 	if observation.loadSeen || observation.networkIdle {
 		t.Fatal("navigation state was not reset for the replacement document")
+	}
+}
+
+
+func TestPausedRequestCommandEnforcesHTTPSAndSafeMethods(t *testing.T) {
+	event := func(method, rawURL string) map[string]any {
+		return map[string]any{
+			"params": map[string]any{
+				"requestId": "request-1",
+				"request": map[string]any{
+					"method": method,
+					"url":    rawURL,
+				},
+			},
+		}
+	}
+	method, _, err := pausedRequestCommand(event(http.MethodGet, "https://example.test/page"), true)
+	if err != nil || method != "Fetch.continueRequest" {
+		t.Fatalf("HTTPS GET should continue: method=%s err=%v", method, err)
+	}
+	method, _, err = pausedRequestCommand(event(http.MethodGet, "http://example.test/page"), true)
+	if err != nil || method != "Fetch.failRequest" {
+		t.Fatalf("HTTP downgrade should be blocked: method=%s err=%v", method, err)
+	}
+	method, _, err = pausedRequestCommand(event(http.MethodPost, "https://example.test/submit"), true)
+	if err != nil || method != "Fetch.failRequest" {
+		t.Fatalf("state-changing method should be blocked: method=%s err=%v", method, err)
+	}
+}
+
+func TestRenderObservationFlagsIntermediateHTTPSDowngrade(t *testing.T) {
+	observation := &renderObservation{frameID: "frame", loaderID: "loader", originalHTTPS: true}
+	observation.observe(map[string]any{
+		"method": "Network.requestWillBeSent",
+		"params": map[string]any{
+			"type":    "Document",
+			"frameId": "frame",
+			"request": map[string]any{
+				"url": "http://example.test/intermediate",
+			},
+		},
+	})
+	if !observation.insecureDowngrade {
+		t.Fatal("intermediate HTTP navigation was not flagged")
 	}
 }

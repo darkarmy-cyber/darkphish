@@ -44,7 +44,7 @@ function save(idx) {
 
 function dismiss() {
     importPending = false
-    $("#modalSubmit").prop("disabled", false)
+    $("#importSiteSubmit").prop("disabled", false)
     $("#modal\\.flashes").empty()
     $("#name").val("")
     $("#html_editor").val("")
@@ -108,7 +108,7 @@ function importSite() {
         modalError("No URL Specified!")
     } else {
         importPending = true
-        $("#modalSubmit").prop("disabled", true)
+        $("#importSiteSubmit").prop("disabled", true)
         api.clone_site({
                 url: url,
                 include_resources: false
@@ -117,7 +117,7 @@ function importSite() {
                 applyImportedCaptureDefaults(data.html)
                 CKEDITOR.instances["html_editor"].setData(data.html, function () {
                     importPending = false
-                    $("#modalSubmit").prop("disabled", false)
+                    $("#importSiteSubmit").prop("disabled", false)
                 })
                 $("#importSiteModal").modal("hide")
                 if (data.warnings && data.warnings.length) {
@@ -130,7 +130,7 @@ function importSite() {
             })
             .error(function (data) {
                 importPending = false
-                $("#modalSubmit").prop("disabled", false)
+                $("#importSiteSubmit").prop("disabled", false)
                 modalError(data.responseJSON && data.responseJSON.message || "Unable to import site")
             })
     }

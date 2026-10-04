@@ -21,6 +21,7 @@ type cdpClient struct {
 	ws      *websocket.Conn
 	nextID  int64
 	pending []map[string]any
+	ignored map[int64]struct{}
 }
 
 func readDevToolsPort(ctx context.Context, profileDir string) (int, error) {
@@ -94,7 +95,7 @@ func dialCDP(ctx context.Context, raw string) (*cdpClient, error) {
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = ws.SetDeadline(deadline)
 	}
-	return &cdpClient{ws: ws}, nil
+	return &cdpClient{ws: ws, ignored: make(map[int64]struct{})}, nil
 }
 
 func (c *cdpClient) close() {
@@ -118,6 +119,37 @@ func (c *cdpClient) receive(ctx context.Context) (map[string]any, error) {
 	return message, nil
 }
 
+func (c *cdpClient) sendNoWait(method string, params map[string]any) error {
+	c.nextID++
+	id := c.nextID
+	request := map[string]any{"id": id, "method": method}
+	if params != nil {
+		request["params"] = params
+	}
+	if err := websocket.JSON.Send(c.ws, request); err != nil {
+		return err
+	}
+	c.ignored[id] = struct{}{}
+	return nil
+}
+
+func (c *cdpClient) handlePausedRequest(event map[string]any) error {
+	params, _ := event["params"].(map[string]any)
+	requestID, _ := params["requestId"].(string)
+	request, _ := params["request"].(map[string]any)
+	method, _ := request["method"].(string)
+	rawURL, _ := request["url"].(string)
+	if requestID == "" {
+		return errRenderedImportUnavailable
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
+		(method != http.MethodGet && method != http.MethodHead) {
+		return c.sendNoWait("Fetch.failRequest", map[string]any{"requestId": requestID, "errorReason": "BlockedByClient"})
+	}
+	return c.sendNoWait("Fetch.continueRequest", map[string]any{"requestId": requestID})
+}
+
 func (c *cdpClient) call(ctx context.Context, method string, params map[string]any) (map[string]any, error) {
 	c.nextID++
 	id := c.nextID
@@ -134,11 +166,25 @@ func (c *cdpClient) call(ctx context.Context, method string, params map[string]a
 			return nil, err
 		}
 		if eventMethod, ok := message["method"].(string); ok && eventMethod != "" {
-			c.pending = append(c.pending, message)
+			if eventMethod == "Fetch.requestPaused" {
+				if err := c.handlePausedRequest(message); err != nil {
+					return nil, err
+				}
+			} else {
+				c.pending = append(c.pending, message)
+			}
 			continue
 		}
 		messageID, ok := message["id"].(float64)
-		if !ok || int64(messageID) != id {
+		if !ok {
+			continue
+		}
+		responseID := int64(messageID)
+		if _, ignored := c.ignored[responseID]; ignored {
+			delete(c.ignored, responseID)
+			continue
+		}
+		if responseID != id {
 			continue
 		}
 		if protocolErr, ok := message["error"].(map[string]any); ok {
@@ -229,28 +275,6 @@ func (o *renderObservation) observe(event map[string]any) {
 	}
 }
 
-func handlePausedRequest(ctx context.Context, client *cdpClient, event map[string]any) error {
-	params, _ := event["params"].(map[string]any)
-	requestID, _ := params["requestId"].(string)
-	request, _ := params["request"].(map[string]any)
-	method, _ := request["method"].(string)
-	rawURL, _ := request["url"].(string)
-	if requestID == "" {
-		return errRenderedImportUnavailable
-	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		_, _ = client.call(ctx, "Fetch.failRequest", map[string]any{"requestId": requestID, "errorReason": "BlockedByClient"})
-		return nil
-	}
-	if method != http.MethodGet && method != http.MethodHead {
-		_, _ = client.call(ctx, "Fetch.failRequest", map[string]any{"requestId": requestID, "errorReason": "BlockedByClient"})
-		return nil
-	}
-	_, err = client.call(ctx, "Fetch.continueRequest", map[string]any{"requestId": requestID})
-	return err
-}
-
 func waitForRenderedSettle(ctx context.Context, client *cdpClient, observation *renderObservation) error {
 	deadline := time.Now().Add(6 * time.Second)
 	for {
@@ -280,7 +304,7 @@ func waitForRenderedSettle(ctx context.Context, client *cdpClient, observation *
 			return errRenderedImportUnavailable
 		}
 		if method, _ := event["method"].(string); method == "Fetch.requestPaused" {
-			if err := handlePausedRequest(ctx, client, event); err != nil {
+			if err := client.handlePausedRequest(event); err != nil {
 				return errRenderedImportUnavailable
 			}
 			continue

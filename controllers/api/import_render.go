@@ -16,12 +16,15 @@ import (
 	"time"
 
 	"github.com/darkarmy-cyber/darkphish/dialer"
+	"golang.org/x/net/netutil"
 )
 
 var errRenderedImportUnavailable = errors.New("rendered site import unavailable")
 
 const maxRenderedTransferBytes int64 = 32 << 20
 const maxConcurrentRenderedImports = 2
+const maxRenderedProxyConnections = 16
+const maxRenderedResponseHeaderBytes int64 = 64 << 10
 
 var renderedImportSlots = make(chan struct{}, maxConcurrentRenderedImports)
 
@@ -136,6 +139,7 @@ func startRenderedImportProxy(ctx context.Context, budget *renderTransferBudget)
 	if err != nil {
 		return "", nil, err
 	}
+	listener = netutil.LimitListener(listener, maxRenderedProxyConnections)
 	server := &http.Server{
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       15 * time.Second,
@@ -274,9 +278,10 @@ func handleRenderedHTTP(ctx context.Context, budget *renderTransferBudget, w htt
 	request.Header.Del("Proxy-Connection")
 	request.Header.Del("Proxy-Authorization")
 	transport := &http.Transport{
-		DialContext:           publicRenderedDial,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 10 * time.Second,
+		DialContext:             publicRenderedDial,
+		TLSHandshakeTimeout:     10 * time.Second,
+		ResponseHeaderTimeout:   10 * time.Second,
+		MaxResponseHeaderBytes: maxRenderedResponseHeaderBytes,
 	}
 	defer transport.CloseIdleConnections()
 	response, err := transport.RoundTrip(request)
@@ -285,6 +290,17 @@ func handleRenderedHTTP(ctx context.Context, budget *renderTransferBudget, w htt
 		return
 	}
 	defer response.Body.Close()
+	headerBytes := 0
+	for key, values := range response.Header {
+		headerBytes += len(key) + 4
+		for _, value := range values {
+			headerBytes += len(value) + 2
+		}
+	}
+	if headerBytes > int(maxRenderedResponseHeaderBytes) || budget.reserve(headerBytes) != headerBytes {
+		http.Error(w, "transfer budget exhausted", http.StatusTooManyRequests)
+		return
+	}
 	for key, values := range response.Header {
 		for _, value := range values {
 			w.Header().Add(key, value)

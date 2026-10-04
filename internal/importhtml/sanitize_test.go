@@ -144,16 +144,15 @@ func TestSanitizeKeepsFragmentLinksLocalAndOmitsBase(t *testing.T) {
 	}
 }
 
-func TestSanitizeRejectsURLBearingStyleBlocks(t *testing.T) {
+func TestSanitizeDiscardsImportedStyleBlocks(t *testing.T) {
 	base, _ := url.Parse("https://example.test/path/")
-	got, err := Sanitize(`<html><head><style>.hero{background:url(../hero.png)} @import "https://evil.test/x.css";</style><style>.safe{color:red}</style></head><body></body></html>`, base)
+	got, err := Sanitize(`<html><head><style>.hero{background:u\\72l(http://evil.test/hero.png)} @import "https://evil.test/x.css";</style><style>.safe{color:red}</style></head><body></body></html>`, base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(got, "hero.png") || strings.Contains(got, "@import") || strings.Contains(got, "evil.test") {
-		t.Fatalf("URL-bearing stylesheet survived: %s", got)
-	}
-	if !strings.Contains(got, ".safe{color:red}") {
-		t.Fatalf("safe stylesheet was removed: %s", got)
+	for _, forbidden := range []string{"hero.png", "@import", "evil.test", ".safe{color:red}", "<style"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("imported stylesheet content survived (%s): %s", forbidden, got)
+		}
 	}
 }

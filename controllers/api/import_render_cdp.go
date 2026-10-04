@@ -224,9 +224,7 @@ func (c *cdpClient) nextEvent(ctx context.Context) (map[string]any, error) {
 		}
 		if messageID, ok := message["id"].(float64); ok {
 			responseID := int64(messageID)
-			if _, ignored := c.ignored[responseID]; ignored {
-				delete(c.ignored, responseID)
-			}
+			delete(c.ignored, responseID)
 		}
 	}
 }

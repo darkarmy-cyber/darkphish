@@ -90,7 +90,7 @@ func dialCDP(ctx context.Context, raw string) (*cdpClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	ws.MaxPayloadBytes = maxImportedPageBytes + (1 << 20)
+	ws.MaxPayloadBytes = maxImportedPageBytes*6 + (1 << 20)
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = ws.SetDeadline(deadline)
 	}
@@ -167,19 +167,37 @@ func (c *cdpClient) nextEvent(ctx context.Context) (map[string]any, error) {
 }
 
 type renderObservation struct {
-	frameID     string
-	loaderID    string
-	status      int
-	responseURL string
-	loadSeen    bool
-	loadAt      time.Time
-	networkIdle bool
+	frameID           string
+	loaderID          string
+	status            int
+	responseURL       string
+	loadSeen          bool
+	loadAt            time.Time
+	networkIdle       bool
+	originalHTTPS     bool
+	insecureDowngrade bool
 }
 
 func (o *renderObservation) observe(event map[string]any) {
 	method, _ := event["method"].(string)
 	params, _ := event["params"].(map[string]any)
 	switch method {
+	case "Network.requestWillBeSent":
+		eventType, _ := params["type"].(string)
+		frameID, _ := params["frameId"].(string)
+		if eventType == "Document" && frameID == o.frameID && o.originalHTTPS {
+			request, _ := params["request"].(map[string]any)
+			rawURL, _ := request["url"].(string)
+			if parsed, err := url.Parse(rawURL); err == nil && strings.EqualFold(parsed.Scheme, "http") {
+				o.insecureDowngrade = true
+			}
+			if redirect, ok := params["redirectResponse"].(map[string]any); ok {
+				redirectURL, _ := redirect["url"].(string)
+				if parsed, err := url.Parse(redirectURL); err == nil && strings.EqualFold(parsed.Scheme, "http") {
+					o.insecureDowngrade = true
+				}
+			}
+		}
 	case "Network.responseReceived":
 		eventType, _ := params["type"].(string)
 		frameID, _ := params["frameId"].(string)
@@ -236,7 +254,7 @@ func handlePausedRequest(ctx context.Context, client *cdpClient, event map[strin
 func waitForRenderedSettle(ctx context.Context, client *cdpClient, observation *renderObservation) error {
 	deadline := time.Now().Add(6 * time.Second)
 	for {
-		if observation.networkIdle {
+		if observation.loadSeen && observation.networkIdle && time.Since(observation.loadAt) >= 1500*time.Millisecond {
 			return nil
 		}
 		if observation.loadSeen && time.Since(observation.loadAt) >= 1500*time.Millisecond {
@@ -316,7 +334,8 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 	if frameID == "" {
 		return nil, nil, errRenderedImportUnavailable
 	}
-	observation := &renderObservation{frameID: frameID, loaderID: loaderID}
+	originalURLForObservation, _ := url.Parse(target)
+	observation := &renderObservation{frameID: frameID, loaderID: loaderID, originalHTTPS: originalURLForObservation != nil && strings.EqualFold(originalURLForObservation.Scheme, "https")}
 	for len(client.pending) > 0 {
 		event := client.pending[0]
 		client.pending = client.pending[1:]
@@ -325,7 +344,7 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 	if err := waitForRenderedSettle(ctx, client, observation); err != nil {
 		return nil, nil, errRenderedImportUnavailable
 	}
-	if observation.status < 200 || observation.status >= 400 {
+	if observation.insecureDowngrade || observation.status < 200 || observation.status >= 300 {
 		return nil, nil, errRenderedImportUnavailable
 	}
 

@@ -5,6 +5,8 @@
 */
 var pages = []
 var importPending = false
+var importRequest = null
+var importGeneration = 0
 
 
 // Save attempts to POST to /templates/
@@ -42,8 +44,18 @@ function save(idx) {
     }
 }
 
-function dismiss() {
+function cancelPendingImport() {
+    importGeneration += 1
+    if (importRequest && importRequest.readyState !== 4) {
+        importRequest.abort()
+    }
+    importRequest = null
     importPending = false
+    $("#importSiteSubmit").prop("disabled", false)
+}
+
+function dismiss() {
+    cancelPendingImport()
     $("#importSiteSubmit").prop("disabled", false)
     $("#modal\\.flashes").empty()
     $("#name").val("")
@@ -108,14 +120,19 @@ function importSite() {
         modalError("No URL Specified!")
     } else {
         importPending = true
+        importGeneration += 1
+        var generation = importGeneration
         $("#importSiteSubmit").prop("disabled", true)
-        api.clone_site({
+        importRequest = api.clone_site({
                 url: url,
                 include_resources: false
             })
             .success(function (data) {
+                if (!importPending || generation !== importGeneration) return
                 applyImportedCaptureDefaults(data.html)
                 CKEDITOR.instances["html_editor"].setData(data.html, function () {
+                    if (generation !== importGeneration) return
+                    importRequest = null
                     importPending = false
                     $("#importSiteSubmit").prop("disabled", false)
                 })
@@ -128,10 +145,14 @@ function importSite() {
                     $("#modal\\.flashes").empty().append(warning)
                 }
             })
-            .error(function (data) {
+            .error(function (data, status) {
+                if (generation !== importGeneration) return
+                importRequest = null
                 importPending = false
                 $("#importSiteSubmit").prop("disabled", false)
-                modalError(data.responseJSON && data.responseJSON.message || "Unable to import site")
+                if (status !== "abort") {
+                    modalError(data.responseJSON && data.responseJSON.message || "Unable to import site")
+                }
             })
     }
 }
@@ -263,6 +284,9 @@ $(document).ready(function () {
     });
     $('#modal').on('hidden.bs.modal', function (event) {
         dismiss()
+    });
+    $('#importSiteModal').on('hidden.bs.modal', function () {
+        if (importPending) cancelPendingImport()
     });
     $("#capture_credentials_checkbox").change(function () {
         $("#capture_passwords").toggle()

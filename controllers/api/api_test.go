@@ -82,8 +82,8 @@ func TestSiteImportSanitizesRemoteResources(t *testing.T) {
 	if strings.Contains(cs.HTML, "<base ") {
 		t.Fatal("import retained a remote base element")
 	}
-	if !strings.Contains(cs.HTML, `src="`+ts.URL+`/test.png"`) {
-		t.Fatal("import did not resolve the trusted resource URL absolutely")
+	if strings.Contains(cs.HTML, `src="`+ts.URL+`/test.png"`) {
+		t.Fatal("import retained an insecure HTTP resource URL")
 	}
 	if !strings.Contains(cs.HTML, "<form") || !strings.Contains(cs.HTML, `name="email"`) || !strings.Contains(cs.HTML, `action=""`) {
 		t.Fatal("import removed the landing-page form")

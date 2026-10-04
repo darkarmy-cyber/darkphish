@@ -18,10 +18,11 @@ import (
 )
 
 type cdpClient struct {
-	ws      *websocket.Conn
-	nextID  int64
-	pending []map[string]any
-	ignored map[int64]struct{}
+	ws           *websocket.Conn
+	nextID       int64
+	pending      []map[string]any
+	ignored      map[int64]struct{}
+	requireHTTPS bool
 }
 
 func readDevToolsPort(ctx context.Context, profileDir string) (int, error) {
@@ -133,21 +134,33 @@ func (c *cdpClient) sendNoWait(method string, params map[string]any) error {
 	return nil
 }
 
-func (c *cdpClient) handlePausedRequest(event map[string]any) error {
+func pausedRequestCommand(event map[string]any, requireHTTPS bool) (string, map[string]any, error) {
 	params, _ := event["params"].(map[string]any)
 	requestID, _ := params["requestId"].(string)
 	request, _ := params["request"].(map[string]any)
 	method, _ := request["method"].(string)
 	rawURL, _ := request["url"].(string)
 	if requestID == "" {
-		return errRenderedImportUnavailable
+		return "", nil, errRenderedImportUnavailable
 	}
 	parsed, err := url.Parse(rawURL)
-	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
-		(method != http.MethodGet && method != http.MethodHead) {
-		return c.sendNoWait("Fetch.failRequest", map[string]any{"requestId": requestID, "errorReason": "BlockedByClient"})
+	allowedScheme := parsed.Scheme == "http" || parsed.Scheme == "https"
+	if requireHTTPS {
+		allowedScheme = parsed.Scheme == "https"
 	}
-	return c.sendNoWait("Fetch.continueRequest", map[string]any{"requestId": requestID})
+	if err != nil || parsed.Hostname() == "" || !allowedScheme ||
+		(method != http.MethodGet && method != http.MethodHead) {
+		return "Fetch.failRequest", map[string]any{"requestId": requestID, "errorReason": "BlockedByClient"}, nil
+	}
+	return "Fetch.continueRequest", map[string]any{"requestId": requestID}, nil
+}
+
+func (c *cdpClient) handlePausedRequest(event map[string]any) error {
+	method, params, err := pausedRequestCommand(event, c.requireHTTPS)
+	if err != nil {
+		return err
+	}
+	return c.sendNoWait(method, params)
 }
 
 func (c *cdpClient) call(ctx context.Context, method string, params map[string]any) (map[string]any, error) {
@@ -208,6 +221,12 @@ func (c *cdpClient) nextEvent(ctx context.Context) (map[string]any, error) {
 		}
 		if _, ok := message["method"].(string); ok {
 			return message, nil
+		}
+		if messageID, ok := message["id"].(float64); ok {
+			responseID := int64(messageID)
+			if _, ignored := c.ignored[responseID]; ignored {
+				delete(c.ignored, responseID)
+			}
 		}
 	}
 }
@@ -330,6 +349,8 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 	if err != nil {
 		return nil, nil, errRenderedImportUnavailable
 	}
+	originalURLForObservation, _ := url.Parse(target)
+	client.requireHTTPS = originalURLForObservation != nil && strings.EqualFold(originalURLForObservation.Scheme, "https")
 	defer client.close()
 
 	for _, command := range []struct {
@@ -358,8 +379,7 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 	if frameID == "" {
 		return nil, nil, errRenderedImportUnavailable
 	}
-	originalURLForObservation, _ := url.Parse(target)
-	observation := &renderObservation{frameID: frameID, loaderID: loaderID, originalHTTPS: originalURLForObservation != nil && strings.EqualFold(originalURLForObservation.Scheme, "https")}
+	observation := &renderObservation{frameID: frameID, loaderID: loaderID, originalHTTPS: client.requireHTTPS}
 	for len(client.pending) > 0 {
 		event := client.pending[0]
 		client.pending = client.pending[1:]
@@ -373,27 +393,22 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 	}
 
 	evaluated, err := client.call(ctx, "Runtime.evaluate", map[string]any{
-		"expression":    "(()=>{const html=document.documentElement?document.documentElement.outerHTML:\"\";if(html.length>8388608){return JSON.stringify({tooLarge:true,url:location.href,ready:document.readyState})}return JSON.stringify({html:html,url:location.href,ready:document.readyState})})()",
+		"expression":    "(()=>{const html=document.documentElement?document.documentElement.outerHTML:\"\";const tooLarge=html.length>8388608;return {html:tooLarge?\"\":html,url:location.href,ready:document.readyState,tooLarge:tooLarge}})()",
 		"returnByValue": true,
 	})
 	if err != nil {
 		return nil, nil, errRenderedImportUnavailable
 	}
 	remote, _ := evaluated["result"].(map[string]any)
-	value, _ := remote["value"].(string)
-	if value == "" {
+	value, _ := remote["value"].(map[string]any)
+	htmlValue, _ := value["html"].(string)
+	urlValue, _ := value["url"].(string)
+	readyValue, _ := value["ready"].(string)
+	tooLarge, _ := value["tooLarge"].(bool)
+	if value == nil || tooLarge || htmlValue == "" || urlValue == "" || readyValue == "loading" {
 		return nil, nil, errRenderedImportUnavailable
 	}
-	var snapshot struct {
-		HTML     string `json:"html"`
-		URL      string `json:"url"`
-		Ready    string `json:"ready"`
-		TooLarge bool   `json:"tooLarge"`
-	}
-	if err := json.Unmarshal([]byte(value), &snapshot); err != nil || snapshot.TooLarge || snapshot.HTML == "" || snapshot.URL == "" || snapshot.Ready == "loading" {
-		return nil, nil, errRenderedImportUnavailable
-	}
-	finalURL, err := url.Parse(snapshot.URL)
+	finalURL, err := url.Parse(urlValue)
 	originalURL, originalErr := url.Parse(target)
 	if err != nil || originalErr != nil || finalURL.User != nil || (finalURL.Scheme != "http" && finalURL.Scheme != "https") || finalURL.Hostname() == "" {
 		return nil, nil, errRenderedImportUnavailable
@@ -401,5 +416,5 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 	if strings.EqualFold(originalURL.Scheme, "https") && !strings.EqualFold(finalURL.Scheme, "https") {
 		return nil, nil, errRenderedImportUnavailable
 	}
-	return []byte(snapshot.HTML), finalURL, nil
+	return []byte(htmlValue), finalURL, nil
 }

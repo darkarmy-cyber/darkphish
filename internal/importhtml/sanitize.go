@@ -207,6 +207,12 @@ func copyAttributes(out, source *html.Node, base *url.URL) {
 func clean(n *html.Node, base *url.URL) *html.Node {
 	switch n.Type {
 	case html.TextNode:
+		if n.Parent != nil && n.Parent.Type == html.ElementNode && n.Parent.Data == "style" {
+			lower := strings.ToLower(n.Data)
+			if strings.Contains(lower, "url(") || strings.Contains(lower, "@import") {
+				return &html.Node{Type: html.TextNode, Data: ""}
+			}
+		}
 		return &html.Node{Type: html.TextNode, Data: n.Data}
 	case html.ElementNode:
 		if n.Namespace != "" || discardedTags[n.Data] {

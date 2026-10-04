@@ -90,6 +90,7 @@ func dialCDP(ctx context.Context, raw string) (*cdpClient, error) {
 	if err != nil {
 		return nil, err
 	}
+	ws.MaxPayloadBytes = maxImportedPageBytes + (1 << 20)
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = ws.SetDeadline(deadline)
 	}

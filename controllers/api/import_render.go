@@ -278,9 +278,9 @@ func handleRenderedHTTP(ctx context.Context, budget *renderTransferBudget, w htt
 	request.Header.Del("Proxy-Connection")
 	request.Header.Del("Proxy-Authorization")
 	transport := &http.Transport{
-		DialContext:             publicRenderedDial,
-		TLSHandshakeTimeout:     10 * time.Second,
-		ResponseHeaderTimeout:   10 * time.Second,
+		DialContext:            publicRenderedDial,
+		TLSHandshakeTimeout:    10 * time.Second,
+		ResponseHeaderTimeout:  10 * time.Second,
 		MaxResponseHeaderBytes: maxRenderedResponseHeaderBytes,
 	}
 	defer transport.CloseIdleConnections()

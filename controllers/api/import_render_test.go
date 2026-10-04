@@ -66,11 +66,11 @@ func TestRenderedImportWarningDoesNotExposeDiagnostics(t *testing.T) {
 
 func TestRenderTransferBudgetFailsClosed(t *testing.T) {
 	budget := newRenderTransferBudget(4)
-	if err := budget.consume(4); err != nil {
-		t.Fatal(err)
+	if got := budget.reserve(4); got != 4 {
+		t.Fatalf("reserved %d bytes, want 4", got)
 	}
-	if err := budget.consume(1); err == nil {
-		t.Fatal("render transfer budget accepted bytes past the aggregate limit")
+	if got := budget.reserve(1); got != 0 {
+		t.Fatalf("reserved %d bytes past the aggregate limit", got)
 	}
 }
 
@@ -122,17 +122,18 @@ func TestRenderObservationTracksMainDocumentAndIdle(t *testing.T) {
 
 func TestRenderTransferBudgetCapsReadsBeforeNetworkConsumption(t *testing.T) {
 	budget := newRenderTransferBudget(3)
-	if got := budget.allowance(32 * 1024); got != 3 {
-		t.Fatalf("allowance = %d, want 3", got)
+	if got := budget.reserve(32 * 1024); got != 3 {
+		t.Fatalf("reservation = %d, want 3", got)
 	}
-	if err := budget.consume(3); err != nil {
-		t.Fatal(err)
-	}
-	if got := budget.allowance(32 * 1024); got != 0 {
-		t.Fatalf("exhausted allowance = %d, want 0", got)
+	if got := budget.reserve(32 * 1024); got != 0 {
+		t.Fatalf("exhausted reservation = %d, want 0", got)
 	}
 	if !budget.exhausted() {
 		t.Fatal("budget should report exhaustion")
+	}
+	budget.refund(2)
+	if got := budget.reserve(32 * 1024); got != 2 {
+		t.Fatalf("refunded reservation = %d, want 2", got)
 	}
 }
 

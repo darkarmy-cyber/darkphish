@@ -293,7 +293,7 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 	}
 
 	evaluated, err := client.call(ctx, "Runtime.evaluate", map[string]any{
-		"expression": "JSON.stringify({html:document.documentElement?document.documentElement.outerHTML:\"\",url:location.href,ready:document.readyState})",
+		"expression":    "JSON.stringify({html:document.documentElement?document.documentElement.outerHTML:\"\",url:location.href,ready:document.readyState})",
 		"returnByValue": true,
 	})
 	if err != nil {

@@ -85,29 +85,27 @@ func newRenderTransferBudget(limit int64) *renderTransferBudget {
 	return &renderTransferBudget{remaining: limit}
 }
 
-func (b *renderTransferBudget) allowance(max int) int {
+func (b *renderTransferBudget) reserve(max int) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.remaining <= 0 || max <= 0 {
 		return 0
 	}
-	if int64(max) > b.remaining {
-		return int(b.remaining)
+	allowed := int64(max)
+	if allowed > b.remaining {
+		allowed = b.remaining
 	}
-	return max
+	b.remaining -= allowed
+	return int(allowed)
 }
 
-func (b *renderTransferBudget) consume(n int) error {
+func (b *renderTransferBudget) refund(n int) {
 	if n <= 0 {
-		return nil
+		return
 	}
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	if int64(n) > b.remaining {
-		return errRenderedImportUnavailable
-	}
-	b.remaining -= int64(n)
-	return nil
+	b.remaining += int64(n)
+	b.mu.Unlock()
 }
 
 func (b *renderTransferBudget) exhausted() bool {
@@ -122,15 +120,13 @@ type budgetReader struct {
 }
 
 func (r *budgetReader) Read(p []byte) (int, error) {
-	allowed := r.budget.allowance(len(p))
+	allowed := r.budget.reserve(len(p))
 	if allowed <= 0 {
 		return 0, errRenderedImportUnavailable
 	}
 	n, err := r.reader.Read(p[:allowed])
-	if n > 0 {
-		if budgetErr := r.budget.consume(n); budgetErr != nil {
-			return 0, budgetErr
-		}
+	if n < allowed {
+		r.budget.refund(allowed - n)
 	}
 	return n, err
 }

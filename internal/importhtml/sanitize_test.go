@@ -143,3 +143,17 @@ func TestSanitizeKeepsFragmentLinksLocalAndOmitsBase(t *testing.T) {
 		t.Fatalf("attacker-controlled template action survived sanitization: %s", got)
 	}
 }
+
+func TestSanitizeRejectsURLBearingStyleBlocks(t *testing.T) {
+	base, _ := url.Parse("https://example.test/path/")
+	got, err := Sanitize(`<html><head><style>.hero{background:url(../hero.png)} @import "https://evil.test/x.css";</style><style>.safe{color:red}</style></head><body></body></html>`, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "hero.png") || strings.Contains(got, "@import") || strings.Contains(got, "evil.test") {
+		t.Fatalf("URL-bearing stylesheet survived: %s", got)
+	}
+	if !strings.Contains(got, ".safe{color:red}") {
+		t.Fatalf("safe stylesheet was removed: %s", got)
+	}
+}

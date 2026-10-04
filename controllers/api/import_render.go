@@ -21,6 +21,25 @@ import (
 var errRenderedImportUnavailable = errors.New("rendered site import unavailable")
 
 const maxRenderedTransferBytes int64 = 32 << 20
+const maxConcurrentRenderedImports = 2
+
+var renderedImportSlots = make(chan struct{}, maxConcurrentRenderedImports)
+
+func acquireRenderedImportSlot() bool {
+	select {
+	case renderedImportSlots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func releaseRenderedImportSlot() {
+	select {
+	case <-renderedImportSlots:
+	default:
+	}
+}
 
 func chromiumExecutable() string {
 	if configured := strings.TrimSpace(os.Getenv("DARKPHISH_CHROMIUM_PATH")); configured != "" {
@@ -66,6 +85,18 @@ func newRenderTransferBudget(limit int64) *renderTransferBudget {
 	return &renderTransferBudget{remaining: limit}
 }
 
+func (b *renderTransferBudget) allowance(max int) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.remaining <= 0 || max <= 0 {
+		return 0
+	}
+	if int64(max) > b.remaining {
+		return int(b.remaining)
+	}
+	return max
+}
+
 func (b *renderTransferBudget) consume(n int) error {
 	if n <= 0 {
 		return nil
@@ -73,11 +104,16 @@ func (b *renderTransferBudget) consume(n int) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if int64(n) > b.remaining {
-		b.remaining = 0
 		return errRenderedImportUnavailable
 	}
 	b.remaining -= int64(n)
 	return nil
+}
+
+func (b *renderTransferBudget) exhausted() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.remaining <= 0
 }
 
 type budgetReader struct {
@@ -86,7 +122,11 @@ type budgetReader struct {
 }
 
 func (r *budgetReader) Read(p []byte) (int, error) {
-	n, err := r.reader.Read(p)
+	allowed := r.budget.allowance(len(p))
+	if allowed <= 0 {
+		return 0, errRenderedImportUnavailable
+	}
+	n, err := r.reader.Read(p[:allowed])
 	if n > 0 {
 		if budgetErr := r.budget.consume(n); budgetErr != nil {
 			return 0, budgetErr
@@ -182,6 +222,10 @@ func publicRenderedDial(ctx context.Context, network, address string) (net.Conn,
 }
 
 func handleRenderedConnect(ctx context.Context, budget *renderTransferBudget, w http.ResponseWriter, r *http.Request) {
+	if budget.exhausted() {
+		http.Error(w, "transfer budget exhausted", http.StatusTooManyRequests)
+		return
+	}
 	target, err := renderedTarget("https://" + r.Host)
 	if err != nil {
 		http.Error(w, "destination denied", http.StatusForbidden)
@@ -217,6 +261,10 @@ func handleRenderedConnect(ctx context.Context, budget *renderTransferBudget, w 
 }
 
 func handleRenderedHTTP(ctx context.Context, budget *renderTransferBudget, w http.ResponseWriter, r *http.Request) {
+	if budget.exhausted() {
+		http.Error(w, "transfer budget exhausted", http.StatusTooManyRequests)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method denied", http.StatusMethodNotAllowed)
 		return
@@ -251,6 +299,10 @@ func handleRenderedHTTP(ctx context.Context, budget *renderTransferBudget, w htt
 }
 
 func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error) {
+	if !acquireRenderedImportSlot() {
+		return nil, nil, errRenderedImportUnavailable
+	}
+	defer releaseRenderedImportSlot()
 	chrome := chromiumExecutable()
 	if chrome == "" {
 		return nil, nil, errRenderedImportUnavailable
@@ -282,6 +334,7 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--mute-audio",
+		"--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
 		"--user-data-dir=" + profileDir,
 		"--proxy-server=" + proxyURL,
 		"--proxy-bypass-list=<-loopback>",

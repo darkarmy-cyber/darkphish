@@ -183,8 +183,15 @@ func (o *renderObservation) observe(event map[string]any) {
 		eventType, _ := params["type"].(string)
 		frameID, _ := params["frameId"].(string)
 		loaderID, _ := params["loaderId"].(string)
-		if eventType != "Document" || frameID != o.frameID || (o.loaderID != "" && loaderID != o.loaderID) {
+		if eventType != "Document" || frameID != o.frameID {
 			return
+		}
+		if loaderID != "" && loaderID != o.loaderID {
+			o.loaderID = loaderID
+			o.status = 0
+			o.responseURL = ""
+			o.loadSeen = false
+			o.networkIdle = false
 		}
 		response, _ := params["response"].(map[string]any)
 		if status, ok := response["status"].(float64); ok {
@@ -201,6 +208,28 @@ func (o *renderObservation) observe(event map[string]any) {
 			o.networkIdle = true
 		}
 	}
+}
+
+func handlePausedRequest(ctx context.Context, client *cdpClient, event map[string]any) error {
+	params, _ := event["params"].(map[string]any)
+	requestID, _ := params["requestId"].(string)
+	request, _ := params["request"].(map[string]any)
+	method, _ := request["method"].(string)
+	rawURL, _ := request["url"].(string)
+	if requestID == "" {
+		return errRenderedImportUnavailable
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		_, _ = client.call(ctx, "Fetch.failRequest", map[string]any{"requestId": requestID, "errorReason": "BlockedByClient"})
+		return nil
+	}
+	if method != http.MethodGet && method != http.MethodHead {
+		_, _ = client.call(ctx, "Fetch.failRequest", map[string]any{"requestId": requestID, "errorReason": "BlockedByClient"})
+		return nil
+	}
+	_, err = client.call(ctx, "Fetch.continueRequest", map[string]any{"requestId": requestID})
+	return err
 }
 
 func waitForRenderedSettle(ctx context.Context, client *cdpClient, observation *renderObservation) error {
@@ -228,6 +257,12 @@ func waitForRenderedSettle(ctx context.Context, client *cdpClient, observation *
 			}
 			if ctx.Err() != nil {
 				return ctx.Err()
+			}
+			return errRenderedImportUnavailable
+		}
+		if method, _ := event["method"].(string); method == "Fetch.requestPaused" {
+			if err := handlePausedRequest(ctx, client, event); err != nil {
+				return errRenderedImportUnavailable
 			}
 			continue
 		}
@@ -260,6 +295,7 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 	}{
 		{"Page.enable", nil},
 		{"Network.enable", nil},
+		{"Fetch.enable", map[string]any{"patterns": []map[string]any{{"urlPattern": "*", "requestStage": "Request"}}}},
 		{"Page.setLifecycleEventsEnabled", map[string]any{"enabled": true}},
 	} {
 		if _, err := client.call(ctx, command.method, command.params); err != nil {
@@ -293,7 +329,7 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 	}
 
 	evaluated, err := client.call(ctx, "Runtime.evaluate", map[string]any{
-		"expression":    "JSON.stringify({html:document.documentElement?document.documentElement.outerHTML:\"\",url:location.href,ready:document.readyState})",
+		"expression":    "(()=>{const html=document.documentElement?document.documentElement.outerHTML:\"\";if(html.length>8388608){return JSON.stringify({tooLarge:true,url:location.href,ready:document.readyState})}return JSON.stringify({html:html,url:location.href,ready:document.readyState})})()",
 		"returnByValue": true,
 	})
 	if err != nil {
@@ -305,15 +341,20 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 		return nil, nil, errRenderedImportUnavailable
 	}
 	var snapshot struct {
-		HTML  string `json:"html"`
-		URL   string `json:"url"`
-		Ready string `json:"ready"`
+		HTML     string `json:"html"`
+		URL      string `json:"url"`
+		Ready    string `json:"ready"`
+		TooLarge bool   `json:"tooLarge"`
 	}
-	if err := json.Unmarshal([]byte(value), &snapshot); err != nil || snapshot.HTML == "" || snapshot.URL == "" || snapshot.Ready == "loading" {
+	if err := json.Unmarshal([]byte(value), &snapshot); err != nil || snapshot.TooLarge || snapshot.HTML == "" || snapshot.URL == "" || snapshot.Ready == "loading" {
 		return nil, nil, errRenderedImportUnavailable
 	}
 	finalURL, err := url.Parse(snapshot.URL)
-	if err != nil || finalURL.User != nil || (finalURL.Scheme != "http" && finalURL.Scheme != "https") || finalURL.Hostname() == "" {
+	originalURL, originalErr := url.Parse(target)
+	if err != nil || originalErr != nil || finalURL.User != nil || (finalURL.Scheme != "http" && finalURL.Scheme != "https") || finalURL.Hostname() == "" {
+		return nil, nil, errRenderedImportUnavailable
+	}
+	if strings.EqualFold(originalURL.Scheme, "https") && !strings.EqualFold(finalURL.Scheme, "https") {
 		return nil, nil, errRenderedImportUnavailable
 	}
 	return []byte(snapshot.HTML), finalURL, nil

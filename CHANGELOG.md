@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.26.0 - 2026-10-04
+
+### Changed
+
+- Replace the static dark/light icon with an accessible animated day/night switch while preserving the existing saved-theme preference and accessibility behavior.
+- Update the frontend build toolchain to webpack 5.111.1 and keep SBOM compatibility checks aligned with the resolved transitive dependency graph.
+
+### Fixed
+
+- Restore the audited v0.25.2 release recovery path after its generated release PR merged without the required exact-head maintainer attestation.
+
 ## 0.25.2 - 2026-10-03
 
 ### Fixed

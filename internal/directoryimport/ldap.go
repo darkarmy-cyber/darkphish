@@ -5,25 +5,33 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"net"
 	"net/mail"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/darkarmy-cyber/darkphish/dialer"
 	"github.com/go-ldap/ldap/v3"
 )
 
 const (
-	maxDirectoryMembers = 5000
-	maxDirectoryDepth   = 20
-	defaultTimeout      = 15 * time.Second
+	maxDirectoryMembers   = 5000
+	maxDirectoryDepth     = 20
+	maxEmailDomains       = 100
+	maxDomainBytes        = 8192
+	maxNameBytes          = 256
+	maxEmailBytes         = 320
+	maxPositionBytes      = 512
+	maxPreviewBytes       = 2 << 20
+	defaultTimeout        = 5 * time.Second
 )
 
 var (
-	ErrInvalidConfig  = errors.New("invalid LDAP import configuration")
-	ErrTooManyEntries = errors.New("LDAP import exceeds safety limit")
+	ErrInvalidConfig   = errors.New("invalid LDAP import configuration")
+	ErrTooManyEntries  = errors.New("LDAP import exceeds safety limit")
+	ErrUnsupportedLDAP = errors.New("unsupported LDAP group schema")
 )
 
 type AttributeMapping struct {
@@ -41,6 +49,7 @@ type Config struct {
 	ExclusionGroupDN string           `json:"exclusion_group_dn,omitempty"`
 	EmailDomains     []string         `json:"email_domains,omitempty"`
 	Attributes       AttributeMapping `json:"attributes,omitempty"`
+	domainSet        map[string]struct{}
 }
 
 type Recipient struct {
@@ -96,15 +105,26 @@ func PreviewLDAP(ctx context.Context, cfg Config) (Preview, error) {
 	return previewWithReader(ctx, reader, cfg)
 }
 
+func NormalizeAuditIdentity(cfg Config) (string, string, error) {
+	cfg, err := normalizeConfig(cfg)
+	if err != nil {
+		return "", "", err
+	}
+	u, _ := url.Parse(cfg.URL)
+	return strings.ToLower(u.Hostname()), cfg.GroupDN, nil
+}
+
 func normalizeConfig(cfg Config) (Config, error) {
-	rawURL := strings.TrimSpace(cfg.URL)
-	u, err := url.Parse(rawURL)
+	u, err := url.Parse(strings.TrimSpace(cfg.URL))
 	if err != nil || !strings.EqualFold(u.Scheme, "ldaps") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return Config{}, fmt.Errorf("%w: URL must be an ldaps:// endpoint without credentials or query parameters", ErrInvalidConfig)
 	}
 	if u.Path != "" && u.Path != "/" {
 		return Config{}, fmt.Errorf("%w: LDAP URL path is not supported", ErrInvalidConfig)
 	}
+	u.Scheme = "ldaps"
+	u.Host = strings.ToLower(u.Host)
+	cfg.URL = u.String()
 	if strings.TrimSpace(cfg.BindDN) == "" || strings.TrimSpace(cfg.BindPassword) == "" || strings.TrimSpace(cfg.GroupDN) == "" {
 		return Config{}, fmt.Errorf("%w: bind DN, bind password and group DN are required", ErrInvalidConfig)
 	}
@@ -119,7 +139,6 @@ func normalizeConfig(cfg Config) (Config, error) {
 			return Config{}, fmt.Errorf("%w: invalid exclusion group DN", ErrInvalidConfig)
 		}
 	}
-	cfg.URL = rawURL
 	cfg.BindDN = strings.TrimSpace(cfg.BindDN)
 	cfg.GroupDN = strings.TrimSpace(cfg.GroupDN)
 	cfg.ExclusionGroupDN = strings.TrimSpace(cfg.ExclusionGroupDN)
@@ -129,12 +148,28 @@ func normalizeConfig(cfg Config) (Config, error) {
 			return Config{}, fmt.Errorf("%w: invalid LDAP attribute name", ErrInvalidConfig)
 		}
 	}
-	for i, domain := range cfg.EmailDomains {
-		cfg.EmailDomains[i] = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(domain), "@"))
-		if cfg.EmailDomains[i] == "" || strings.ContainsAny(cfg.EmailDomains[i], " /\\") {
+	if len(cfg.EmailDomains) > maxEmailDomains {
+		return Config{}, fmt.Errorf("%w: too many email domain filters", ErrInvalidConfig)
+	}
+	cfg.domainSet = make(map[string]struct{}, len(cfg.EmailDomains))
+	normalizedDomains := make([]string, 0, len(cfg.EmailDomains))
+	totalDomainBytes := 0
+	for _, domain := range cfg.EmailDomains {
+		domain = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(domain), "@"))
+		if domain == "" || strings.ContainsAny(domain, " /\\") {
 			return Config{}, fmt.Errorf("%w: invalid email domain filter", ErrInvalidConfig)
 		}
+		totalDomainBytes += len(domain)
+		if totalDomainBytes > maxDomainBytes {
+			return Config{}, fmt.Errorf("%w: email domain filters exceed size limit", ErrInvalidConfig)
+		}
+		if _, exists := cfg.domainSet[domain]; exists {
+			continue
+		}
+		cfg.domainSet[domain] = struct{}{}
+		normalizedDomains = append(normalizedDomains, domain)
 	}
+	cfg.EmailDomains = normalizedDomains
 	return cfg, nil
 }
 
@@ -161,12 +196,11 @@ func normalizedMapping(m AttributeMapping) AttributeMapping {
 
 func openLDAP(cfg Config) (entryReader, error) {
 	u, _ := url.Parse(cfg.URL)
-	serverName := u.Hostname()
 	conn, err := ldap.DialURL(cfg.URL,
-		ldap.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}),
+		ldap.DialWithDialer(dialer.Dialer()),
 		ldap.DialWithTLSConfig(&tls.Config{
 			MinVersion: tls.VersionTLS12,
-			ServerName: serverName,
+			ServerName: u.Hostname(),
 		}),
 	)
 	if err != nil {
@@ -185,11 +219,7 @@ func (r *ldapReader) Close() error {
 	return nil
 }
 
-func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []string) (directoryEntry, error) {
-	if err := ctx.Err(); err != nil {
-		return directoryEntry{}, err
-	}
-	attrs := append([]string{"objectClass", "member"}, attributes...)
+func (r *ldapReader) searchBase(dn string, attributes []string) (*ldap.Entry, error) {
 	result, err := r.conn.Search(ldap.NewSearchRequest(
 		dn,
 		ldap.ScopeBaseObject,
@@ -198,26 +228,88 @@ func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []stri
 		int(defaultTimeout/time.Second),
 		false,
 		"(objectClass=*)",
-		attrs,
+		attributes,
 		nil,
 	))
 	if err != nil {
-		return directoryEntry{}, err
+		return nil, err
 	}
 	if len(result.Entries) != 1 {
-		return directoryEntry{}, fmt.Errorf("directory entry not found: %s", dn)
+		return nil, fmt.Errorf("directory entry not found")
 	}
-	entry := result.Entries[0]
+	return result.Entries[0], nil
+}
+
+func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []string) (directoryEntry, error) {
+	if err := ctx.Err(); err != nil {
+		return directoryEntry{}, err
+	}
+	attrs := append([]string{"objectClass", "member", "uniqueMember"}, attributes...)
+	entry, err := r.searchBase(dn, attrs)
+	if err != nil {
+		return directoryEntry{}, err
+	}
+	classes := entry.GetEqualFoldAttributeValues("objectClass")
+	if hasClass(classes, "posixGroup") {
+		return directoryEntry{}, ErrUnsupportedLDAP
+	}
+	members := append([]string(nil), entry.GetEqualFoldAttributeValues("member")...)
+	members = append(members, entry.GetEqualFoldAttributeValues("uniqueMember")...)
+	rangeStart, rangeDone := rangedMemberState(entry)
+	for !rangeDone {
+		if err := ctx.Err(); err != nil {
+			return directoryEntry{}, err
+		}
+		rangeAttr := fmt.Sprintf("member;range=%d-*", rangeStart)
+		rangeEntry, err := r.searchBase(dn, []string{rangeAttr})
+		if err != nil {
+			return directoryEntry{}, err
+		}
+		values, next, done := rangedMemberValues(rangeEntry)
+		members = append(members, values...)
+		rangeStart, rangeDone = next, done
+		if len(members) > maxDirectoryMembers {
+			return directoryEntry{}, ErrTooManyEntries
+		}
+	}
 	values := make(map[string]string, len(attributes))
 	for _, attr := range attributes {
-		values[attr] = strings.TrimSpace(entry.GetAttributeValue(attr))
+		values[attr] = strings.TrimSpace(entry.GetEqualFoldAttributeValue(attr))
 	}
 	return directoryEntry{
 		DN:          entry.DN,
-		ObjectClass: entry.GetAttributeValues("objectClass"),
-		Members:     entry.GetAttributeValues("member"),
+		ObjectClass: classes,
+		Members:     members,
 		Values:      values,
 	}, nil
+}
+
+func rangedMemberState(entry *ldap.Entry) (int, bool) {
+	_, next, done := rangedMemberValues(entry)
+	return next, done
+}
+
+func rangedMemberValues(entry *ldap.Entry) ([]string, int, bool) {
+	for _, attr := range entry.Attributes {
+		name := strings.ToLower(attr.Name)
+		if !strings.HasPrefix(name, "member;range=") {
+			continue
+		}
+		spec := strings.TrimPrefix(name, "member;range=")
+		parts := strings.SplitN(spec, "-", 2)
+		if len(parts) != 2 {
+			return attr.Values, 0, true
+		}
+		if parts[1] == "*" {
+			return attr.Values, 0, true
+		}
+		end, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return attr.Values, 0, true
+		}
+		return attr.Values, end + 1, false
+	}
+	return nil, 0, true
 }
 
 func previewWithReader(ctx context.Context, reader entryReader, cfg Config) (Preview, error) {
@@ -227,37 +319,42 @@ func previewWithReader(ctx context.Context, reader entryReader, cfg Config) (Pre
 		cfg.Attributes.Email,
 		cfg.Attributes.Position,
 	})
-	excluded := map[string]struct{}{}
+	excluded := map[string]directoryEntry{}
 	if cfg.ExclusionGroupDN != "" {
 		var err error
-		excluded, err = collectLeafDNs(ctx, reader, cfg.ExclusionGroupDN, attributes)
+		excluded, err = collectLeafEntries(ctx, reader, cfg.ExclusionGroupDN, attributes)
 		if err != nil {
 			return Preview{}, fmt.Errorf("resolve exclusion group: %w", err)
 		}
 	}
-	leaves, err := collectLeafDNs(ctx, reader, cfg.GroupDN, attributes)
+	leaves, err := collectLeafEntries(ctx, reader, cfg.GroupDN, attributes)
 	if err != nil {
 		return Preview{}, fmt.Errorf("resolve import group: %w", err)
 	}
 
 	result := Preview{}
 	byEmail := make(map[string]Recipient)
-	dns := make([]string, 0, len(leaves))
-	for dn := range leaves {
-		dns = append(dns, dn)
+	keys := make([]string, 0, len(leaves))
+	for key := range leaves {
+		keys = append(keys, key)
 	}
-	sort.Strings(dns)
-	for _, dn := range dns {
-		if _, skip := excluded[dn]; skip {
+	sort.Strings(keys)
+	totalBytes := 0
+	for _, key := range keys {
+		if _, skip := excluded[key]; skip {
 			result.Excluded++
 			continue
 		}
-		entry, err := reader.ReadEntry(ctx, dn, attributes)
-		if err != nil {
-			return Preview{}, fmt.Errorf("read directory member %s: %w", dn, err)
-		}
+		entry := leaves[key]
 		email := strings.ToLower(strings.TrimSpace(entry.Values[cfg.Attributes.Email]))
-		if !allowedEmail(email, cfg.EmailDomains) {
+		first := strings.TrimSpace(entry.Values[cfg.Attributes.FirstName])
+		last := strings.TrimSpace(entry.Values[cfg.Attributes.LastName])
+		position := strings.TrimSpace(entry.Values[cfg.Attributes.Position])
+		if len(email) > maxEmailBytes || len(first) > maxNameBytes || len(last) > maxNameBytes || len(position) > maxPositionBytes {
+			result.Skipped++
+			continue
+		}
+		if !allowedEmail(email, cfg.domainSet) {
 			result.Skipped++
 			continue
 		}
@@ -266,15 +363,14 @@ func previewWithReader(ctx context.Context, reader entryReader, cfg Config) (Pre
 			result.Skipped++
 			continue
 		}
-		recipient := Recipient{
-			Email:     email,
-			FirstName: strings.TrimSpace(entry.Values[cfg.Attributes.FirstName]),
-			LastName:  strings.TrimSpace(entry.Values[cfg.Attributes.LastName]),
-			Position:  strings.TrimSpace(entry.Values[cfg.Attributes.Position]),
-		}
 		if _, exists := byEmail[email]; exists {
 			result.Skipped++
 			continue
+		}
+		recipient := Recipient{Email: email, FirstName: first, LastName: last, Position: position}
+		totalBytes += len(email) + len(first) + len(last) + len(position)
+		if totalBytes > maxPreviewBytes {
+			return Preview{}, ErrTooManyEntries
 		}
 		byEmail[email] = recipient
 	}
@@ -286,25 +382,28 @@ func previewWithReader(ctx context.Context, reader entryReader, cfg Config) (Pre
 	})
 	result.Matched = len(result.Recipients)
 	if result.Skipped > 0 {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("%d directory entries were skipped because they were duplicates, invalid, missing email, or outside the allowed domains", result.Skipped))
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%d directory entries were skipped because they were duplicates, invalid, oversized, missing email, or outside the allowed domains", result.Skipped))
 	}
 	return result, nil
 }
 
-func collectLeafDNs(ctx context.Context, reader entryReader, rootDN string, attributes []string) (map[string]struct{}, error) {
-	leaves := make(map[string]struct{})
+func collectLeafEntries(ctx context.Context, reader entryReader, rootDN string, attributes []string) (map[string]directoryEntry, error) {
+	leaves := make(map[string]directoryEntry)
 	visited := make(map[string]struct{})
 	var walk func(string, int) error
 	walk = func(dn string, depth int) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if depth > maxDirectoryDepth {
-			return fmt.Errorf("%w: nested group depth exceeds %d", ErrTooManyEntries, maxDirectoryDepth)
+		key, err := canonicalDNKey(dn)
+		if err != nil {
+			return err
 		}
-		key := strings.ToLower(strings.TrimSpace(dn))
 		if _, ok := visited[key]; ok {
 			return nil
+		}
+		if depth > maxDirectoryDepth {
+			return fmt.Errorf("%w: nested group depth exceeds %d", ErrTooManyEntries, maxDirectoryDepth)
 		}
 		visited[key] = struct{}{}
 		if len(visited) > maxDirectoryMembers {
@@ -315,7 +414,10 @@ func collectLeafDNs(ctx context.Context, reader entryReader, rootDN string, attr
 			return err
 		}
 		if len(entry.Members) == 0 && !isGroup(entry.ObjectClass) {
-			leaves[key] = struct{}{}
+			leaves[key] = entry
+			return nil
+		}
+		if isGroup(entry.ObjectClass) && len(entry.Members) == 0 {
 			return nil
 		}
 		for _, memberDN := range entry.Members {
@@ -331,17 +433,37 @@ func collectLeafDNs(ctx context.Context, reader entryReader, rootDN string, attr
 	return leaves, nil
 }
 
-func isGroup(classes []string) bool {
+func canonicalDNKey(value string) (string, error) {
+	dn, err := ldap.ParseDN(value)
+	if err != nil {
+		return "", err
+	}
+	rdns := make([]string, 0, len(dn.RDNs))
+	for _, rdn := range dn.RDNs {
+		attrs := make([]string, 0, len(rdn.Attributes))
+		for _, attr := range rdn.Attributes {
+			attrs = append(attrs, strings.ToLower(attr.Type)+"\x00"+strings.ToLower(attr.Value))
+		}
+		sort.Strings(attrs)
+		rdns = append(rdns, strings.Join(attrs, "+"))
+	}
+	return strings.Join(rdns, ","), nil
+}
+
+func hasClass(classes []string, want string) bool {
 	for _, class := range classes {
-		switch strings.ToLower(strings.TrimSpace(class)) {
-		case "group", "groupofnames", "groupofuniquenames", "posixgroup":
+		if strings.EqualFold(strings.TrimSpace(class), want) {
 			return true
 		}
 	}
 	return false
 }
 
-func allowedEmail(email string, domains []string) bool {
+func isGroup(classes []string) bool {
+	return hasClass(classes, "group") || hasClass(classes, "groupOfNames") || hasClass(classes, "groupOfUniqueNames")
+}
+
+func allowedEmail(email string, domains map[string]struct{}) bool {
 	if email == "" {
 		return false
 	}
@@ -352,13 +474,8 @@ func allowedEmail(email string, domains []string) bool {
 	if at <= 0 || at == len(email)-1 {
 		return false
 	}
-	domain := strings.ToLower(email[at+1:])
-	for _, allowed := range domains {
-		if domain == allowed {
-			return true
-		}
-	}
-	return false
+	_, ok := domains[strings.ToLower(email[at+1:])]
+	return ok
 }
 
 func validAttributeName(value string) bool {
@@ -382,10 +499,11 @@ func uniqueStrings(values []string) []string {
 		if value == "" {
 			continue
 		}
-		if _, ok := seen[value]; ok {
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		seen[value] = struct{}{}
+		seen[key] = struct{}{}
 		out = append(out, value)
 	}
 	return out

@@ -42,6 +42,10 @@ func (w *statusRecorder) Write(body []byte) (int, error) {
 	return w.ResponseWriter.Write(body)
 }
 
+func (w *statusRecorder) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 // AuditAPI records security-relevant API mutations and credential-result
 // access after authentication and authorization have run.
 func AuditAPI(next http.Handler) http.Handler {

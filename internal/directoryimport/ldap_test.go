@@ -189,7 +189,6 @@ func TestRangedMemberValues(t *testing.T) {
 	}
 }
 
-
 func TestNormalizeAuditIdentityIncludesEffectivePort(t *testing.T) {
 	for _, tc := range []struct {
 		url  string

@@ -122,7 +122,6 @@ func RefreshCommunityLicense(ctx context.Context, now time.Time) (LicenseStatus,
 	return GetLicenseStatus(now)
 }
 
-
 func CheckDirectoryImportLicense(now time.Time) error {
 	manager := currentLicenseManager()
 	if manager == nil {

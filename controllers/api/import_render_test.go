@@ -277,7 +277,7 @@ func TestPausedRequestCommandRejectsWebSockets(t *testing.T) {
 	event := func(resourceType string, headers map[string]any) map[string]any {
 		return map[string]any{
 			"params": map[string]any{
-				"requestId":   "request-1",
+				"requestId":    "request-1",
 				"resourceType": resourceType,
 				"request": map[string]any{
 					"method":  http.MethodGet,

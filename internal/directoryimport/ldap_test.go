@@ -87,8 +87,8 @@ func TestNormalizeConfigRejectsPlainLDAPAndBadDN(t *testing.T) {
 
 func TestCollectLeafDNsHandlesCycles(t *testing.T) {
 	reader := &fakeReader{entries: map[string]directoryEntry{
-		"CN=a,DC=x": {DN: "CN=a,DC=x", ObjectClass: []string{"group"}, Members: []string{"CN=b,DC=x"}},
-		"CN=b,DC=x": {DN: "CN=b,DC=x", ObjectClass: []string{"group"}, Members: []string{"CN=a,DC=x", "CN=user,DC=x"}},
+		"CN=a,DC=x":    {DN: "CN=a,DC=x", ObjectClass: []string{"group"}, Members: []string{"CN=b,DC=x"}},
+		"CN=b,DC=x":    {DN: "CN=b,DC=x", ObjectClass: []string{"group"}, Members: []string{"CN=a,DC=x", "CN=user,DC=x"}},
 		"CN=user,DC=x": {DN: "CN=user,DC=x", ObjectClass: []string{"person"}, Values: map[string]string{"mail": "u@example.test"}},
 	}}
 	got, err := collectLeafDNs(context.Background(), reader, "CN=a,DC=x", []string{"mail"})

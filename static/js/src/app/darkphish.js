@@ -287,6 +287,12 @@ var api = {
         },
     },
     // import handles all of the "import" functions in the api
+    ldap_import_capability: function () {
+        return query("/import/ldap/capability", "GET", {}, true)
+    },
+    preview_ldap_import: function (req) {
+        return query("/import/ldap/preview", "POST", req, true)
+    },
     import_email: function (req) {
         return query("/import/email", "POST", req, true)
     },

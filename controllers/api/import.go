@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"errors"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -128,16 +129,15 @@ func (as *Server) ImportSite(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, models.Response{Success: false, Message: "Method not allowed"}, http.StatusBadRequest)
 		return
 	}
-	decodeDone := make(chan struct{})
-	go func() {
-		select {
-		case <-workCtx.Done():
-			_ = r.Body.Close()
-		case <-decodeDone:
+	if deadline, ok := workCtx.Deadline(); ok {
+		controller := http.NewResponseController(w)
+		if err := controller.SetReadDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			JSONResponse(w, models.Response{Success: false, Message: "Unable to enforce request deadline"}, http.StatusInternalServerError)
+			return
 		}
-	}()
+		defer func() { _ = controller.SetReadDeadline(time.Time{}) }()
+	}
 	err := json.NewDecoder(r.Body).Decode(&cr)
-	close(decodeDone)
 	if err != nil {
 		JSONResponse(w, models.Response{Success: false, Message: "Error decoding JSON Request"}, http.StatusBadRequest)
 		return

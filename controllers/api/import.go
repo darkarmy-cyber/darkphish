@@ -2,10 +2,12 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/darkarmy-cyber/darkphish/internal/importhtml"
@@ -25,6 +27,11 @@ func (cr *cloneRequest) validate() error {
 }
 
 var renderImportPageForImport = renderImportPage
+
+// Keep the complete site-import pipeline comfortably inside the admin server's
+// 30-second WriteTimeout. The shared context bounds the initial fetch and any
+// rendered snapshot together, leaving time for sanitization and the JSON reply.
+const importSiteWorkTimeout = 25 * time.Second
 
 type cloneResponse struct {
 	HTML     string   `json:"html"`
@@ -127,14 +134,17 @@ func (as *Server) ImportSite(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
 		return
 	}
-	content, sourceURL, err := fetchImportPage(r.Context(), cr.URL)
+	workCtx, cancel := context.WithTimeout(r.Context(), importSiteWorkTimeout)
+	defer cancel()
+
+	content, sourceURL, err := fetchImportPage(workCtx, cr.URL)
 	if err != nil {
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
 		return
 	}
 	mode := "static"
 	var warnings []string
-	if rendered, renderedURL, renderErr := renderImportPageForImport(r.Context(), sourceURL.String()); renderErr == nil {
+	if rendered, renderedURL, renderErr := renderImportPageForImport(workCtx, sourceURL.String()); renderErr == nil {
 		content = rendered
 		sourceURL = renderedURL
 		mode = "rendered"

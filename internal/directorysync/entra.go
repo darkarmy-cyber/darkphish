@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/mail"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -200,7 +202,11 @@ func PreviewEntraGroup(ctx context.Context, cfg EntraConfig) ([]Recipient, error
 			if !strings.Contains(email, "@") || !allowedDomain(email, domains) {
 				continue
 			}
-			key := strings.ToLower(email)
+			parsed, parseErr := mail.ParseAddress(email)
+			if parseErr != nil || parsed.Name != "" || parsed.Address != email {
+				continue
+			}
+			key := email
 			if _, exists := byEmail[key]; exists {
 				continue
 			}
@@ -221,5 +227,8 @@ func PreviewEntraGroup(ctx context.Context, cfg EntraConfig) ([]Recipient, error
 	for _, recipient := range byEmail {
 		out = append(out, recipient)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Email < out[j].Email
+	})
 	return out, nil
 }

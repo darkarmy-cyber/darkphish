@@ -29,8 +29,8 @@ func (cr *cloneRequest) validate() error {
 var renderImportPageForImport = renderImportPage
 
 // Keep the complete site-import pipeline comfortably inside the admin server's
-// 30-second WriteTimeout. The shared context bounds the initial fetch and any
-// rendered snapshot together, leaving time for sanitization and the JSON reply.
+// 30-second WriteTimeout. The shared context starts before request-body decoding
+// and bounds decoding, fetching and rendering, leaving time for the JSON reply.
 const importSiteWorkTimeout = 25 * time.Second
 
 type cloneResponse struct {

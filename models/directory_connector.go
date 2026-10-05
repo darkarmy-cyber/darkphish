@@ -21,6 +21,7 @@ var (
 	ErrDirectoryConnectorClientSecret   = errors.New("directory connector client secret is required")
 	ErrDirectoryConnectorSyncInterval   = errors.New("directory connector sync interval must be 0 or between 15 and 10080 minutes")
 	ErrDirectoryConnectorTargetGroup    = errors.New("directory connector target group is invalid")
+	ErrDirectoryConnectorSchedule       = errors.New("enabled directory connector requires a target group and sync interval")
 	ErrDirectoryConnectorConcurrentEdit = errors.New("directory connector changed concurrently; reload and retry")
 )
 
@@ -127,6 +128,9 @@ func (c *DirectoryConnector) Validate() error {
 	case c.SyncIntervalMinutes != 0 && (c.SyncIntervalMinutes < 15 || c.SyncIntervalMinutes > 10080):
 		return ErrDirectoryConnectorSyncInterval
 	}
+	if c.Enabled && (c.TargetGroupID == nil || c.SyncIntervalMinutes == 0) {
+		return ErrDirectoryConnectorSchedule
+	}
 	if c.TargetGroupID != nil {
 		if *c.TargetGroupID <= 0 {
 			return ErrDirectoryConnectorTargetGroup
@@ -225,6 +229,8 @@ func PostDirectoryConnector(connector *DirectoryConnector) error {
 		return err
 	}
 	now := time.Now().UTC()
+	connector.LastSyncAt = nil
+	connector.NextSyncAt = nil
 	connector.CreatedAt = now
 	connector.ModifiedAt = now
 	protected, err := secretStore.Seal(connector.ClientSecret)
@@ -263,6 +269,8 @@ func PutDirectoryConnector(connector *DirectoryConnector) error {
 		return err
 	}
 	connector.CreatedAt = stored.CreatedAt
+	connector.LastSyncAt = stored.LastSyncAt
+	connector.NextSyncAt = stored.NextSyncAt
 	connector.ModifiedAt = time.Now().UTC()
 	result := db.Model(&DirectoryConnector{}).
 		Where("id=? AND owner_user_id=? AND modified_at=?", connector.ID, connector.OwnerUserID, stored.ModifiedAt).

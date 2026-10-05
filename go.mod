@@ -11,6 +11,7 @@ require (
 	github.com/emersion/go-imap v1.2.1
 	github.com/emersion/go-message v0.18.2
 	github.com/go-sql-driver/mysql v1.10.1
+	github.com/go-ldap/ldap/v3 v3.4.14
 	github.com/gophish/gomail v0.0.0-20200818021916-1f6d0dfd512e
 	github.com/gorilla/context v1.1.2
 	github.com/gorilla/handlers v1.5.2

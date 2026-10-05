@@ -158,17 +158,24 @@ func TestNormalizeConfigBoundsDomains(t *testing.T) {
 	}
 }
 
-func TestCanonicalDNKeyNormalizesCaseAndMultivalueOrder(t *testing.T) {
+func TestCanonicalDNKeyPreservesValueCaseAndNormalizesTypeOrder(t *testing.T) {
 	a, err := canonicalDNKey("CN=Alice+OU=People,DC=Example,DC=Test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := canonicalDNKey("ou=people+cn=alice,dc=example,dc=test")
+	b, err := canonicalDNKey("ou=People+cn=Alice,dc=Example,dc=Test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if a != b {
 		t.Fatalf("canonical keys differ: %q != %q", a, b)
+	}
+	c, err := canonicalDNKey("CN=alice+OU=People,DC=Example,DC=Test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a == c {
+		t.Fatalf("case-exact values collapsed: %q", a)
 	}
 }
 
@@ -271,5 +278,75 @@ func TestPreviewSkipsOversizedLeafBeforeResponse(t *testing.T) {
 	}
 	if got.Matched != 0 || got.Skipped != 1 {
 		t.Fatalf("unexpected preview: %#v", got)
+	}
+}
+
+
+func TestBoundedValuesRejectsLargeMemberAndObjectClassSets(t *testing.T) {
+	tooMany := make([]string, maxDirectoryMembers+1)
+	for i := range tooMany {
+		tooMany[i] = fmt.Sprintf("CN=user-%d,DC=example,DC=test", i)
+	}
+	if _, err := boundedValues(tooMany, maxDirectoryMembers, maxMembershipBytes, maxDNBytes); err == nil {
+		t.Fatal("oversized member set accepted")
+	}
+	classes := make([]string, maxObjectClasses+1)
+	for i := range classes {
+		classes[i] = fmt.Sprintf("class%d", i)
+	}
+	if _, err := boundedValues(classes, maxObjectClasses, maxObjectClassBytes, 256); err == nil {
+		t.Fatal("oversized objectClass set accepted")
+	}
+}
+
+func TestPreviewAttributeMapKeysAreCaseInsensitive(t *testing.T) {
+	cfg, err := normalizeConfig(Config{
+		URL:          "ldaps://dc.example.test",
+		BindDN:       "CN=svc,DC=example,DC=test",
+		BindPassword: "secret",
+		GroupDN:      "CN=all,DC=example,DC=test",
+		Attributes: AttributeMapping{
+			FirstName: "MAIL",
+			LastName:  "sn",
+			Email:     "mail",
+			Position:  "title",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := &fakeReader{entries: map[string]directoryEntry{
+		"CN=all,DC=example,DC=test": {
+			DN: "CN=all,DC=example,DC=test", ObjectClass: []string{"group"},
+			Members: []string{"CN=user,DC=example,DC=test"},
+		},
+		"CN=user,DC=example,DC=test": {
+			DN: "CN=user,DC=example,DC=test", ObjectClass: []string{"person"},
+			Values: map[string]string{
+				"mail":  "User@example.test",
+				"sn":    "Case",
+				"title": "Admin",
+			},
+		},
+	}}
+	got, err := previewWithReader(context.Background(), reader, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Matched != 1 || got.Recipients[0].Email != "User@example.test" || got.Recipients[0].FirstName != "User@example.test" {
+		t.Fatalf("unexpected preview: %#v", got)
+	}
+}
+
+func TestValidBareMailboxAcceptsQuotedLocalPart(t *testing.T) {
+	for _, email := range []string{`"a b"@example.com`, "User@example.com"} {
+		if !validBareMailbox(email) {
+			t.Fatalf("valid mailbox rejected: %q", email)
+		}
+	}
+	for _, email := range []string{"Display <user@example.com>", "<user@example.com>", "not-an-email"} {
+		if validBareMailbox(email) {
+			t.Fatalf("non-bare mailbox accepted: %q", email)
+		}
 	}
 }

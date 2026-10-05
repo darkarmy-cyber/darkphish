@@ -1,7 +1,10 @@
 var groups = []
+var ldapPreviewRequest = null
+var ldapEditSession = 0
 
 // Save attempts to POST or PUT to /groups/
 function save(id) {
+    cancelLDAPPreview()
     var targets = []
     $.each($("#targetsTable").DataTable().rows().data(), function (i, target) {
         targets.push({
@@ -46,7 +49,17 @@ function save(id) {
     }
 }
 
+function cancelLDAPPreview() {
+    ldapEditSession++
+    if (ldapPreviewRequest) {
+        ldapPreviewRequest.abort()
+        ldapPreviewRequest = null
+    }
+    $("#ldapPreviewImport").prop("disabled", false)
+}
+
 function dismiss() {
+    cancelLDAPPreview()
     $("#targetsTable").dataTable().DataTable().clear().draw()
     $("#name").val("")
     $("#ldapBindPassword").val("")
@@ -55,6 +68,8 @@ function dismiss() {
 }
 
 function edit(id) {
+    cancelLDAPPreview()
+    var session = ldapEditSession
     targets = $("#targetsTable").dataTable({
         destroy: true, // Destroy any other instantiated table - http://datatables.net/manual/tech-notes/3#destroy
         columnDefs: [{
@@ -246,8 +261,12 @@ function previewLDAPImport() {
     }
     $("#ldapPreviewImport").prop("disabled", true)
     $("#ldapImportStatus").text("Loading directory preview…")
-    api.preview_ldap_import(request)
+    var session = ldapEditSession
+    ldapPreviewRequest = api.preview_ldap_import(request)
         .success(function (preview) {
+            if (session !== ldapEditSession) {
+                return
+            }
             $.each(preview.recipients || [], function (i, record) {
                 addTarget(record.first_name, record.last_name, record.email, record.position)
             })
@@ -259,7 +278,10 @@ function previewLDAPImport() {
                 modalError(preview.warnings.join(" "))
             }
         })
-        .error(function (data) {
+        .error(function (data, status) {
+            if (status === "abort" || session !== ldapEditSession) {
+                return
+            }
             var message = "LDAP directory preview failed"
             if (data.responseJSON && data.responseJSON.message) {
                 message = data.responseJSON.message
@@ -269,7 +291,10 @@ function previewLDAPImport() {
         })
         .complete(function () {
             $("#ldapBindPassword").val("")
-            $("#ldapPreviewImport").prop("disabled", false)
+            if (session === ldapEditSession) {
+                $("#ldapPreviewImport").prop("disabled", false)
+                ldapPreviewRequest = null
+            }
         })
 }
 

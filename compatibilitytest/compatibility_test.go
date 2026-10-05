@@ -111,6 +111,14 @@ func TestVersionedDatabaseCompatibility(t *testing.T) {
 	if err := connection.QueryRow("SELECT COUNT(*) FROM browser_sessions").Scan(&browserSessionRows); err != nil || browserSessionRows != 0 {
 		t.Fatalf("browser session migration is unavailable or rewrote legacy state: rows=%d err=%v", browserSessionRows, err)
 	}
+	var connectorRows int
+	if err := connection.QueryRow("SELECT COUNT(*) FROM directory_connectors").Scan(&connectorRows); err != nil || connectorRows != 0 {
+		t.Fatalf("directory connector migration is unavailable or rewrote legacy state: rows=%d err=%v", connectorRows, err)
+	}
+	var syncRunRows int
+	if err := connection.QueryRow("SELECT COUNT(*) FROM directory_sync_runs").Scan(&syncRunRows); err != nil || syncRunRows != 0 {
+		t.Fatalf("directory sync history migration is unavailable or rewrote legacy state: rows=%d err=%v", syncRunRows, err)
+	}
 	if state.Schema != schemaSnapshot(t, connection, backend) {
 		t.Fatal("candidate startup changed the v0.4 schema")
 	}
@@ -308,20 +316,20 @@ func schemaSnapshot(t *testing.T, connection *sql.DB, backend string) string {
 	if os.Getenv("DARKPHISH_COMPAT_COORDINATION") == "1" {
 		switch backend {
 		case "sqlite3":
-			return querySnapshot(t, connection, "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('license_coordination','browser_sessions') ORDER BY type,name")
+			return querySnapshot(t, connection, "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('license_coordination','browser_sessions','directory_connectors','directory_sync_runs') ORDER BY type,name")
 		case "mysql":
-			return querySnapshot(t, connection, "SELECT table_name,column_name,column_type,is_nullable,column_default,extra FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name NOT IN ('license_coordination','browser_sessions') ORDER BY table_name,ordinal_position")
+			return querySnapshot(t, connection, "SELECT table_name,column_name,column_type,is_nullable,column_default,extra FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name NOT IN ('license_coordination','browser_sessions','directory_connectors','directory_sync_runs') ORDER BY table_name,ordinal_position")
 		case "postgres":
-			return querySnapshot(t, connection, "SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() AND table_name NOT IN ('license_coordination','browser_sessions') ORDER BY table_name,ordinal_position")
+			return querySnapshot(t, connection, "SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() AND table_name NOT IN ('license_coordination','browser_sessions','directory_connectors','directory_sync_runs') ORDER BY table_name,ordinal_position")
 		}
 	}
 	switch backend {
 	case "sqlite3":
-		return querySnapshot(t, connection, "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities','license_coordination','browser_sessions') AND name <> 'idx_audit_checkpoints_chain_sequence' ORDER BY type,name")
+		return querySnapshot(t, connection, "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities','license_coordination','browser_sessions','directory_connectors','directory_sync_runs','directory_connectors','directory_sync_runs') AND name <> 'idx_audit_checkpoints_chain_sequence' ORDER BY type,name")
 	case "mysql":
-		return querySnapshot(t, connection, "SELECT table_name,column_name,column_type,is_nullable,column_default,extra FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities','license_coordination','browser_sessions') ORDER BY table_name,ordinal_position")
+		return querySnapshot(t, connection, "SELECT table_name,column_name,column_type,is_nullable,column_default,extra FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities','license_coordination','browser_sessions','directory_connectors','directory_sync_runs','directory_connectors','directory_sync_runs') ORDER BY table_name,ordinal_position")
 	case "postgres":
-		return querySnapshot(t, connection, "SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() AND table_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities','license_coordination','browser_sessions') ORDER BY table_name,ordinal_position")
+		return querySnapshot(t, connection, "SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() AND table_name NOT IN ('audit_chain_heads','audit_delivery_receipts','audit_signing_identities','license_coordination','browser_sessions','directory_connectors','directory_sync_runs','directory_connectors','directory_sync_runs') ORDER BY table_name,ordinal_position")
 	default:
 		t.Fatal("unsupported fixture backend")
 		return ""

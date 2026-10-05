@@ -31,6 +31,34 @@ type unreadAPIBody struct{ reads int }
 func (body *unreadAPIBody) Read([]byte) (int, error) { body.reads++; return 0, io.EOF }
 func (body *unreadAPIBody) Close() error             { return nil }
 
+
+type deadlineCapableRecorder struct {
+	*httptest.ResponseRecorder
+	deadlineInstalled bool
+}
+
+func (w *deadlineCapableRecorder) SetReadDeadline(deadline time.Time) error {
+	w.deadlineInstalled = !deadline.IsZero()
+	return nil
+}
+
+func TestAuditAPIUnwrapsResponseWriterForResponseController(t *testing.T) {
+	setupTest(t)
+	response := &deadlineCapableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodPost, "/api/import/site", nil)
+	handler := AuditAPI(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		controller := http.NewResponseController(w)
+		if err := controller.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+			t.Fatalf("audit writer blocked response-controller deadline: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	handler.ServeHTTP(response, req)
+	if !response.deadlineInstalled {
+		t.Fatal("read deadline did not reach the underlying response writer")
+	}
+}
+
 func TestContextDefersAPIBodyParsingButPreservesLoginForms(t *testing.T) {
 	setupTest(t)
 	for _, path := range []string{"/api/pages/", "/login"} {

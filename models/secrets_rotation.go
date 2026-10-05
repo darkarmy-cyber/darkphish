@@ -38,6 +38,7 @@ func protectedTargets() []struct {
 		{table: "imap", id: "user_id", column: "password"},
 		{table: "webhooks", id: "id", column: "secret"},
 		{table: "encrypted_credentials", id: "id", column: "encrypted_value"},
+		{table: "directory_connectors", id: "id", column: "client_secret"},
 	}
 }
 

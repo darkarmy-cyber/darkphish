@@ -22,7 +22,7 @@ const (
 )
 
 var (
-	ErrInvalidConfig = errors.New("invalid LDAP import configuration")
+	ErrInvalidConfig  = errors.New("invalid LDAP import configuration")
 	ErrTooManyEntries = errors.New("LDAP import exceeds safety limit")
 )
 

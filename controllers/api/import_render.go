@@ -27,6 +27,7 @@ const maxRenderedProxyConnections = 16
 const maxRenderedRequestHeaderBytes = 64 << 10
 const maxRenderedResponseHeaderBytes int64 = 64 << 10
 const maxRenderedMemoryBytes int64 = 512 << 20
+
 // Keep aggregate renderer CPU below the whole machine so the API and the
 // renderer proxy remain responsive even when every render slot is occupied.
 const maxRenderedAggregateCPUPercent uint32 = 80

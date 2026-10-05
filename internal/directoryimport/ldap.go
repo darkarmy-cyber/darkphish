@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/mail"
 	"net/url"
 	"sort"
@@ -24,6 +25,7 @@ const (
 	maxNameBytes        = 256
 	maxEmailBytes       = 320
 	maxPositionBytes    = 512
+	maxDNBytes          = 4096
 	maxPreviewBytes     = 2 << 20
 	defaultTimeout      = 5 * time.Second
 )
@@ -72,6 +74,7 @@ type directoryEntry struct {
 	ObjectClass []string
 	Members     []string
 	Values      map[string]string
+	Oversized   bool
 }
 
 type entryReader interface {
@@ -111,7 +114,11 @@ func NormalizeAuditIdentity(cfg Config) (string, string, error) {
 		return "", "", err
 	}
 	u, _ := url.Parse(cfg.URL)
-	return strings.ToLower(u.Hostname()), cfg.GroupDN, nil
+	port := u.Port()
+	if port == "" {
+		port = "636"
+	}
+	return net.JoinHostPort(strings.ToLower(u.Hostname()), port), cfg.GroupDN, nil
 }
 
 func normalizeConfig(cfg Config) (Config, error) {
@@ -256,7 +263,13 @@ func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []stri
 		return directoryEntry{}, ErrUnsupportedLDAP
 	}
 	members := append([]string(nil), entry.GetEqualFoldAttributeValues("member")...)
-	members = append(members, entry.GetEqualFoldAttributeValues("uniqueMember")...)
+	for _, uniqueMember := range entry.GetEqualFoldAttributeValues("uniqueMember") {
+		memberDN, parseErr := uniqueMemberDN(uniqueMember)
+		if parseErr != nil {
+			return directoryEntry{}, parseErr
+		}
+		members = append(members, memberDN)
+	}
 	rangeValues, rangeStart, rangeDone := rangedMemberValues(entry)
 	members = append(members, rangeValues...)
 	for !rangeDone {
@@ -276,14 +289,26 @@ func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []stri
 		}
 	}
 	values := make(map[string]string, len(attributes))
+	oversized := false
 	for _, attr := range attributes {
-		values[attr] = strings.TrimSpace(entry.GetEqualFoldAttributeValue(attr))
+		value := strings.TrimSpace(entry.GetEqualFoldAttributeValue(attr))
+		if len(value) > maxPositionBytes {
+			oversized = true
+			continue
+		}
+		values[attr] = value
+	}
+	for _, memberDN := range members {
+		if len(memberDN) == 0 || len(memberDN) > maxDNBytes {
+			return directoryEntry{}, ErrTooManyEntries
+		}
 	}
 	return directoryEntry{
 		DN:          entry.DN,
 		ObjectClass: classes,
 		Members:     members,
 		Values:      values,
+		Oversized:   oversized,
 	}, nil
 }
 
@@ -344,7 +369,11 @@ func previewWithReader(ctx context.Context, reader entryReader, cfg Config) (Pre
 			continue
 		}
 		entry := leaves[key]
-		email := strings.ToLower(strings.TrimSpace(entry.Values[cfg.Attributes.Email]))
+		if entry.Oversized {
+			result.Skipped++
+			continue
+		}
+		email := normalizeEmailDomain(strings.TrimSpace(entry.Values[cfg.Attributes.Email]))
 		first := strings.TrimSpace(entry.Values[cfg.Attributes.FirstName])
 		last := strings.TrimSpace(entry.Values[cfg.Attributes.LastName])
 		position := strings.TrimSpace(entry.Values[cfg.Attributes.Position])
@@ -357,7 +386,7 @@ func previewWithReader(ctx context.Context, reader entryReader, cfg Config) (Pre
 			continue
 		}
 		parsed, err := mail.ParseAddress(email)
-		if err != nil || !strings.EqualFold(parsed.Address, email) {
+		if err != nil || parsed.Address != email {
 			result.Skipped++
 			continue
 		}
@@ -477,8 +506,44 @@ func allowedEmail(email string, domains map[string]struct{}) bool {
 }
 
 func validAttributeName(value string) bool {
+	parts := strings.Split(value, ";")
+	if len(parts) == 0 || !validAttributeType(parts[0]) {
+		return false
+	}
+	for _, option := range parts[1:] {
+		if option == "" {
+			return false
+		}
+		for _, r := range option {
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+				continue
+			}
+			return false
+		}
+	}
+	return true
+}
+
+func validAttributeType(value string) bool {
 	if value == "" {
 		return false
+	}
+	if value[0] >= '0' && value[0] <= '9' {
+		parts := strings.Split(value, ".")
+		if len(parts) < 2 {
+			return false
+		}
+		for _, part := range parts {
+			if part == "" || (len(part) > 1 && part[0] == '0') {
+				return false
+			}
+			for _, r := range part {
+				if r < '0' || r > '9' {
+					return false
+				}
+			}
+		}
+		return true
 	}
 	for i, r := range value {
 		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (i > 0 && r >= '0' && r <= '9') || (i > 0 && r == '-') {
@@ -487,6 +552,58 @@ func validAttributeName(value string) bool {
 		return false
 	}
 	return true
+}
+
+func normalizeEmailDomain(email string) string {
+	at := strings.LastIndexByte(email, '@')
+	if at <= 0 || at == len(email)-1 {
+		return email
+	}
+	return email[:at+1] + strings.ToLower(email[at+1:])
+}
+
+func uniqueMemberDN(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", ErrInvalidConfig
+	}
+	for i := len(value) - 1; i >= 1; i-- {
+		if value[i] != '#' || isEscaped(value, i) || i+3 >= len(value) || value[i+1] != '\'' {
+			continue
+		}
+		suffix := value[i+1:]
+		if len(suffix) < 4 || suffix[len(suffix)-2] != '\'' || (suffix[len(suffix)-1] != 'B' && suffix[len(suffix)-1] != 'b') {
+			continue
+		}
+		bits := suffix[1 : len(suffix)-2]
+		if bits == "" {
+			continue
+		}
+		validBits := true
+		for _, bit := range bits {
+			if bit != '0' && bit != '1' {
+				validBits = false
+				break
+			}
+		}
+		if !validBits {
+			continue
+		}
+		value = strings.TrimSpace(value[:i])
+		break
+	}
+	if _, err := ldap.ParseDN(value); err != nil {
+		return "", fmt.Errorf("%w: invalid uniqueMember DN", ErrInvalidConfig)
+	}
+	return value, nil
+}
+
+func isEscaped(value string, index int) bool {
+	backslashes := 0
+	for i := index - 1; i >= 0 && value[i] == '\\'; i-- {
+		backslashes++
+	}
+	return backslashes%2 == 1
 }
 
 func uniqueStrings(values []string) []string {

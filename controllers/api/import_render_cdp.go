@@ -185,10 +185,6 @@ func (c *cdpClient) receive(ctx context.Context) (map[string]any, error) {
 	return message, nil
 }
 
-func (c *cdpClient) sendNoWait(method string, params map[string]any) error {
-	return c.sendNoWaitSession(method, params, "")
-}
-
 func (c *cdpClient) sendNoWaitSession(method string, params map[string]any, sessionID string) error {
 	c.nextID++
 	id := c.nextID

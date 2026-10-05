@@ -281,7 +281,6 @@ func TestPreviewSkipsOversizedLeafBeforeResponse(t *testing.T) {
 	}
 }
 
-
 func TestBoundedValuesRejectsLargeMemberAndObjectClassSets(t *testing.T) {
 	tooMany := make([]string, maxDirectoryMembers+1)
 	for i := range tooMany {

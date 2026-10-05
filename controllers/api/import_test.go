@@ -137,23 +137,43 @@ func TestImportSiteSharesRequestDeadlineWithRenderer(t *testing.T) {
 	}
 }
 
+type deadlineTrackingRecorder struct {
+	*httptest.ResponseRecorder
+	readDeadline time.Time
+}
+
+func (w *deadlineTrackingRecorder) SetReadDeadline(deadline time.Time) error {
+	w.readDeadline = deadline
+	return nil
+}
+
+type deadlineAwareBody struct {
+	writer *deadlineTrackingRecorder
+	read   bool
+}
+
+func (b *deadlineAwareBody) Read(p []byte) (int, error) {
+	if b.writer.readDeadline.IsZero() {
+		return 0, fmt.Errorf("request body read before connection deadline was installed")
+	}
+	if b.read {
+		return 0, io.EOF
+	}
+	b.read = true
+	return copy(p, []byte(`{"url":"https://example.com"}`)), io.EOF
+}
+
+func (b *deadlineAwareBody) Close() error { return nil }
+
 func TestImportSiteDeadlineCoversBodyDecode(t *testing.T) {
 	ctx := setupTest(t)
-	requestCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
-	reader, writer := io.Pipe()
-	defer writer.Close()
-	req := httptest.NewRequest(http.MethodPost, "/api/import/site", reader).WithContext(requestCtx)
+	response := &deadlineTrackingRecorder{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodPost, "/api/import/site", nil)
+	req.Body = &deadlineAwareBody{writer: response}
 	req.Header.Set("Content-Type", "application/json")
-	response := httptest.NewRecorder()
 
-	start := time.Now()
 	ctx.apiServer.ImportSite(response, req)
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("body decoding outlived the shared import deadline: %s", elapsed)
-	}
-	if response.Code != http.StatusBadRequest {
-		t.Fatalf("expected timed-out body decode to fail with status %d, got %d", http.StatusBadRequest, response.Code)
+	if response.readDeadline.IsZero() {
+		t.Fatal("connection read deadline was not installed before body decoding")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -133,5 +134,27 @@ func TestImportSiteSharesRequestDeadlineWithRenderer(t *testing.T) {
 	}
 	if got.Mode != "static" || !strings.Contains(got.HTML, "static fallback") || len(got.Warnings) == 0 {
 		t.Fatalf("unexpected fallback response: %#v", got)
+	}
+}
+
+
+func TestImportSiteDeadlineCoversBodyDecode(t *testing.T) {
+	ctx := setupTest(t)
+	requestCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	reader, writer := io.Pipe()
+	defer writer.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/import/site", reader).WithContext(requestCtx)
+	req.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	start := time.Now()
+	ctx.apiServer.ImportSite(response, req)
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("body decoding outlived the shared import deadline: %s", elapsed)
+	}
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected timed-out body decode to fail with status %d, got %d", http.StatusBadRequest, response.Code)
 	}
 }

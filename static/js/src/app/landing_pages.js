@@ -5,6 +5,9 @@
 */
 var pages = []
 var importPending = false
+var importRequest = null
+var importGeneration = 0
+var ignoreNextImportModalHide = false
 
 
 // Save attempts to POST to /templates/
@@ -42,9 +45,20 @@ function save(idx) {
     }
 }
 
-function dismiss() {
+function cancelPendingImport() {
+    importGeneration += 1
+    if (importRequest && importRequest.readyState !== 4) {
+        importRequest.abort()
+    }
+    importRequest = null
     importPending = false
-    $("#modalSubmit").prop("disabled", false)
+    ignoreNextImportModalHide = false
+    $("#importSiteSubmit").prop("disabled", false)
+}
+
+function dismiss() {
+    cancelPendingImport()
+    $("#importSiteSubmit").prop("disabled", false)
     $("#modal\\.flashes").empty()
     $("#name").val("")
     $("#html_editor").val("")
@@ -107,22 +121,41 @@ function importSite() {
     if (!url) {
         modalError("No URL Specified!")
     } else {
-        api.clone_site({
+        importPending = true
+        importGeneration += 1
+        var generation = importGeneration
+        $("#importSiteSubmit").prop("disabled", true)
+        importRequest = api.clone_site({
                 url: url,
                 include_resources: false
             })
             .success(function (data) {
+                if (!importPending || generation !== importGeneration) return
                 applyImportedCaptureDefaults(data.html)
-                importPending = true
-                $("#modalSubmit").prop("disabled", true)
                 CKEDITOR.instances["html_editor"].setData(data.html, function () {
+                    if (generation !== importGeneration) return
+                    importRequest = null
                     importPending = false
-                    $("#modalSubmit").prop("disabled", false)
+                    $("#importSiteSubmit").prop("disabled", false)
                 })
+                ignoreNextImportModalHide = true
                 $("#importSiteModal").modal("hide")
+                if (data.warnings && data.warnings.length) {
+                    var warning = $("<div>", {
+                        "class": "alert alert-warning",
+                        "style": "text-align:center"
+                    }).text(data.warnings.join(" "))
+                    $("#modal\\.flashes").empty().append(warning)
+                }
             })
-            .error(function (data) {
-                modalError(data.responseJSON.message)
+            .error(function (data, status) {
+                if (generation !== importGeneration) return
+                importRequest = null
+                importPending = false
+                $("#importSiteSubmit").prop("disabled", false)
+                if (status !== "abort") {
+                    modalError(data.responseJSON && data.responseJSON.message || "Unable to import site")
+                }
             })
     }
 }
@@ -254,6 +287,13 @@ $(document).ready(function () {
     });
     $('#modal').on('hidden.bs.modal', function (event) {
         dismiss()
+    });
+    $('#importSiteModal').on('hidden.bs.modal', function () {
+        if (ignoreNextImportModalHide) {
+            ignoreNextImportModalHide = false
+            return
+        }
+        if (importPending) cancelPendingImport()
     });
     $("#capture_credentials_checkbox").change(function () {
         $("#capture_passwords").toggle()

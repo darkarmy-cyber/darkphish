@@ -564,6 +564,10 @@ EOF_CONFIG
 
 create_systemd_unit() {
     log "Creating hardened systemd service"
+    local app_uid app_gid
+    app_uid="$(id -u "${APP_USER}")"
+    app_gid="$(id -g "${APP_USER}")"
+    [[ "${app_uid}" =~ ^[0-9]+$ && "${app_gid}" =~ ^[0-9]+$ ]] || die "invalid DarkPhish service identity"
     SERVICE_FILE_CREATED=1
     cat > "${SERVICE_FILE}" <<EOF_SERVICE
 [Unit]
@@ -583,6 +587,9 @@ RestartSec=5s
 TimeoutStopSec=120s
 KillMode=control-group
 UMask=0077
+Delegate=cpu memory pids
+Environment=DARKPHISH_RENDER_PROFILE_ROOT=/run/darkphish-render
+TemporaryFileSystem=/run/darkphish-render:rw,nodev,nosuid,noexec,size=512M,nr_inodes=8192,mode=0700,uid=${app_uid},gid=${app_gid}
 
 NoNewPrivileges=true
 PrivateTmp=true
@@ -592,18 +599,20 @@ ProtectHome=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true
-ProtectControlGroups=true
+ProtectControlGroups=false
 ProtectClock=true
 ProtectHostname=true
 RestrictSUIDSGID=true
 LockPersonality=true
 RestrictRealtime=true
-RestrictNamespaces=true
+# Chromium's sandbox creates these namespaces as the unprivileged service user.
+# Keep cgroup namespaces denied; renderer cgroups stay under the delegated unit.
+RestrictNamespaces=user pid net ipc uts mnt
 SystemCallArchitectures=native
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
-ReadWritePaths=${INSTALL_DIR} ${BOOTSTRAP_DIR}
+ReadWritePaths=${INSTALL_DIR} ${BOOTSTRAP_DIR} /run/darkphish-render
 
 [Install]
 WantedBy=multi-user.target

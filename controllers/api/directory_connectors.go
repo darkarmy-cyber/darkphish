@@ -24,7 +24,7 @@ func requireProDirectory(w http.ResponseWriter) bool {
 }
 
 func (as *Server) DirectoryConnectors(w http.ResponseWriter, r *http.Request) {
-	if !requireProDirectory(w) {
+	if r.Method == http.MethodPost && !requireProDirectory(w) {
 		return
 	}
 	user := ctx.Get(r, "user").(models.User)
@@ -56,7 +56,7 @@ func (as *Server) DirectoryConnectors(w http.ResponseWriter, r *http.Request) {
 }
 
 func (as *Server) DirectoryConnector(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete && !requireProDirectory(w) {
+	if r.Method == http.MethodPut && !requireProDirectory(w) {
 		return
 	}
 	user := ctx.Get(r, "user").(models.User)
@@ -134,9 +134,6 @@ func (as *Server) DirectoryConnectorPreview(w http.ResponseWriter, r *http.Reque
 }
 
 func (as *Server) DirectoryConnectorHistory(w http.ResponseWriter, r *http.Request) {
-	if !requireProDirectory(w) {
-		return
-	}
 	user := ctx.Get(r, "user").(models.User)
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {

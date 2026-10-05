@@ -85,6 +85,19 @@ func TestNormalizeConfigRejectsPlainLDAPAndBadDN(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigRejectsUnsafeAttributeName(t *testing.T) {
+	_, err := normalizeConfig(Config{
+		URL:          "ldaps://dc.example.test",
+		BindDN:       "CN=svc,DC=example,DC=test",
+		BindPassword: "secret",
+		GroupDN:      "CN=all,DC=example,DC=test",
+		Attributes:   AttributeMapping{Email: "mail)(objectClass=*"},
+	})
+	if err == nil {
+		t.Fatal("unsafe LDAP attribute name accepted")
+	}
+}
+
 func TestCollectLeafDNsHandlesCycles(t *testing.T) {
 	reader := &fakeReader{entries: map[string]directoryEntry{
 		"CN=a,DC=x":    {DN: "CN=a,DC=x", ObjectClass: []string{"group"}, Members: []string{"CN=b,DC=x"}},

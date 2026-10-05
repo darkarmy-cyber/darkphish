@@ -8,7 +8,7 @@ func TestValidateGraphURLBoundary(t *testing.T) {
 		"https://graph.microsoft.com/v1.0/groups/11111111-1111-1111-1111-111111111111/transitiveMembers/microsoft.graph.user?$skiptoken=opaque",
 	}
 	for _, value := range valid {
-		if err := validateGraphURL(value); err != nil {
+		if err := validateGraphURL(value, "11111111-1111-1111-1111-111111111111"); err != nil {
 			t.Fatalf("valid Graph URL rejected: %s: %v", value, err)
 		}
 	}
@@ -17,9 +17,10 @@ func TestValidateGraphURLBoundary(t *testing.T) {
 		"https://evil.example/v1.0/groups/x",
 		"https://graph.microsoft.com@evil.example/v1.0/groups/x",
 		"https://graph.microsoft.com/beta/groups/x",
+		"https://graph.microsoft.com/v1.0/groups/22222222-2222-2222-2222-222222222222/transitiveMembers/microsoft.graph.user?$top=999",
 	}
 	for _, value := range invalid {
-		if err := validateGraphURL(value); err == nil {
+		if err := validateGraphURL(value, "11111111-1111-1111-1111-111111111111"); err == nil {
 			t.Fatalf("unsafe Graph URL accepted: %s", value)
 		}
 	}

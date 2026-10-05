@@ -11,6 +11,14 @@ import (
 	"github.com/darkarmy-cyber/darkphish/models"
 )
 
+type directoryImportCapability struct {
+	Enabled bool `json:"enabled"`
+}
+
+func (as *Server) LDAPImportCapability(w http.ResponseWriter, r *http.Request) {
+	JSONResponse(w, directoryImportCapability{Enabled: models.CheckDirectoryImportLicense(time.Now().UTC()) == nil}, http.StatusOK)
+}
+
 func (as *Server) PreviewLDAPImport(w http.ResponseWriter, r *http.Request) {
 	if err := models.CheckDirectoryImportLicense(time.Now().UTC()); err != nil {
 		JSONResponse(w, models.Response{Success: false, Message: "LDAP / Active Directory import requires Darkphish Professional or Enterprise"}, http.StatusForbidden)

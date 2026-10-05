@@ -1,12 +1,17 @@
 package api
 
 import (
+	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
 
+	ctx "github.com/darkarmy-cyber/darkphish/context"
+	"github.com/darkarmy-cyber/darkphish/internal/audit"
 	"github.com/darkarmy-cyber/darkphish/internal/directoryimport"
 	"github.com/darkarmy-cyber/darkphish/models"
 )
@@ -31,7 +36,9 @@ func (as *Server) PreviewLDAPImport(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, models.Response{Success: false, Message: "Invalid LDAP import request"}, http.StatusBadRequest)
 		return
 	}
-	preview, err := directoryimport.PreviewLDAP(r.Context(), request)
+	workCtx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	preview, err := directoryimport.PreviewLDAP(workCtx, request)
 	if err != nil {
 		code := http.StatusBadGateway
 		message := "LDAP directory preview failed"
@@ -41,6 +48,14 @@ func (as *Server) PreviewLDAPImport(w http.ResponseWriter, r *http.Request) {
 		}
 		JSONResponse(w, models.Response{Success: false, Message: message}, code)
 		return
+	}
+	host, groupDN, identityErr := directoryimport.NormalizeAuditIdentity(request)
+	if identityErr == nil {
+		fingerprint := sha256.Sum256([]byte(host + "|" + groupDN))
+		user := ctx.Get(r, "user").(models.User)
+		authMethod, _ := ctx.Get(r, "auth_method").(string)
+		target := fmt.Sprintf("/directory-import/%x:m%d:e%d", fingerprint[:8], preview.Matched, preview.Excluded)
+		audit.Record(r, user.Username, user.Id, "directory.import.preview.detail", target, "success", authMethod)
 	}
 	JSONResponse(w, preview, http.StatusOK)
 }

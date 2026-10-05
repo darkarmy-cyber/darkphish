@@ -112,12 +112,13 @@ func firstGraphURL(cfg EntraConfig) string {
 	return "https://graph.microsoft.com/v1.0/groups/" + group + "/transitiveMembers/microsoft.graph.user?" + values.Encode()
 }
 
-func validateGraphURL(raw string) error {
+func validateGraphURL(raw, remoteGroupID string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" || !strings.EqualFold(u.Host, "graph.microsoft.com") || u.User != nil || u.Fragment != "" {
 		return ErrGraphBoundary
 	}
-	if !strings.HasPrefix(u.EscapedPath(), "/v1.0/groups/") {
+	expectedPath := "/v1.0/groups/" + url.PathEscape(strings.TrimSpace(remoteGroupID)) + "/transitiveMembers/microsoft.graph.user"
+	if u.EscapedPath() != expectedPath {
 		return ErrGraphBoundary
 	}
 	return nil
@@ -166,7 +167,7 @@ func PreviewEntraGroup(ctx context.Context, cfg EntraConfig) ([]Recipient, error
 		if page >= maxGraphPages {
 			return nil, errors.New("Microsoft Graph pagination exceeded safety limit")
 		}
-		if err := validateGraphURL(next); err != nil {
+		if err := validateGraphURL(next, cfg.RemoteGroupID); err != nil {
 			return nil, err
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, next, nil)

@@ -84,6 +84,15 @@ func PreviewLDAP(ctx context.Context, cfg Config) (Preview, error) {
 		return Preview{}, err
 	}
 	defer reader.Close()
+	cancelWatchDone := make(chan struct{})
+	defer close(cancelWatchDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = reader.Close()
+		case <-cancelWatchDone:
+		}
+	}()
 	return previewWithReader(ctx, reader, cfg)
 }
 
@@ -115,6 +124,11 @@ func normalizeConfig(cfg Config) (Config, error) {
 	cfg.GroupDN = strings.TrimSpace(cfg.GroupDN)
 	cfg.ExclusionGroupDN = strings.TrimSpace(cfg.ExclusionGroupDN)
 	cfg.Attributes = normalizedMapping(cfg.Attributes)
+	for _, attribute := range []string{cfg.Attributes.FirstName, cfg.Attributes.LastName, cfg.Attributes.Email, cfg.Attributes.Position} {
+		if !validAttributeName(attribute) {
+			return Config{}, fmt.Errorf("%w: invalid LDAP attribute name", ErrInvalidConfig)
+		}
+	}
 	for i, domain := range cfg.EmailDomains {
 		cfg.EmailDomains[i] = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(domain), "@"))
 		if cfg.EmailDomains[i] == "" || strings.ContainsAny(cfg.EmailDomains[i], " /\\") {
@@ -345,6 +359,19 @@ func allowedEmail(email string, domains []string) bool {
 		}
 	}
 	return false
+}
+
+func validAttributeName(value string) bool {
+	if value == "" {
+		return false
+	}
+	for i, r := range value {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (i > 0 && r >= '0' && r <= '9') || (i > 0 && r == '-') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func uniqueStrings(values []string) []string {

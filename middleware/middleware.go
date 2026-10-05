@@ -316,9 +316,9 @@ func requiredPATScope(method, path string) string {
 	case clean == "/api/import/group":
 		return "groups:write"
 	case clean == "/api/import/ldap/capability":
-		return "groups:write"
+		return "integrations:write"
 	case clean == "/api/import/ldap/preview":
-		return "groups:write"
+		return "integrations:write"
 	case clean == "/api/import/email" || clean == "/api/import/email/images":
 		return "templates:write"
 	case clean == "/api/import/site":

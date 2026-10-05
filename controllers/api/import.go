@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -29,8 +30,8 @@ func (cr *cloneRequest) validate() error {
 var renderImportPageForImport = renderImportPage
 
 // Keep the complete site-import pipeline comfortably inside the admin server's
-// 30-second WriteTimeout. The shared context bounds the initial fetch and any
-// rendered snapshot together, leaving time for sanitization and the JSON reply.
+// 30-second WriteTimeout. The shared context starts before request-body decoding
+// and bounds decoding, fetching and rendering, leaving time for the JSON reply.
 const importSiteWorkTimeout = 25 * time.Second
 
 type cloneResponse struct {
@@ -120,10 +121,21 @@ func (as *Server) ImportEmail(w http.ResponseWriter, r *http.Request) {
 // ImportSite allows for the importing of HTML from a website
 // Downloaded HTML is sanitized before it is returned to the editor.
 func (as *Server) ImportSite(w http.ResponseWriter, r *http.Request) {
+	workCtx, cancel := context.WithTimeout(r.Context(), importSiteWorkTimeout)
+	defer cancel()
+
 	cr := cloneRequest{}
 	if r.Method != "POST" {
 		JSONResponse(w, models.Response{Success: false, Message: "Method not allowed"}, http.StatusBadRequest)
 		return
+	}
+	if deadline, ok := workCtx.Deadline(); ok {
+		controller := http.NewResponseController(w)
+		if err := controller.SetReadDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			JSONResponse(w, models.Response{Success: false, Message: "Unable to enforce request deadline"}, http.StatusInternalServerError)
+			return
+		}
+		defer func() { _ = controller.SetReadDeadline(time.Time{}) }()
 	}
 	err := json.NewDecoder(r.Body).Decode(&cr)
 	if err != nil {
@@ -134,9 +146,6 @@ func (as *Server) ImportSite(w http.ResponseWriter, r *http.Request) {
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)
 		return
 	}
-	workCtx, cancel := context.WithTimeout(r.Context(), importSiteWorkTimeout)
-	defer cancel()
-
 	content, sourceURL, err := fetchImportPage(workCtx, cr.URL)
 	if err != nil {
 		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, http.StatusBadRequest)

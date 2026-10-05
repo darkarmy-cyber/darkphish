@@ -2,7 +2,7 @@
 CREATE TABLE directory_connectors (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(255) NOT NULL,
-    name_key VARCHAR(255) NOT NULL,
+    name_key CHAR(64) NOT NULL,
     owner_user_id BIGINT NOT NULL,
     provider VARCHAR(32) NOT NULL,
     tenant_id VARCHAR(255) NOT NULL,
@@ -19,7 +19,9 @@ CREATE TABLE directory_connectors (
     modified_at DATETIME(6) NOT NULL,
     UNIQUE INDEX idx_directory_connectors_owner_name (owner_user_id, name_key),
     INDEX idx_directory_connectors_owner (owner_user_id),
-    INDEX idx_directory_connectors_due (enabled, next_sync_at)
+    INDEX idx_directory_connectors_due (enabled, next_sync_at),
+    CONSTRAINT fk_directory_connectors_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_directory_connectors_group FOREIGN KEY (target_group_id) REFERENCES `groups`(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE directory_sync_runs (
@@ -34,7 +36,8 @@ CREATE TABLE directory_sync_runs (
     removed INTEGER NOT NULL DEFAULT 0,
     skipped INTEGER NOT NULL DEFAULT 0,
     error_code VARCHAR(64) NOT NULL DEFAULT '',
-    INDEX idx_directory_sync_runs_connector (connector_id, started_at)
+    INDEX idx_directory_sync_runs_connector (connector_id, started_at),
+    CONSTRAINT fk_directory_sync_runs_connector FOREIGN KEY (connector_id) REFERENCES directory_connectors(id) ON DELETE CASCADE
 );
 
 -- +goose Down

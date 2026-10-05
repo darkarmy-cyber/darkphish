@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"testing"
+
+	"github.com/go-ldap/ldap/v3"
 )
 
 type fakeReader struct {
@@ -98,17 +100,89 @@ func TestNormalizeConfigRejectsUnsafeAttributeName(t *testing.T) {
 	}
 }
 
-func TestCollectLeafDNsHandlesCycles(t *testing.T) {
+func TestCollectLeafEntriesHandlesCycles(t *testing.T) {
 	reader := &fakeReader{entries: map[string]directoryEntry{
 		"CN=a,DC=x":    {DN: "CN=a,DC=x", ObjectClass: []string{"group"}, Members: []string{"CN=b,DC=x"}},
 		"CN=b,DC=x":    {DN: "CN=b,DC=x", ObjectClass: []string{"group"}, Members: []string{"CN=a,DC=x", "CN=user,DC=x"}},
 		"CN=user,DC=x": {DN: "CN=user,DC=x", ObjectClass: []string{"person"}, Values: map[string]string{"mail": "u@example.test"}},
 	}}
-	got, err := collectLeafDNs(context.Background(), reader, "CN=a,DC=x", []string{"mail"})
+	got, err := collectLeafEntries(context.Background(), reader, "CN=a,DC=x", []string{"mail"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := got["cn=user,dc=x"]; !ok || len(got) != 1 {
+	key, keyErr := canonicalDNKey("CN=user,DC=x")
+	if keyErr != nil {
+		t.Fatal(keyErr)
+	}
+	if _, ok := got[key]; !ok || len(got) != 1 {
 		t.Fatalf("cycle handling produced %#v", got)
+	}
+}
+
+
+func TestNormalizeConfigNormalizesLDAPSAndDomains(t *testing.T) {
+	cfg, err := normalizeConfig(Config{
+		URL:          "LDAPS://DC.EXAMPLE.TEST:636",
+		BindDN:       "CN=svc,DC=example,DC=test",
+		BindPassword: "secret",
+		GroupDN:      "CN=g,DC=example,DC=test",
+		EmailDomains: []string{"Example.Test", "@example.test"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.URL != "ldaps://dc.example.test:636" {
+		t.Fatalf("normalized URL=%q", cfg.URL)
+	}
+	if len(cfg.EmailDomains) != 1 || cfg.EmailDomains[0] != "example.test" {
+		t.Fatalf("domains=%#v", cfg.EmailDomains)
+	}
+}
+
+func TestNormalizeConfigBoundsDomains(t *testing.T) {
+	domains := make([]string, maxEmailDomains+1)
+	for i := range domains {
+		domains[i] = fmt.Sprintf("d%d.example.test", i)
+	}
+	_, err := normalizeConfig(Config{
+		URL:          "ldaps://dc.example.test",
+		BindDN:       "CN=svc,DC=example,DC=test",
+		BindPassword: "secret",
+		GroupDN:      "CN=g,DC=example,DC=test",
+		EmailDomains: domains,
+	})
+	if err == nil {
+		t.Fatal("too many domains accepted")
+	}
+}
+
+func TestCanonicalDNKeyNormalizesCaseAndMultivalueOrder(t *testing.T) {
+	a, err := canonicalDNKey("CN=Alice+OU=People,DC=Example,DC=Test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := canonicalDNKey("ou=people+cn=alice,dc=example,dc=test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a != b {
+		t.Fatalf("canonical keys differ: %q != %q", a, b)
+	}
+}
+
+func TestRangedMemberValues(t *testing.T) {
+	entry := &ldap.Entry{Attributes: []*ldap.EntryAttribute{
+		{Name: "member;range=0-1499", Values: []string{"CN=a,DC=x", "CN=b,DC=x"}},
+	}}
+	values, next, done := rangedMemberValues(entry)
+	if done || next != 1500 || len(values) != 2 {
+		t.Fatalf("values=%#v next=%d done=%v", values, next, done)
+	}
+	entry = &ldap.Entry{Attributes: []*ldap.EntryAttribute{
+		{Name: "member;range=1500-*", Values: []string{"CN=c,DC=x"}},
+	}}
+	values, next, done = rangedMemberValues(entry)
+	if !done || next != 0 || len(values) != 1 {
+		t.Fatalf("final values=%#v next=%d done=%v", values, next, done)
 	}
 }

@@ -56,13 +56,8 @@ func TestRenderedProfileRequiresConfiguredBoundedRoot(t *testing.T) {
 	}
 	root := t.TempDir()
 	t.Setenv(renderedProfileRootEnvironment, root)
-	profile, err := createRenderedProfileDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(profile)
-	if filepath.Dir(profile) != root {
-		t.Fatalf("profile %q escaped configured root %q", profile, root)
+	if _, err := createRenderedProfileDir(); err == nil {
+		t.Fatal("renderer accepted a profile root without a verified hard quota")
 	}
 }
 

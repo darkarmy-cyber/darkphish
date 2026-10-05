@@ -29,6 +29,8 @@ const maxRenderedRequestHeaderBytes = 64 << 10
 const maxRenderedResponseHeaderBytes int64 = 64 << 10
 const maxRenderedMemoryBytes int64 = 512 << 20
 const maxRenderedPIDs = 128
+const maxRenderedProfileFilesystemBytes uint64 = 512 << 20
+const maxRenderedProfileInodes uint64 = 8192
 const renderedProfileRootEnvironment = "DARKPHISH_RENDER_PROFILE_ROOT"
 
 // Keep aggregate renderer CPU below the whole machine so the API and the
@@ -63,7 +65,7 @@ func createRenderedProfileDir() (string, error) {
 		return "", errRenderedImportUnavailable
 	}
 	info, err := os.Stat(root)
-	if err != nil || !info.IsDir() {
+	if err != nil || !info.IsDir() || !renderedProfileRootIsBounded(root) {
 		return "", errRenderedImportUnavailable
 	}
 	profileDir, err := os.MkdirTemp(root, "profile-")

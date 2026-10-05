@@ -283,7 +283,7 @@ func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []stri
 	}
 	rangeValues, rangeStart, rangeDone := rangedMemberValues(entry)
 	for _, memberDN := range rangeValues {
-		if err := appendBoundedValue(&members, memberDN, maxDirectoryMembers, maxMembershipBytes, maxDNBytes); err != nil {
+		if err := appendBoundedValue(&members, &memberBytes, memberDN, maxDirectoryMembers, maxMembershipBytes, maxDNBytes); err != nil {
 			return directoryEntry{}, err
 		}
 	}

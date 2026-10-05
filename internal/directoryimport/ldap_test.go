@@ -287,14 +287,14 @@ func TestBoundedValuesRejectsLargeMemberAndObjectClassSets(t *testing.T) {
 	for i := range tooMany {
 		tooMany[i] = fmt.Sprintf("CN=user-%d,DC=example,DC=test", i)
 	}
-	if _, err := boundedValues(tooMany, maxDirectoryMembers, maxMembershipBytes, maxDNBytes); err == nil {
+	if _, _, err := boundedValues(tooMany, maxDirectoryMembers, maxMembershipBytes, maxDNBytes); err == nil {
 		t.Fatal("oversized member set accepted")
 	}
 	classes := make([]string, maxObjectClasses+1)
 	for i := range classes {
 		classes[i] = fmt.Sprintf("class%d", i)
 	}
-	if _, err := boundedValues(classes, maxObjectClasses, maxObjectClassBytes, 256); err == nil {
+	if _, _, err := boundedValues(classes, maxObjectClasses, maxObjectClassBytes, 256); err == nil {
 		t.Fatal("oversized objectClass set accepted")
 	}
 }

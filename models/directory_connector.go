@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	DirectoryProviderEntra = "entra"
+	DirectoryProviderEntra        = "entra"
 	maxDirectoryClientSecretBytes = 8192
 )
 

@@ -38,11 +38,11 @@ func TestRenderedCgroupRootSurvivesServiceLeafReexec(t *testing.T) {
 	}
 }
 
-func TestRenderedCgroupRequiresDelegatedMemoryAndCPUControllers(t *testing.T) {
+func TestRenderedCgroupRequiresDelegatedResourceControllers(t *testing.T) {
 	root := t.TempDir()
 	controllers := filepath.Join(root, "cgroup.controllers")
 	subtreeControl := filepath.Join(root, "cgroup.subtree_control")
-	if err := os.WriteFile(controllers, []byte("memory"), 0o600); err != nil {
+	if err := os.WriteFile(controllers, []byte("cpu memory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(subtreeControl, nil, 0o600); err != nil {
@@ -52,19 +52,19 @@ func TestRenderedCgroupRequiresDelegatedMemoryAndCPUControllers(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := prepareRenderedCgroupRoot(root); !errors.Is(err, errRenderedImportUnavailable) {
-		t.Fatalf("renderer accepted a subtree without delegated CPU control: %v", err)
+		t.Fatalf("renderer accepted a subtree without delegated PID control: %v", err)
 	}
-	if err := os.WriteFile(controllers, []byte("cpu memory"), 0o600); err != nil {
+	if err := os.WriteFile(controllers, []byte("cpu memory pids"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := prepareRenderedCgroupRoot(root); err != nil {
-		t.Fatalf("renderer rejected delegated CPU and memory controls: %v", err)
+		t.Fatalf("renderer rejected delegated CPU, memory, and PID controls: %v", err)
 	}
 	leafProcess, err := os.ReadFile(filepath.Join(root, "darkphish-main", "cgroup.procs"))
 	if err != nil || string(leafProcess) != "123" {
 		t.Fatalf("service process was not moved to the stable leaf: %q, %v", leafProcess, err)
 	}
-	if !cgroupHasControllers(subtreeControl, "cpu", "memory") {
+	if !cgroupHasControllers(subtreeControl, "cpu", "memory", "pids") {
 		t.Fatal("delegated controllers were not enabled for renderer children")
 	}
 	if got := renderedCPUMax(); got != "40000 100000" {

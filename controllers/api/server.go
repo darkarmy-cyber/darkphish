@@ -115,6 +115,8 @@ func (as *Server) registerRoutes() {
 	router.HandleFunc("/users/{id:[0-9]+}", mid.Use(as.User))
 	router.HandleFunc("/util/send_test_email", as.SendTestEmail)
 	router.HandleFunc("/import/group", as.ImportGroup)
+	router.HandleFunc("/import/ldap/capability", mid.Use(as.LDAPImportCapability, mid.RequirePermission(models.PermissionModifySystem))).Methods(http.MethodGet)
+	router.HandleFunc("/import/ldap/preview", mid.Use(as.PreviewLDAPImport, mid.RequirePermission(models.PermissionModifySystem), as.limitSensitive)).Methods(http.MethodPost)
 	router.HandleFunc("/import/email", as.ImportEmail)
 	router.HandleFunc("/import/email/images", as.limitSensitive(http.HandlerFunc(as.PreviewEmailImages))).Methods(http.MethodPost)
 	router.HandleFunc("/import/site", as.ImportSite)

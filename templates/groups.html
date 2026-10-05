@@ -61,6 +61,72 @@
                     <span id="csv-template" class="text-muted small">
                         <i class="fa fa-file-excel-o"></i> Download CSV Template</span>
                 </div>
+                <div id="ldapImportSection" class="panel panel-default" style="display:none;">
+                    <div class="panel-heading">
+                        <strong>LDAP / Active Directory Import</strong>
+                        <span class="label label-primary">Pro</span>
+                    </div>
+                    <div class="panel-body">
+                        <p class="text-muted small">
+                            LDAPS only. The bind password is used for this preview request and is never stored.
+                        </p>
+                        <div class="row">
+                            <div class="col-sm-6 form-group">
+                                <label for="ldapUrl">LDAPS URL</label>
+                                <input type="url" class="form-control" id="ldapUrl" placeholder="ldaps://dc.example.com:636">
+                            </div>
+                            <div class="col-sm-6 form-group">
+                                <label for="ldapBindDn">Bind DN</label>
+                                <input type="text" class="form-control" id="ldapBindDn" placeholder="CN=svc-darkphish,OU=Service Accounts,DC=example,DC=com">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-sm-6 form-group">
+                                <label for="ldapBindPassword">Bind Password</label>
+                                <input type="password" class="form-control" id="ldapBindPassword" autocomplete="new-password">
+                            </div>
+                            <div class="col-sm-6 form-group">
+                                <label for="ldapGroupDn">Group DN</label>
+                                <input type="text" class="form-control" id="ldapGroupDn" placeholder="CN=Security Training,OU=Groups,DC=example,DC=com">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-sm-6 form-group">
+                                <label for="ldapExclusionGroupDn">Exclusion Group DN <span class="text-muted">(optional)</span></label>
+                                <input type="text" class="form-control" id="ldapExclusionGroupDn">
+                            </div>
+                            <div class="col-sm-6 form-group">
+                                <label for="ldapEmailDomains">Allowed Email Domains <span class="text-muted">(optional)</span></label>
+                                <input type="text" class="form-control" id="ldapEmailDomains" placeholder="example.com, subsidiary.example.com">
+                            </div>
+                        </div>
+                        <details>
+                            <summary>Attribute mapping</summary>
+                            <div class="row" style="margin-top:10px;">
+                                <div class="col-sm-3 form-group">
+                                    <label for="ldapFirstNameAttr">First name</label>
+                                    <input type="text" class="form-control" id="ldapFirstNameAttr" value="givenName">
+                                </div>
+                                <div class="col-sm-3 form-group">
+                                    <label for="ldapLastNameAttr">Last name</label>
+                                    <input type="text" class="form-control" id="ldapLastNameAttr" value="sn">
+                                </div>
+                                <div class="col-sm-3 form-group">
+                                    <label for="ldapEmailAttr">Email</label>
+                                    <input type="text" class="form-control" id="ldapEmailAttr" value="mail">
+                                </div>
+                                <div class="col-sm-3 form-group">
+                                    <label for="ldapPositionAttr">Position</label>
+                                    <input type="text" class="form-control" id="ldapPositionAttr" value="title">
+                                </div>
+                            </div>
+                        </details>
+                        <button type="button" class="btn btn-primary" id="ldapPreviewImport">
+                            <i class="fa fa-search"></i> Preview &amp; Add Users
+                        </button>
+                        <span id="ldapImportStatus" class="text-muted small" style="margin-left:8px;"></span>
+                    </div>
+                </div>
                 <div class="row">
                     <form id="targetForm">
                         <div class="col-sm-2">

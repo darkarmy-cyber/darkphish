@@ -90,6 +90,8 @@ func apiAuditAction(method, path string) string {
 		return ""
 	case method == http.MethodGet && strings.HasSuffix(clean, "/results") && strings.HasPrefix(clean, "/api/campaigns/"):
 		return "campaign.results.view"
+	case method == http.MethodPost && clean == "/api/import/ldap/preview":
+		return "directory.import.preview"
 	case method == http.MethodPost && clean == "/api/campaigns":
 		return "campaign.create"
 	case method == http.MethodPost && strings.HasSuffix(clean, "/complete"):
@@ -313,6 +315,10 @@ func requiredPATScope(method, path string) string {
 		return "integrations:read"
 	case clean == "/api/import/group":
 		return "groups:write"
+	case clean == "/api/import/ldap/capability":
+		return "integrations:write"
+	case clean == "/api/import/ldap/preview":
+		return "integrations:write"
 	case clean == "/api/import/email" || clean == "/api/import/email/images":
 		return "templates:write"
 	case clean == "/api/import/site":

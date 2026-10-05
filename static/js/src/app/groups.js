@@ -1,7 +1,10 @@
 var groups = []
+var ldapPreviewRequest = null
+var ldapEditSession = 0
 
 // Save attempts to POST or PUT to /groups/
 function save(id) {
+    cancelLDAPPreview()
     var targets = []
     $.each($("#targetsTable").DataTable().rows().data(), function (i, target) {
         targets.push({
@@ -46,13 +49,27 @@ function save(id) {
     }
 }
 
+function cancelLDAPPreview() {
+    ldapEditSession++
+    if (ldapPreviewRequest) {
+        ldapPreviewRequest.abort()
+        ldapPreviewRequest = null
+    }
+    $("#ldapPreviewImport").prop("disabled", false)
+}
+
 function dismiss() {
+    cancelLDAPPreview()
     $("#targetsTable").dataTable().DataTable().clear().draw()
     $("#name").val("")
+    $("#ldapBindPassword").val("")
+    $("#ldapImportStatus").text("")
     $("#modal\\.flashes").empty()
 }
 
 function edit(id) {
+    cancelLDAPPreview()
+    var session = ldapEditSession
     targets = $("#targetsTable").dataTable({
         destroy: true, // Destroy any other instantiated table - http://datatables.net/manual/tech-notes/3#destroy
         columnDefs: [{
@@ -182,9 +199,17 @@ var deleteGroup = function (id) {
     })
 }
 
+function normalizeEmailDomainForUI(email) {
+    var at = email.lastIndexOf("@")
+    if (at <= 0 || at === email.length - 1) {
+        return email
+    }
+    return email.substring(0, at + 1) + email.substring(at + 1).toLowerCase()
+}
+
 function addTarget(firstNameInput, lastNameInput, emailInput, positionInput) {
-    // Create new data row.
-    var email = escapeHtml(emailInput).toLowerCase();
+    // Preserve mailbox local-part case; only the domain is case-insensitive.
+    var email = escapeHtml(normalizeEmailDomainForUI(emailInput.trim()));
     var newRow = [
         escapeHtml(firstNameInput),
         escapeHtml(lastNameInput),
@@ -211,6 +236,88 @@ function addTarget(firstNameInput, lastNameInput, emailInput, positionInput) {
     } else {
         targetsTable.row.add(newRow);
     }
+}
+
+function ldapDomains() {
+    return $("#ldapEmailDomains").val()
+        .split(",")
+        .map(function (domain) { return domain.trim() })
+        .filter(function (domain) { return domain.length > 0 })
+}
+
+function previewLDAPImport() {
+    var required = ["#ldapUrl", "#ldapBindDn", "#ldapBindPassword", "#ldapGroupDn"]
+    for (var i = 0; i < required.length; i++) {
+        if (!$(required[i]).val().trim()) {
+            modalError("LDAPS URL, bind DN, bind password and group DN are required")
+            return
+        }
+    }
+    var request = {
+        url: $("#ldapUrl").val().trim(),
+        bind_dn: $("#ldapBindDn").val().trim(),
+        bind_password: $("#ldapBindPassword").val(),
+        group_dn: $("#ldapGroupDn").val().trim(),
+        exclusion_group_dn: $("#ldapExclusionGroupDn").val().trim(),
+        email_domains: ldapDomains(),
+        attributes: {
+            first_name: $("#ldapFirstNameAttr").val().trim(),
+            last_name: $("#ldapLastNameAttr").val().trim(),
+            email: $("#ldapEmailAttr").val().trim(),
+            position: $("#ldapPositionAttr").val().trim()
+        }
+    }
+    $("#ldapPreviewImport").prop("disabled", true)
+    $("#ldapImportStatus").text("Loading directory preview…")
+    var session = ldapEditSession
+    ldapPreviewRequest = api.preview_ldap_import(request)
+        .success(function (preview) {
+            if (session !== ldapEditSession) {
+                return
+            }
+            $.each(preview.recipients || [], function (i, record) {
+                addTarget(record.first_name, record.last_name, record.email, record.position)
+            })
+            targets.DataTable().draw()
+            $("#ldapImportStatus").text(
+                preview.matched + " added, " + preview.excluded + " excluded, " + preview.skipped + " skipped"
+            )
+            if (preview.warnings && preview.warnings.length > 0) {
+                modalError(preview.warnings.join(" "))
+            }
+        })
+        .error(function (data, status) {
+            if (status === "abort" || session !== ldapEditSession) {
+                return
+            }
+            var message = "LDAP directory preview failed"
+            if (data.responseJSON && data.responseJSON.message) {
+                message = data.responseJSON.message
+            }
+            modalError(message)
+            $("#ldapImportStatus").text("")
+        })
+        .complete(function () {
+            $("#ldapBindPassword").val("")
+            if (session === ldapEditSession) {
+                $("#ldapPreviewImport").prop("disabled", false)
+                ldapPreviewRequest = null
+            }
+        })
+}
+
+function loadLDAPImportCapability() {
+    api.ldap_import_capability()
+        .success(function (capability) {
+            if (capability.enabled) {
+                $("#ldapImportSection").show()
+            } else {
+                $("#ldapImportSection").hide()
+            }
+        })
+        .error(function () {
+            $("#ldapImportSection").hide()
+        })
 }
 
 function load() {
@@ -258,6 +365,8 @@ function load() {
 
 $(document).ready(function () {
     load()
+    loadLDAPImportCapability()
+    $("#ldapPreviewImport").click(previewLDAPImport)
     // Setup the event listeners
     // Handle manual additions
     $("#targetForm").submit(function () {

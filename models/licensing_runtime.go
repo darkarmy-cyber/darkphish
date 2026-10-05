@@ -18,6 +18,7 @@ var (
 )
 
 var ErrLicensingNotConfigured = errors.New("Licensing is not configured")
+var ErrProfessionalEditionRequired = errors.New("Professional or Enterprise license required")
 
 type LicenseStatus struct {
 	Configured          bool   `json:"configured"`
@@ -119,4 +120,22 @@ func RefreshCommunityLicense(ctx context.Context, now time.Time) (LicenseStatus,
 		return LicenseStatus{}, fmt.Errorf("verify refreshed lease: %w", err)
 	}
 	return GetLicenseStatus(now)
+}
+
+func CheckDirectoryImportLicense(now time.Time) error {
+	manager := currentLicenseManager()
+	if manager == nil {
+		return ErrProfessionalEditionRequired
+	}
+	lease, state, verifyErr := manager.Snapshot(now.UTC())
+	if verifyErr != nil && state != licensing.StateInvalid {
+		return ErrProfessionalEditionRequired
+	}
+	if !state.AllowsExpansion() {
+		return ErrProfessionalEditionRequired
+	}
+	if lease.Edition != licensing.EditionProfessional && lease.Edition != licensing.EditionEnterprise {
+		return ErrProfessionalEditionRequired
+	}
+	return nil
 }

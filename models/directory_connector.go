@@ -10,7 +10,10 @@ import (
 	"gorm.io/gorm"
 )
 
-const DirectoryProviderEntra = "entra"
+const (
+	DirectoryProviderEntra = "entra"
+	maxDirectoryClientSecretBytes = 8192
+)
 
 var (
 	ErrDirectoryConnectorNameRequired   = errors.New("directory connector name is required")
@@ -33,6 +36,7 @@ var (
 type DirectoryConnector struct {
 	ID                  int64      `json:"id" gorm:"column:id;primaryKey"`
 	Name                string     `json:"name"`
+	NameKey             string     `json:"-" gorm:"column:name_key"`
 	OwnerUserID         int64      `json:"-" gorm:"column:owner_user_id"`
 	Provider            string     `json:"provider"`
 	TenantID            string     `json:"tenant_id"`
@@ -110,6 +114,7 @@ func normalizeDirectoryDomains(domains []string) ([]string, error) {
 
 func (c *DirectoryConnector) Validate() error {
 	c.Name = strings.TrimSpace(c.Name)
+	c.NameKey = strings.ToLower(c.Name)
 	c.Provider = strings.ToLower(strings.TrimSpace(c.Provider))
 	c.TenantID = strings.TrimSpace(c.TenantID)
 	c.ClientID = strings.ToLower(strings.TrimSpace(c.ClientID))
@@ -222,7 +227,7 @@ func PostDirectoryConnector(connector *DirectoryConnector) error {
 	if connector.ID != 0 {
 		return errors.New("new directory connectors must not specify an id")
 	}
-	if connector.ClientSecret == "" {
+	if connector.ClientSecret == "" || len(connector.ClientSecret) > maxDirectoryClientSecretBytes {
 		return ErrDirectoryConnectorClientSecret
 	}
 	if err := connector.Validate(); err != nil {
@@ -259,6 +264,9 @@ func PutDirectoryConnector(connector *DirectoryConnector) error {
 		}
 		connector.ClientSecret = stored.ClientSecret
 	} else {
+		if len(connector.ClientSecret) > maxDirectoryClientSecretBytes {
+			return ErrDirectoryConnectorClientSecret
+		}
 		protected, err := secretStore.Seal(connector.ClientSecret)
 		if err != nil {
 			return err
@@ -276,6 +284,7 @@ func PutDirectoryConnector(connector *DirectoryConnector) error {
 		Where("id=? AND owner_user_id=? AND modified_at=?", connector.ID, connector.OwnerUserID, stored.ModifiedAt).
 		Updates(map[string]interface{}{
 			"name":                  connector.Name,
+			"name_key":              connector.NameKey,
 			"provider":              connector.Provider,
 			"tenant_id":             connector.TenantID,
 			"client_id":             connector.ClientID,
@@ -296,6 +305,27 @@ func PutDirectoryConnector(connector *DirectoryConnector) error {
 	connector.ClientSecret = ""
 	connector.ClientSecretSet = true
 	return nil
+}
+
+func DeleteDirectoryConnectorsForOwner(ownerUserID int64) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		var ids []int64
+		if err := tx.Model(&DirectoryConnector{}).Where("owner_user_id=?", ownerUserID).Pluck("id", &ids).Error; err != nil {
+			return err
+		}
+		if len(ids) > 0 {
+			if err := tx.Where("connector_id IN ?", ids).Delete(&DirectorySyncRun{}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Where("owner_user_id=?", ownerUserID).Delete(&DirectoryConnector{}).Error
+	})
+}
+
+func DisableDirectoryConnectorsForGroup(tx *gorm.DB, groupID, ownerUserID int64) error {
+	return tx.Model(&DirectoryConnector{}).
+		Where("target_group_id=? AND owner_user_id=?", groupID, ownerUserID).
+		Updates(map[string]interface{}{"enabled": false, "target_group_id": nil, "next_sync_at": nil, "modified_at": time.Now().UTC()}).Error
 }
 
 func DeleteDirectoryConnector(id, ownerUserID int64) error {

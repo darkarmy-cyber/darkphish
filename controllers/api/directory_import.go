@@ -34,10 +34,12 @@ func (as *Server) PreviewLDAPImport(w http.ResponseWriter, r *http.Request) {
 	preview, err := directoryimport.PreviewLDAP(r.Context(), request)
 	if err != nil {
 		code := http.StatusBadGateway
+		message := "LDAP directory preview failed"
 		if errors.Is(err, directoryimport.ErrInvalidConfig) {
 			code = http.StatusBadRequest
+			message = "Invalid LDAP import configuration"
 		}
-		JSONResponse(w, models.Response{Success: false, Message: err.Error()}, code)
+		JSONResponse(w, models.Response{Success: false, Message: message}, code)
 		return
 	}
 	JSONResponse(w, preview, http.StatusOK)

@@ -2,6 +2,7 @@
 CREATE TABLE directory_connectors (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL UNIQUE,
+    owner_user_id BIGINT NOT NULL,
     provider VARCHAR(32) NOT NULL,
     tenant_id VARCHAR(255) NOT NULL,
     client_id VARCHAR(64) NOT NULL,

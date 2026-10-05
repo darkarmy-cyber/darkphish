@@ -49,6 +49,23 @@ func TestBoundedBufferRejectsOverflow(t *testing.T) {
 	}
 }
 
+func TestRenderedProfileRequiresConfiguredBoundedRoot(t *testing.T) {
+	t.Setenv(renderedProfileRootEnvironment, "")
+	if _, err := createRenderedProfileDir(); err == nil {
+		t.Fatal("renderer accepted an unconfigured profile root")
+	}
+	root := t.TempDir()
+	t.Setenv(renderedProfileRootEnvironment, root)
+	profile, err := createRenderedProfileDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(profile)
+	if filepath.Dir(profile) != root {
+		t.Fatalf("profile %q escaped configured root %q", profile, root)
+	}
+}
+
 func TestChromiumExecutableHonorsConfiguredPath(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "browser")
@@ -548,6 +565,9 @@ func TestRendererSecurityCapsAndSetupCommands(t *testing.T) {
 	if maxRenderedMemoryBytes != 512<<20 {
 		t.Fatalf("unexpected per-render memory cap: %d", maxRenderedMemoryBytes)
 	}
+	if maxRenderedPIDs != 128 {
+		t.Fatalf("unexpected per-render PID cap: %d", maxRenderedPIDs)
+	}
 	commands := renderSetupCommands()
 	for _, command := range commands {
 		if command.method == "Page.navigate" {
@@ -588,5 +608,16 @@ func TestRenderObservationFlagsIntermediateHTTPSDowngrade(t *testing.T) {
 	})
 	if !observation.insecureDowngrade {
 		t.Fatal("intermediate HTTP navigation was not flagged")
+	}
+}
+
+func TestCDPWebSocketConfigOmitsOrigin(t *testing.T) {
+	config, err := cdpWebSocketConfig("ws://127.0.0.1:9222/devtools/page/test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Origin = nil
+	if config.Origin != nil {
+		t.Fatal("CDP websocket config retained an Origin")
 	}
 }

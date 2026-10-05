@@ -146,12 +146,27 @@ func denyBrowserDownloads(ctx context.Context, profileDir string, port int) erro
 	return nil
 }
 
-func dialCDP(ctx context.Context, raw string) (*cdpClient, error) {
+func cdpWebSocketConfig(raw string) (*websocket.Config, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Scheme != "ws" || parsed.Hostname() != "127.0.0.1" {
 		return nil, errRenderedImportUnavailable
 	}
-	ws, err := websocket.Dial(raw, "", "http://127.0.0.1/")
+	config, err := websocket.NewConfig(raw, "http://127.0.0.1/")
+	if err != nil {
+		return nil, err
+	}
+	// CDP is a non-browser loopback client. Omitting Origin is accepted across
+	// supported Chromium versions without broadening remote origin access.
+	config.Origin = nil
+	return config, nil
+}
+
+func dialCDP(ctx context.Context, raw string) (*cdpClient, error) {
+	config, err := cdpWebSocketConfig(raw)
+	if err != nil {
+		return nil, err
+	}
+	ws, err := websocket.DialConfig(config)
 	if err != nil {
 		return nil, err
 	}

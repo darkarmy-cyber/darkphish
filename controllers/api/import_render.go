@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,8 @@ const maxRenderedProxyConnections = 16
 const maxRenderedRequestHeaderBytes = 64 << 10
 const maxRenderedResponseHeaderBytes int64 = 64 << 10
 const maxRenderedMemoryBytes int64 = 512 << 20
+const maxRenderedPIDs = 128
+const renderedProfileRootEnvironment = "DARKPHISH_RENDER_PROFILE_ROOT"
 
 // Keep aggregate renderer CPU below the whole machine so the API and the
 // renderer proxy remain responsive even when every render slot is occupied.
@@ -52,6 +55,22 @@ func releaseRenderedImportSlot() {
 	case <-renderedImportSlots:
 	default:
 	}
+}
+
+func createRenderedProfileDir() (string, error) {
+	root := strings.TrimSpace(os.Getenv(renderedProfileRootEnvironment))
+	if root == "" || !filepath.IsAbs(root) {
+		return "", errRenderedImportUnavailable
+	}
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return "", errRenderedImportUnavailable
+	}
+	profileDir, err := os.MkdirTemp(root, "profile-")
+	if err != nil {
+		return "", errRenderedImportUnavailable
+	}
+	return profileDir, nil
 }
 
 func chromiumExecutable() string {
@@ -406,7 +425,7 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 		return nil, nil, errRenderedImportUnavailable
 	}
 	defer closeProxy()
-	profileDir, err := os.MkdirTemp("", "darkphish-render-*")
+	profileDir, err := createRenderedProfileDir()
 	if err != nil {
 		return nil, nil, errRenderedImportUnavailable
 	}
@@ -414,8 +433,16 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 
 	args := []string{
 		"--headless=new",
+		"--incognito",
 		"--disable-gpu",
 		"--disable-background-networking",
+		"--disable-application-cache",
+		"--disable-databases",
+		"--disable-file-system",
+		"--disable-local-storage",
+		"--disable-session-storage",
+		"--disk-cache-size=1",
+		"--media-cache-size=1",
 		"--disable-default-apps",
 		"--disable-extensions",
 		"--disable-sync",

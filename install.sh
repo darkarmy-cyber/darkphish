@@ -564,6 +564,10 @@ EOF_CONFIG
 
 create_systemd_unit() {
     log "Creating hardened systemd service"
+    local app_uid app_gid
+    app_uid="$(id -u "${APP_USER}")"
+    app_gid="$(id -g "${APP_USER}")"
+    [[ "${app_uid}" =~ ^[0-9]+$ && "${app_gid}" =~ ^[0-9]+$ ]] || die "invalid DarkPhish service identity"
     SERVICE_FILE_CREATED=1
     cat > "${SERVICE_FILE}" <<EOF_SERVICE
 [Unit]
@@ -583,7 +587,9 @@ RestartSec=5s
 TimeoutStopSec=120s
 KillMode=control-group
 UMask=0077
-Delegate=cpu memory
+Delegate=cpu memory pids
+Environment=DARKPHISH_RENDER_PROFILE_ROOT=/run/darkphish-render
+TemporaryFileSystem=/run/darkphish-render:rw,nodev,nosuid,noexec,size=512M,nr_inodes=8192,mode=0700,uid=${app_uid},gid=${app_gid}
 
 NoNewPrivileges=true
 PrivateTmp=true
@@ -606,7 +612,7 @@ SystemCallArchitectures=native
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
-ReadWritePaths=${INSTALL_DIR} ${BOOTSTRAP_DIR}
+ReadWritePaths=${INSTALL_DIR} ${BOOTSTRAP_DIR} /run/darkphish-render
 
 [Install]
 WantedBy=multi-user.target

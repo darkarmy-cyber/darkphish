@@ -113,7 +113,7 @@ func prepareRenderedCgroupRoot(cgroupRoot string) error {
 	renderedCgroupSetupMu.Lock()
 	defer renderedCgroupSetupMu.Unlock()
 
-	required := []string{"cpu", "memory"}
+	required := []string{"cpu", "memory", "pids"}
 	subtreeControl := filepath.Join(cgroupRoot, "cgroup.subtree_control")
 	if cgroupHasControllers(subtreeControl, required...) {
 		return nil
@@ -138,7 +138,7 @@ func prepareRenderedCgroupRoot(cgroupRoot string) error {
 			return errRenderedImportUnavailable
 		}
 	}
-	if err := os.WriteFile(subtreeControl, []byte("+cpu +memory"), 0o600); err != nil {
+	if err := os.WriteFile(subtreeControl, []byte("+cpu +memory +pids"), 0o600); err != nil {
 		return errRenderedImportUnavailable
 	}
 	if !cgroupHasControllers(subtreeControl, required...) {
@@ -153,7 +153,7 @@ func renderedCPUMax() string {
 
 func startRenderedCommand(cmd *exec.Cmd) (func() error, error) {
 	// Rendered imports are optional and fail closed unless the service has a
-	// delegated, writable cgroup v2 subtree with memory and CPU controllers.
+	// delegated, writable cgroup v2 subtree with memory, CPU, and PID controllers.
 	cgroupRoot, err := renderedCgroupRoot()
 	if err != nil || prepareRenderedCgroupRoot(cgroupRoot) != nil {
 		return nil, errRenderedImportUnavailable
@@ -177,6 +177,9 @@ func startRenderedCommand(cmd *exec.Cmd) (func() error, error) {
 		return fail()
 	}
 	if err := os.WriteFile(filepath.Join(cgroup, "cpu.max"), []byte(renderedCPUMax()), 0o600); err != nil {
+		return fail()
+	}
+	if err := os.WriteFile(filepath.Join(cgroup, "pids.max"), []byte(strconv.Itoa(maxRenderedPIDs)), 0o600); err != nil {
 		return fail()
 	}
 	if _, err := os.Stat(filepath.Join(cgroup, "cgroup.kill")); err != nil {

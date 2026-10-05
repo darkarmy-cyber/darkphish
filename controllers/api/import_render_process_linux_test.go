@@ -91,3 +91,9 @@ func TestRenderedCommandStartsInsideResourceCgroupOrFailsClosed(t *testing.T) {
 	_ = cmd.Cancel()
 	_ = cmd.Wait()
 }
+
+func TestRenderedPIDLimitIsConservative(t *testing.T) {
+	if maxRenderedPIDs <= 0 || maxRenderedPIDs > 256 {
+		t.Fatalf("unexpected renderer PID limit: %d", maxRenderedPIDs)
+	}
+}

@@ -261,14 +261,14 @@ func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []stri
 	if err != nil {
 		return directoryEntry{}, err
 	}
-	classes, err := boundedValues(entry.GetEqualFoldAttributeValues("objectClass"), maxObjectClasses, maxObjectClassBytes, 256)
+	classes, _, err := boundedValues(entry.GetEqualFoldAttributeValues("objectClass"), maxObjectClasses, maxObjectClassBytes, 256)
 	if err != nil {
 		return directoryEntry{}, err
 	}
 	if hasClass(classes, "posixGroup") {
 		return directoryEntry{}, ErrUnsupportedLDAP
 	}
-	members, err := boundedValues(entry.GetEqualFoldAttributeValues("member"), maxDirectoryMembers, maxMembershipBytes, maxDNBytes)
+	members, memberBytes, err := boundedValues(entry.GetEqualFoldAttributeValues("member"), maxDirectoryMembers, maxMembershipBytes, maxDNBytes)
 	if err != nil {
 		return directoryEntry{}, err
 	}
@@ -277,7 +277,7 @@ func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []stri
 		if parseErr != nil {
 			return directoryEntry{}, parseErr
 		}
-		if err := appendBoundedValue(&members, memberDN, maxDirectoryMembers, maxMembershipBytes, maxDNBytes); err != nil {
+		if err := appendBoundedValue(&members, &memberBytes, memberDN, maxDirectoryMembers, maxMembershipBytes, maxDNBytes); err != nil {
 			return directoryEntry{}, err
 		}
 	}
@@ -328,37 +328,34 @@ func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []stri
 	}, nil
 }
 
-func boundedValues(values []string, maxCount, maxBytes, maxValueBytes int) ([]string, error) {
+func boundedValues(values []string, maxCount, maxBytes, maxValueBytes int) ([]string, int, error) {
 	if len(values) > maxCount {
-		return nil, ErrTooManyEntries
+		return nil, 0, ErrTooManyEntries
 	}
 	out := make([]string, 0, len(values))
 	total := 0
 	for _, value := range values {
 		if len(value) == 0 || len(value) > maxValueBytes {
-			return nil, ErrTooManyEntries
+			return nil, 0, ErrTooManyEntries
 		}
 		total += len(value)
 		if total > maxBytes {
-			return nil, ErrTooManyEntries
+			return nil, 0, ErrTooManyEntries
 		}
 		out = append(out, value)
 	}
-	return out, nil
+	return out, total, nil
 }
 
-func appendBoundedValue(values *[]string, value string, maxCount, maxBytes, maxValueBytes int) error {
+func appendBoundedValue(values *[]string, totalBytes *int, value string, maxCount, maxBytes, maxValueBytes int) error {
 	if len(value) == 0 || len(value) > maxValueBytes || len(*values) >= maxCount {
 		return ErrTooManyEntries
 	}
-	total := len(value)
-	for _, current := range *values {
-		total += len(current)
-		if total > maxBytes {
-			return ErrTooManyEntries
-		}
+	if *totalBytes+len(value) > maxBytes {
+		return ErrTooManyEntries
 	}
 	*values = append(*values, value)
+	*totalBytes += len(value)
 	return nil
 }
 

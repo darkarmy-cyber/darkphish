@@ -110,7 +110,13 @@ func apiAuditAction(method, path string) string {
 		return "imap.update"
 	case strings.HasPrefix(clean, "/api/webhooks") && method != http.MethodGet && method != http.MethodHead:
 		return "webhook.update"
-	case strings.HasPrefix(clean, "/api/directory-connectors") && method != http.MethodGet && method != http.MethodHead:
+	case strings.HasPrefix(clean, "/api/directory-connectors/") && strings.HasSuffix(clean, "/preview") && method == http.MethodPost:
+		return "directory.connector.preview"
+	case strings.HasPrefix(clean, "/api/directory-connectors/") && method == http.MethodDelete:
+		return "directory.connector.delete"
+	case strings.HasPrefix(clean, "/api/directory-connectors") && method == http.MethodPost:
+		return "directory.connector.create"
+	case strings.HasPrefix(clean, "/api/directory-connectors/") && method == http.MethodPut:
 		return "directory.connector.update"
 	case method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions:
 		return "api.modify"

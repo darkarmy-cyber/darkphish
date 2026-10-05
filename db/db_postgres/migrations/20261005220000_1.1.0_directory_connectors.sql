@@ -2,14 +2,14 @@
 CREATE TABLE directory_connectors (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    name_key VARCHAR(255) NOT NULL,
-    owner_user_id BIGINT NOT NULL,
+    name_key VARCHAR(64) NOT NULL,
+    owner_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     provider VARCHAR(32) NOT NULL,
     tenant_id VARCHAR(255) NOT NULL,
     client_id VARCHAR(64) NOT NULL,
     client_secret TEXT NOT NULL,
     remote_group_id VARCHAR(64) NOT NULL,
-    target_group_id BIGINT NULL,
+    target_group_id BIGINT NULL REFERENCES groups(id) ON DELETE RESTRICT,
     email_domains TEXT NOT NULL DEFAULT '[]',
     enabled BOOLEAN NOT NULL DEFAULT FALSE,
     sync_interval_minutes INTEGER NOT NULL DEFAULT 0,
@@ -24,7 +24,7 @@ CREATE INDEX idx_directory_connectors_due ON directory_connectors(enabled, next_
 
 CREATE TABLE directory_sync_runs (
     id BIGSERIAL PRIMARY KEY,
-    connector_id BIGINT NOT NULL,
+    connector_id BIGINT NOT NULL REFERENCES directory_connectors(id) ON DELETE CASCADE,
     status VARCHAR(32) NOT NULL,
     started_at TIMESTAMPTZ NOT NULL,
     finished_at TIMESTAMPTZ NULL,

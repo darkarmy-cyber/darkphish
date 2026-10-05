@@ -139,11 +139,15 @@ func TestImportSiteSharesRequestDeadlineWithRenderer(t *testing.T) {
 
 type deadlineTrackingRecorder struct {
 	*httptest.ResponseRecorder
-	readDeadline time.Time
+	readDeadline      time.Time
+	deadlineInstalled bool
 }
 
 func (w *deadlineTrackingRecorder) SetReadDeadline(deadline time.Time) error {
 	w.readDeadline = deadline
+	if !deadline.IsZero() {
+		w.deadlineInstalled = true
+	}
 	return nil
 }
 
@@ -173,7 +177,7 @@ func TestImportSiteDeadlineCoversBodyDecode(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	ctx.apiServer.ImportSite(response, req)
-	if response.readDeadline.IsZero() {
+	if !response.deadlineInstalled {
 		t.Fatal("connection read deadline was not installed before body decoding")
 	}
 }

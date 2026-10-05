@@ -1,7 +1,7 @@
 -- +goose Up
 CREATE TABLE directory_connectors (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    name VARCHAR(255) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
     owner_user_id BIGINT NOT NULL,
     provider VARCHAR(32) NOT NULL,
     tenant_id VARCHAR(255) NOT NULL,
@@ -16,6 +16,8 @@ CREATE TABLE directory_connectors (
     next_sync_at DATETIME(6) NULL,
     created_at DATETIME(6) NOT NULL,
     modified_at DATETIME(6) NOT NULL,
+    UNIQUE INDEX idx_directory_connectors_owner_name (owner_user_id, name),
+    INDEX idx_directory_connectors_owner (owner_user_id),
     INDEX idx_directory_connectors_due (enabled, next_sync_at)
 );
 

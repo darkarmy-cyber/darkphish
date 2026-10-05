@@ -7,6 +7,7 @@ var pages = []
 var importPending = false
 var importRequest = null
 var importGeneration = 0
+var ignoreNextImportModalHide = false
 
 
 // Save attempts to POST to /templates/
@@ -51,6 +52,7 @@ function cancelPendingImport() {
     }
     importRequest = null
     importPending = false
+    ignoreNextImportModalHide = false
     $("#importSiteSubmit").prop("disabled", false)
 }
 
@@ -136,6 +138,7 @@ function importSite() {
                     importPending = false
                     $("#importSiteSubmit").prop("disabled", false)
                 })
+                ignoreNextImportModalHide = true
                 $("#importSiteModal").modal("hide")
                 if (data.warnings && data.warnings.length) {
                     var warning = $("<div>", {
@@ -286,6 +289,10 @@ $(document).ready(function () {
         dismiss()
     });
     $('#importSiteModal').on('hidden.bs.modal', function () {
+        if (ignoreNextImportModalHide) {
+            ignoreNextImportModalHide = false
+            return
+        }
         if (importPending) cancelPendingImport()
     });
     $("#capture_credentials_checkbox").change(function () {

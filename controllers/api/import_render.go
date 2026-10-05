@@ -24,7 +24,9 @@ var errRenderedImportUnavailable = errors.New("rendered site import unavailable"
 const maxRenderedTransferBytes int64 = 32 << 20
 const maxConcurrentRenderedImports = 2
 const maxRenderedProxyConnections = 16
+const maxRenderedRequestHeaderBytes = 64 << 10
 const maxRenderedResponseHeaderBytes int64 = 64 << 10
+const maxRenderedMemoryBytes int64 = 512 << 20
 
 var renderedImportSlots = make(chan struct{}, maxConcurrentRenderedImports)
 
@@ -143,12 +145,9 @@ func startRenderedImportProxy(ctx context.Context, budget *renderTransferBudget)
 	server := &http.Server{
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       15 * time.Second,
+		MaxHeaderBytes:    maxRenderedRequestHeaderBytes,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodConnect {
-				handleRenderedConnect(ctx, budget, w, r)
-				return
-			}
-			handleRenderedHTTP(ctx, budget, w, r)
+			handleRenderedProxyRequest(ctx, budget, w, r)
 		}),
 	}
 	go func() {
@@ -158,6 +157,41 @@ func startRenderedImportProxy(ctx context.Context, budget *renderTransferBudget)
 	go func() { _ = server.Serve(listener) }()
 	closeFn := func() { _ = server.Close() }
 	return "http://" + listener.Addr().String(), closeFn, nil
+}
+
+func handleRenderedProxyRequest(ctx context.Context, budget *renderTransferBudget, w http.ResponseWriter, r *http.Request) {
+	headerBytes := renderedRequestHeaderBytes(r)
+	if headerBytes > maxRenderedRequestHeaderBytes {
+		http.Error(w, "request headers too large", http.StatusRequestHeaderFieldsTooLarge)
+		return
+	}
+	if budget.reserve(headerBytes) != headerBytes {
+		http.Error(w, "transfer budget exhausted", http.StatusTooManyRequests)
+		return
+	}
+	if r.Method == http.MethodConnect {
+		handleRenderedConnect(ctx, budget, w, r)
+		return
+	}
+	handleRenderedHTTP(ctx, budget, w, r)
+}
+
+func renderedHeaderBytes(header http.Header) int {
+	total := 2
+	for key, values := range header {
+		for _, value := range values {
+			total += len(key) + len(value) + 4
+		}
+	}
+	return total
+}
+
+func renderedRequestHeaderBytes(r *http.Request) int {
+	total := renderedHeaderBytes(r.Header)
+	if r.Host != "" {
+		total += len("Host") + len(r.Host) + 4
+	}
+	return total
 }
 
 func renderedTarget(raw string) (string, error) {
@@ -269,14 +303,17 @@ func handleRenderedHTTP(ctx context.Context, budget *renderTransferBudget, w htt
 		http.Error(w, "method denied", http.StatusMethodNotAllowed)
 		return
 	}
+	if isRenderedWebSocketUpgrade(r.Header) {
+		http.Error(w, "upgrade denied", http.StatusForbidden)
+		return
+	}
 	if _, err := parseImportURL(r.URL.String()); err != nil {
 		http.Error(w, "destination denied", http.StatusForbidden)
 		return
 	}
 	request := r.Clone(ctx)
 	request.RequestURI = ""
-	request.Header.Del("Proxy-Connection")
-	request.Header.Del("Proxy-Authorization")
+	removeRenderedHopByHopHeaders(request.Header)
 	transport := &http.Transport{
 		DialContext:            publicRenderedDial,
 		TLSHandshakeTimeout:    10 * time.Second,
@@ -290,17 +327,16 @@ func handleRenderedHTTP(ctx context.Context, budget *renderTransferBudget, w htt
 		return
 	}
 	defer response.Body.Close()
-	headerBytes := 0
-	for key, values := range response.Header {
-		headerBytes += len(key) + 4
-		for _, value := range values {
-			headerBytes += len(value) + 2
-		}
+	if response.StatusCode == http.StatusSwitchingProtocols {
+		http.Error(w, "upgrade denied", http.StatusBadGateway)
+		return
 	}
+	headerBytes := renderedHeaderBytes(response.Header)
 	if headerBytes > int(maxRenderedResponseHeaderBytes) || budget.reserve(headerBytes) != headerBytes {
 		http.Error(w, "transfer budget exhausted", http.StatusTooManyRequests)
 		return
 	}
+	removeRenderedHopByHopHeaders(response.Header)
 	for key, values := range response.Header {
 		for _, value := range values {
 			w.Header().Add(key, value)
@@ -308,6 +344,24 @@ func handleRenderedHTTP(ctx context.Context, budget *renderTransferBudget, w htt
 	}
 	w.WriteHeader(response.StatusCode)
 	_, _ = io.Copy(w, &budgetReader{reader: response.Body, budget: budget})
+}
+
+func isRenderedWebSocketUpgrade(header http.Header) bool {
+	return strings.EqualFold(strings.TrimSpace(header.Get("Upgrade")), "websocket")
+}
+
+func removeRenderedHopByHopHeaders(header http.Header) {
+	for _, connectionValue := range header.Values("Connection") {
+		for _, token := range strings.Split(connectionValue, ",") {
+			header.Del(strings.TrimSpace(token))
+		}
+	}
+	for _, key := range []string{
+		"Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization",
+		"Proxy-Connection", "TE", "Trailer", "Transfer-Encoding", "Upgrade",
+	} {
+		header.Del(key)
+	}
 }
 
 func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error) {
@@ -358,23 +412,22 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 		args = append([]string{"--no-sandbox"}, args...)
 	}
 	cmd := exec.CommandContext(renderCtx, chrome, args...)
-	configureRenderedCommand(cmd)
 	var stderr boundedBuffer
 	stderr.limit = 1 << 20
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
+	limitCleanup, err := startRenderedCommand(cmd)
+	if err != nil {
 		return nil, nil, errRenderedImportUnavailable
 	}
-	defer func() {
-		if cmd.Cancel != nil {
-			_ = cmd.Cancel()
-		}
-		_ = cmd.Wait()
-	}()
 
 	rendered, finalURL, err := renderImportPageCDP(renderCtx, profileDir, sourceURL.String())
-	if err != nil || len(rendered) == 0 || len(rendered) > maxImportedPageBytes || finalURL == nil {
+	cleanupErr := limitCleanup()
+	if cmd.Cancel != nil {
+		_ = cmd.Cancel()
+	}
+	_ = cmd.Wait()
+	if err != nil || cleanupErr != nil || len(rendered) == 0 || len(rendered) > maxImportedPageBytes || finalURL == nil {
 		return nil, nil, errRenderedImportUnavailable
 	}
 	return rendered, finalURL, nil

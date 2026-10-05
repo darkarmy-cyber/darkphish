@@ -25,6 +25,35 @@ type cdpClient struct {
 	requireHTTPS bool
 }
 
+const maxRenderedCDPPayloadBytes = maxImportedPageBytes*8 + (1 << 20)
+
+type cdpCommand struct {
+	method string
+	params map[string]any
+}
+
+func childTargetCommands() []cdpCommand {
+	return []cdpCommand{
+		{"Target.setAutoAttach", map[string]any{"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}},
+		{"Fetch.enable", map[string]any{"patterns": []map[string]any{{"urlPattern": "*", "requestStage": "Request"}}}},
+		{"Runtime.runIfWaitingForDebugger", nil},
+	}
+}
+
+func renderSetupCommands() []cdpCommand {
+	return []cdpCommand{
+		{"Page.enable", nil},
+		{"Network.enable", nil},
+		{"Fetch.enable", map[string]any{"patterns": []map[string]any{{"urlPattern": "*", "requestStage": "Request"}}}},
+		{"Target.setAutoAttach", map[string]any{"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}},
+		{"Page.setLifecycleEventsEnabled", map[string]any{"enabled": true}},
+	}
+}
+
+func browserSetupCommands() []cdpCommand {
+	return []cdpCommand{{"Browser.setDownloadBehavior", map[string]any{"behavior": "deny"}}}
+}
+
 func readDevToolsPort(ctx context.Context, profileDir string) (int, error) {
 	path := filepath.Join(profileDir, "DevToolsActivePort")
 	ticker := time.NewTicker(50 * time.Millisecond)
@@ -83,6 +112,40 @@ func pageWebSocketURL(ctx context.Context, port int) (string, error) {
 	return "", errRenderedImportUnavailable
 }
 
+func browserWebSocketURL(profileDir string, port int) (string, error) {
+	data, err := os.ReadFile(filepath.Join(profileDir, "DevToolsActivePort"))
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) < 2 {
+		return "", errRenderedImportUnavailable
+	}
+	path := strings.TrimSpace(lines[1])
+	if !strings.HasPrefix(path, "/devtools/browser/") || strings.ContainsAny(path, "?#") {
+		return "", errRenderedImportUnavailable
+	}
+	return fmt.Sprintf("ws://127.0.0.1:%d%s", port, path), nil
+}
+
+func denyBrowserDownloads(ctx context.Context, profileDir string, port int) error {
+	wsURL, err := browserWebSocketURL(profileDir, port)
+	if err != nil {
+		return err
+	}
+	client, err := dialCDP(ctx, wsURL)
+	if err != nil {
+		return err
+	}
+	defer client.close()
+	for _, command := range browserSetupCommands() {
+		if _, err := client.call(ctx, command.method, command.params); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func dialCDP(ctx context.Context, raw string) (*cdpClient, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Scheme != "ws" || parsed.Hostname() != "127.0.0.1" {
@@ -92,7 +155,7 @@ func dialCDP(ctx context.Context, raw string) (*cdpClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	ws.MaxPayloadBytes = maxImportedPageBytes*6 + (1 << 20)
+	ws.MaxPayloadBytes = maxRenderedCDPPayloadBytes
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = ws.SetDeadline(deadline)
 	}
@@ -107,7 +170,9 @@ func (c *cdpClient) close() {
 
 func (c *cdpClient) receive(ctx context.Context) (map[string]any, error) {
 	if deadline, ok := ctx.Deadline(); ok {
-		_ = c.ws.SetDeadline(deadline)
+		_ = c.ws.SetReadDeadline(deadline)
+	} else {
+		_ = c.ws.SetReadDeadline(time.Time{})
 	}
 	var raw string
 	if err := websocket.Message.Receive(c.ws, &raw); err != nil {
@@ -121,11 +186,18 @@ func (c *cdpClient) receive(ctx context.Context) (map[string]any, error) {
 }
 
 func (c *cdpClient) sendNoWait(method string, params map[string]any) error {
+	return c.sendNoWaitSession(method, params, "")
+}
+
+func (c *cdpClient) sendNoWaitSession(method string, params map[string]any, sessionID string) error {
 	c.nextID++
 	id := c.nextID
 	request := map[string]any{"id": id, "method": method}
 	if params != nil {
 		request["params"] = params
+	}
+	if sessionID != "" {
+		request["sessionId"] = sessionID
 	}
 	if err := websocket.JSON.Send(c.ws, request); err != nil {
 		return err
@@ -140,6 +212,7 @@ func pausedRequestCommand(event map[string]any, requireHTTPS bool) (string, map[
 	request, _ := params["request"].(map[string]any)
 	method, _ := request["method"].(string)
 	rawURL, _ := request["url"].(string)
+	resourceType, _ := params["resourceType"].(string)
 	if requestID == "" {
 		return "", nil, errRenderedImportUnavailable
 	}
@@ -148,11 +221,24 @@ func pausedRequestCommand(event map[string]any, requireHTTPS bool) (string, map[
 	if requireHTTPS {
 		allowedScheme = parsed.Scheme == "https"
 	}
-	if err != nil || parsed.Hostname() == "" || !allowedScheme ||
+	if err != nil || parsed.Hostname() == "" || !allowedScheme || isWebSocketRequest(resourceType, request) ||
 		(method != http.MethodGet && method != http.MethodHead) {
 		return "Fetch.failRequest", map[string]any{"requestId": requestID, "errorReason": "BlockedByClient"}, nil
 	}
 	return "Fetch.continueRequest", map[string]any{"requestId": requestID}, nil
+}
+
+func isWebSocketRequest(resourceType string, request map[string]any) bool {
+	if strings.EqualFold(resourceType, "WebSocket") {
+		return true
+	}
+	headers, _ := request["headers"].(map[string]any)
+	for key, value := range headers {
+		if strings.EqualFold(key, "Upgrade") && strings.EqualFold(fmt.Sprint(value), "websocket") {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *cdpClient) handlePausedRequest(event map[string]any) error {
@@ -160,15 +246,64 @@ func (c *cdpClient) handlePausedRequest(event map[string]any) error {
 	if err != nil {
 		return err
 	}
-	return c.sendNoWait(method, params)
+	sessionID, _ := event["sessionId"].(string)
+	return c.sendNoWaitSession(method, params, sessionID)
+}
+
+func (c *cdpClient) handleAttachedTarget(ctx context.Context, event map[string]any) error {
+	params, _ := event["params"].(map[string]any)
+	sessionID, _ := params["sessionId"].(string)
+	if sessionID == "" {
+		return errRenderedImportUnavailable
+	}
+	for _, command := range childTargetCommands() {
+		if _, err := c.callSession(ctx, command.method, command.params, sessionID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func drainPendingRenderEvents(ctx context.Context, client *cdpClient, observation *renderObservation) error {
+	for len(client.pending) > 0 {
+		event := client.pending[0]
+		client.pending = client.pending[1:]
+		handled, err := client.handleImmediateEvent(ctx, event)
+		if err != nil {
+			return err
+		}
+		if !handled {
+			observation.observe(event)
+		}
+	}
+	return nil
+}
+
+func (c *cdpClient) handleImmediateEvent(ctx context.Context, event map[string]any) (bool, error) {
+	method, _ := event["method"].(string)
+	switch method {
+	case "Fetch.requestPaused":
+		return true, c.handlePausedRequest(event)
+	case "Target.attachedToTarget":
+		return true, c.handleAttachedTarget(ctx, event)
+	default:
+		return false, nil
+	}
 }
 
 func (c *cdpClient) call(ctx context.Context, method string, params map[string]any) (map[string]any, error) {
+	return c.callSession(ctx, method, params, "")
+}
+
+func (c *cdpClient) callSession(ctx context.Context, method string, params map[string]any, sessionID string) (map[string]any, error) {
 	c.nextID++
 	id := c.nextID
 	request := map[string]any{"id": id, "method": method}
 	if params != nil {
 		request["params"] = params
+	}
+	if sessionID != "" {
+		request["sessionId"] = sessionID
 	}
 	if err := websocket.JSON.Send(c.ws, request); err != nil {
 		return nil, err
@@ -184,6 +319,8 @@ func (c *cdpClient) call(ctx context.Context, method string, params map[string]a
 					return nil, err
 				}
 			} else {
+				// Attached targets start paused. Queue their setup rather than nesting
+				// calls, which would make response correlation ambiguous.
 				c.pending = append(c.pending, message)
 			}
 			continue
@@ -295,24 +432,27 @@ func (o *renderObservation) observe(event map[string]any) {
 func waitForRenderedSettle(ctx context.Context, client *cdpClient, observation *renderObservation) error {
 	deadline := time.Now().Add(6 * time.Second)
 	for {
-		if observation.loadSeen && observation.networkIdle && time.Since(observation.loadAt) >= 1500*time.Millisecond {
-			return nil
-		}
-		if observation.loadSeen && time.Since(observation.loadAt) >= 1500*time.Millisecond {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			if observation.loadSeen {
-				return nil
-			}
+		if err := drainPendingRenderEvents(ctx, client, observation); err != nil {
 			return errRenderedImportUnavailable
 		}
-		readCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+		settled := observation.loadSeen && time.Since(observation.loadAt) >= 1500*time.Millisecond
+		expired := time.Now().After(deadline)
+		if expired && !observation.loadSeen {
+			return errRenderedImportUnavailable
+		}
+		readWindow := 300 * time.Millisecond
+		if settled || expired {
+			readWindow = 50 * time.Millisecond
+		}
+		readCtx, cancel := context.WithTimeout(ctx, readWindow)
 		event, err := client.nextEvent(readCtx)
 		cancel()
 		if err != nil {
 			var netErr net.Error
 			if errors.As(err, &netErr) && netErr.Timeout() {
+				if settled || expired {
+					return nil
+				}
 				continue
 			}
 			if ctx.Err() != nil {
@@ -320,13 +460,38 @@ func waitForRenderedSettle(ctx context.Context, client *cdpClient, observation *
 			}
 			return errRenderedImportUnavailable
 		}
-		if method, _ := event["method"].(string); method == "Fetch.requestPaused" {
-			if err := client.handlePausedRequest(event); err != nil {
-				return errRenderedImportUnavailable
-			}
-			continue
+		handled, err := client.handleImmediateEvent(ctx, event)
+		if err != nil {
+			return errRenderedImportUnavailable
 		}
-		observation.observe(event)
+		if !handled {
+			observation.observe(event)
+		}
+	}
+}
+
+func waitForRenderQuiescence(ctx context.Context, client *cdpClient, observation *renderObservation, window time.Duration) error {
+	for {
+		if err := drainPendingRenderEvents(ctx, client, observation); err != nil {
+			return err
+		}
+		readCtx, cancel := context.WithTimeout(ctx, window)
+		event, err := client.nextEvent(readCtx)
+		cancel()
+		if err != nil {
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				return nil
+			}
+			return err
+		}
+		handled, err := client.handleImmediateEvent(ctx, event)
+		if err != nil {
+			return err
+		}
+		if !handled {
+			observation.observe(event)
+		}
 	}
 }
 
@@ -335,6 +500,9 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 	port, err := readDevToolsPort(portCtx, profileDir)
 	cancelPort()
 	if err != nil {
+		return nil, nil, errRenderedImportUnavailable
+	}
+	if err := denyBrowserDownloads(ctx, profileDir, port); err != nil {
 		return nil, nil, errRenderedImportUnavailable
 	}
 	wsCtx, cancelWS := context.WithTimeout(ctx, 5*time.Second)
@@ -351,15 +519,7 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 	client.requireHTTPS = originalURLForObservation != nil && strings.EqualFold(originalURLForObservation.Scheme, "https")
 	defer client.close()
 
-	for _, command := range []struct {
-		method string
-		params map[string]any
-	}{
-		{"Page.enable", nil},
-		{"Network.enable", nil},
-		{"Fetch.enable", map[string]any{"patterns": []map[string]any{{"urlPattern": "*", "requestStage": "Request"}}}},
-		{"Page.setLifecycleEventsEnabled", map[string]any{"enabled": true}},
-	} {
+	for _, command := range renderSetupCommands() {
 		if _, err := client.call(ctx, command.method, command.params); err != nil {
 			return nil, nil, errRenderedImportUnavailable
 		}
@@ -378,10 +538,8 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 		return nil, nil, errRenderedImportUnavailable
 	}
 	observation := &renderObservation{frameID: frameID, loaderID: loaderID, originalHTTPS: client.requireHTTPS}
-	for len(client.pending) > 0 {
-		event := client.pending[0]
-		client.pending = client.pending[1:]
-		observation.observe(event)
+	if err := drainPendingRenderEvents(ctx, client, observation); err != nil {
+		return nil, nil, errRenderedImportUnavailable
 	}
 	if err := waitForRenderedSettle(ctx, client, observation); err != nil {
 		return nil, nil, errRenderedImportUnavailable
@@ -395,6 +553,12 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 		"returnByValue": true,
 	})
 	if err != nil {
+		return nil, nil, errRenderedImportUnavailable
+	}
+	// Runtime.evaluate's response is ordered after navigation events already emitted
+	// by Chromium. Re-apply those events before accepting the captured document.
+	if err := waitForRenderQuiescence(ctx, client, observation, 50*time.Millisecond); err != nil ||
+		observation.insecureDowngrade || observation.status < 200 || observation.status >= 300 {
 		return nil, nil, errRenderedImportUnavailable
 	}
 	remote, _ := evaluated["result"].(map[string]any)

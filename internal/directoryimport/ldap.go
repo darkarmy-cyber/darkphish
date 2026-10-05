@@ -196,8 +196,10 @@ func normalizedMapping(m AttributeMapping) AttributeMapping {
 
 func openLDAP(cfg Config) (entryReader, error) {
 	u, _ := url.Parse(cfg.URL)
+	restrictedDialer := dialer.Dialer()
+	restrictedDialer.Timeout = defaultTimeout
 	conn, err := ldap.DialURL(cfg.URL,
-		ldap.DialWithDialer(dialer.Dialer()),
+		ldap.DialWithDialer(restrictedDialer),
 		ldap.DialWithTLSConfig(&tls.Config{
 			MinVersion: tls.VersionTLS12,
 			ServerName: u.Hostname(),
@@ -255,7 +257,8 @@ func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []stri
 	}
 	members := append([]string(nil), entry.GetEqualFoldAttributeValues("member")...)
 	members = append(members, entry.GetEqualFoldAttributeValues("uniqueMember")...)
-	rangeStart, rangeDone := rangedMemberState(entry)
+	rangeValues, rangeStart, rangeDone := rangedMemberValues(entry)
+	members = append(members, rangeValues...)
 	for !rangeDone {
 		if err := ctx.Err(); err != nil {
 			return directoryEntry{}, err
@@ -282,11 +285,6 @@ func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []stri
 		Members:     members,
 		Values:      values,
 	}, nil
-}
-
-func rangedMemberState(entry *ldap.Entry) (int, bool) {
-	_, next, done := rangedMemberValues(entry)
-	return next, done
 }
 
 func rangedMemberValues(entry *ldap.Entry) ([]string, int, bool) {

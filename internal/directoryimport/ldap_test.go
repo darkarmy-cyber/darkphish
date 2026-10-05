@@ -119,7 +119,6 @@ func TestCollectLeafEntriesHandlesCycles(t *testing.T) {
 	}
 }
 
-
 func TestNormalizeConfigNormalizesLDAPSAndDomains(t *testing.T) {
 	cfg, err := normalizeConfig(Config{
 		URL:          "LDAPS://DC.EXAMPLE.TEST:636",

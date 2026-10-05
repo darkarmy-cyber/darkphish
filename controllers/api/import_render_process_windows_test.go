@@ -10,6 +10,10 @@ import (
 )
 
 func TestRenderedCommandUsesSuspendedJobAssignment(t *testing.T) {
+	cpu := renderedCPURateControl()
+	if cpu.ControlFlags != jobObjectCPURateControlEnable|jobObjectCPURateControlHardCap || cpu.CPURate != 5000 {
+		t.Fatalf("unexpected renderer CPU limit: %#v", cpu)
+	}
 	configured := exec.Command("cmd.exe", "/c", "exit", "0")
 	configureRenderedCommand(configured)
 	if configured.SysProcAttr == nil || configured.SysProcAttr.CreationFlags&windows.CREATE_SUSPENDED == 0 {

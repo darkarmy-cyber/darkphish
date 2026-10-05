@@ -73,6 +73,8 @@ test('installer creates an unprivileged hardened systemd service and rejects ove
   assert.match(installer, /CapabilityBoundingSet=CAP_NET_BIND_SERVICE/);
   assert.match(installer, /AmbientCapabilities=CAP_NET_BIND_SERVICE/);
   assert.match(installer, /KillMode=control-group/);
+  assert.match(installer, /Delegate=cpu memory/);
+  assert.match(installer, /ProtectControlGroups=false/);
   assert.match(installer, /DropInPaths/);
   assert.match(installer, /unexpected systemd drop-ins/);
   assert.match(installer, /FragmentPath/);

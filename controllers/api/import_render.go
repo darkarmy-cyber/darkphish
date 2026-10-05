@@ -27,6 +27,7 @@ const maxRenderedProxyConnections = 16
 const maxRenderedRequestHeaderBytes = 64 << 10
 const maxRenderedResponseHeaderBytes int64 = 64 << 10
 const maxRenderedMemoryBytes int64 = 512 << 20
+const maxRenderedCPUPercent uint32 = 50
 
 var renderedImportSlots = make(chan struct{}, maxConcurrentRenderedImports)
 

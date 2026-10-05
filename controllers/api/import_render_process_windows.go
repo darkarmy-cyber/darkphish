@@ -13,6 +13,23 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+const (
+	jobObjectCPURateControlEnable  uint32 = 0x1
+	jobObjectCPURateControlHardCap uint32 = 0x4
+)
+
+type jobObjectCPURateControlInformation struct {
+	ControlFlags uint32
+	CPURate      uint32
+}
+
+func renderedCPURateControl() jobObjectCPURateControlInformation {
+	return jobObjectCPURateControlInformation{
+		ControlFlags: jobObjectCPURateControlEnable | jobObjectCPURateControlHardCap,
+		CPURate:      maxRenderedCPUPercent * 100,
+	}
+}
+
 func configureRenderedCommand(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_SUSPENDED}
 	cmd.WaitDelay = 2 * time.Second
@@ -42,6 +59,16 @@ func startRenderedCommand(cmd *exec.Cmd) (func() error, error) {
 		windows.JobObjectExtendedLimitInformation,
 		uintptr(unsafe.Pointer(&info)),
 		uint32(unsafe.Sizeof(info)),
+	); err != nil {
+		_ = cleanup()
+		return nil, errRenderedImportUnavailable
+	}
+	cpu := renderedCPURateControl()
+	if _, err := windows.SetInformationJobObject(
+		job,
+		windows.JobObjectCpuRateControlInformation,
+		uintptr(unsafe.Pointer(&cpu)),
+		uint32(unsafe.Sizeof(cpu)),
 	); err != nil {
 		_ = cleanup()
 		return nil, errRenderedImportUnavailable

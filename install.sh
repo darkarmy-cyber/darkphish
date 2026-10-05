@@ -583,6 +583,7 @@ RestartSec=5s
 TimeoutStopSec=120s
 KillMode=control-group
 UMask=0077
+Delegate=cpu memory
 
 NoNewPrivileges=true
 PrivateTmp=true
@@ -592,7 +593,7 @@ ProtectHome=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true
-ProtectControlGroups=true
+ProtectControlGroups=false
 ProtectClock=true
 ProtectHostname=true
 RestrictSUIDSGID=true

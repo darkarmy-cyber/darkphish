@@ -14,6 +14,13 @@ import (
 	"time"
 )
 
+var (
+	renderedCgroupRootOnce sync.Once
+	renderedCgroupRootPath string
+	renderedCgroupRootErr  error
+	renderedCgroupSetupMu  sync.Mutex
+)
+
 func configureRenderedCommand(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.WaitDelay = 2 * time.Second
@@ -29,19 +36,113 @@ func configureRenderedCommand(cmd *exec.Cmd) {
 	}
 }
 
-func startRenderedCommand(cmd *exec.Cmd) (func() error, error) {
-	// Rendered imports are optional and fail closed unless the service has a
-	// delegated, writable cgroup v2 subtree with the memory controller enabled.
-	const cgroupRoot = "/sys/fs/cgroup"
-	controllers, err := os.ReadFile(filepath.Join(cgroupRoot, "cgroup.controllers"))
-	hasMemoryController := false
-	for _, controller := range strings.Fields(string(controllers)) {
-		if controller == "memory" {
-			hasMemoryController = true
-			break
+func renderedCgroupRoot() (string, error) {
+	renderedCgroupRootOnce.Do(func() {
+		renderedCgroupRootPath, renderedCgroupRootErr = discoverRenderedCgroupRoot()
+	})
+	return renderedCgroupRootPath, renderedCgroupRootErr
+}
+
+func discoverRenderedCgroupRoot() (string, error) {
+	const cgroupMount = "/sys/fs/cgroup"
+	configured := strings.TrimSpace(os.Getenv("DARKPHISH_RENDER_CGROUP_ROOT"))
+	if configured != "" {
+		return validatedRenderedCgroupRoot(cgroupMount, configured)
+	}
+	selfCgroup, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return "", errRenderedImportUnavailable
+	}
+	for _, line := range strings.Split(string(selfCgroup), "\n") {
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) != 3 || parts[0] != "0" || parts[1] != "" {
+			continue
+		}
+		return validatedRenderedCgroupRoot(cgroupMount, filepath.Join(cgroupMount, strings.TrimPrefix(parts[2], "/")))
+	}
+	return "", errRenderedImportUnavailable
+}
+
+func validatedRenderedCgroupRoot(cgroupMount, candidate string) (string, error) {
+	mount, err := filepath.Abs(cgroupMount)
+	if err != nil {
+		return "", errRenderedImportUnavailable
+	}
+	root, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", errRenderedImportUnavailable
+	}
+	relative, err := filepath.Rel(mount, root)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", errRenderedImportUnavailable
+	}
+	return root, nil
+}
+
+func cgroupHasControllers(path string, required ...string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	controllers := make(map[string]bool)
+	for _, controller := range strings.Fields(string(data)) {
+		controllers[strings.TrimPrefix(controller, "+")] = true
+	}
+	for _, controller := range required {
+		if !controllers[controller] {
+			return false
 		}
 	}
-	if err != nil || !hasMemoryController {
+	return true
+}
+
+func prepareRenderedCgroupRoot(cgroupRoot string) error {
+	renderedCgroupSetupMu.Lock()
+	defer renderedCgroupSetupMu.Unlock()
+
+	required := []string{"cpu", "memory"}
+	subtreeControl := filepath.Join(cgroupRoot, "cgroup.subtree_control")
+	if cgroupHasControllers(subtreeControl, required...) {
+		return nil
+	}
+	if !cgroupHasControllers(filepath.Join(cgroupRoot, "cgroup.controllers"), required...) {
+		return errRenderedImportUnavailable
+	}
+
+	// cgroup v2 does not allow domain controllers on a populated non-root
+	// cgroup. Keep the delegated service root empty and run the service itself
+	// in a stable leaf before enabling controllers for renderer siblings.
+	serviceLeaf := filepath.Join(cgroupRoot, "darkphish-main")
+	if err := os.Mkdir(serviceLeaf, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return errRenderedImportUnavailable
+	}
+	processes, err := os.ReadFile(filepath.Join(cgroupRoot, "cgroup.procs"))
+	if err != nil {
+		return errRenderedImportUnavailable
+	}
+	for _, pid := range strings.Fields(string(processes)) {
+		if err := os.WriteFile(filepath.Join(serviceLeaf, "cgroup.procs"), []byte(pid), 0o600); err != nil {
+			return errRenderedImportUnavailable
+		}
+	}
+	if err := os.WriteFile(subtreeControl, []byte("+cpu +memory"), 0o600); err != nil {
+		return errRenderedImportUnavailable
+	}
+	if !cgroupHasControllers(subtreeControl, required...) {
+		return errRenderedImportUnavailable
+	}
+	return nil
+}
+
+func renderedCPUMax() string {
+	return strconv.FormatUint(uint64(maxRenderedCPUPercent*1000), 10) + " 100000"
+}
+
+func startRenderedCommand(cmd *exec.Cmd) (func() error, error) {
+	// Rendered imports are optional and fail closed unless the service has a
+	// delegated, writable cgroup v2 subtree with memory and CPU controllers.
+	cgroupRoot, err := renderedCgroupRoot()
+	if err != nil || prepareRenderedCgroupRoot(cgroupRoot) != nil {
 		return nil, errRenderedImportUnavailable
 	}
 	cgroup, err := os.MkdirTemp(cgroupRoot, "darkphish-render-")
@@ -60,6 +161,9 @@ func startRenderedCommand(cmd *exec.Cmd) (func() error, error) {
 		return fail()
 	}
 	if err := os.WriteFile(filepath.Join(cgroup, "memory.oom.group"), []byte("1"), 0o600); err != nil {
+		return fail()
+	}
+	if err := os.WriteFile(filepath.Join(cgroup, "cpu.max"), []byte(renderedCPUMax()), 0o600); err != nil {
 		return fail()
 	}
 	if _, err := os.Stat(filepath.Join(cgroup, "cgroup.kill")); err != nil {

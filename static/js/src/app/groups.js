@@ -49,6 +49,8 @@ function save(id) {
 function dismiss() {
     $("#targetsTable").dataTable().DataTable().clear().draw()
     $("#name").val("")
+    $("#ldapBindPassword").val("")
+    $("#ldapImportStatus").text("")
     $("#modal\\.flashes").empty()
 }
 
@@ -213,6 +215,78 @@ function addTarget(firstNameInput, lastNameInput, emailInput, positionInput) {
     }
 }
 
+function ldapDomains() {
+    return $("#ldapEmailDomains").val()
+        .split(",")
+        .map(function (domain) { return domain.trim() })
+        .filter(function (domain) { return domain.length > 0 })
+}
+
+function previewLDAPImport() {
+    var required = ["#ldapUrl", "#ldapBindDn", "#ldapBindPassword", "#ldapGroupDn"]
+    for (var i = 0; i < required.length; i++) {
+        if (!$(required[i]).val().trim()) {
+            modalError("LDAPS URL, bind DN, bind password and group DN are required")
+            return
+        }
+    }
+    var request = {
+        url: $("#ldapUrl").val().trim(),
+        bind_dn: $("#ldapBindDn").val().trim(),
+        bind_password: $("#ldapBindPassword").val(),
+        group_dn: $("#ldapGroupDn").val().trim(),
+        exclusion_group_dn: $("#ldapExclusionGroupDn").val().trim(),
+        email_domains: ldapDomains(),
+        attributes: {
+            first_name: $("#ldapFirstNameAttr").val().trim(),
+            last_name: $("#ldapLastNameAttr").val().trim(),
+            email: $("#ldapEmailAttr").val().trim(),
+            position: $("#ldapPositionAttr").val().trim()
+        }
+    }
+    $("#ldapPreviewImport").prop("disabled", true)
+    $("#ldapImportStatus").text("Loading directory preview…")
+    api.preview_ldap_import(request)
+        .success(function (preview) {
+            $.each(preview.recipients || [], function (i, record) {
+                addTarget(record.first_name, record.last_name, record.email, record.position)
+            })
+            targets.DataTable().draw()
+            $("#ldapImportStatus").text(
+                preview.matched + " added, " + preview.excluded + " excluded, " + preview.skipped + " skipped"
+            )
+            if (preview.warnings && preview.warnings.length > 0) {
+                modalError(preview.warnings.join(" "))
+            }
+        })
+        .error(function (data) {
+            var message = "LDAP directory preview failed"
+            if (data.responseJSON && data.responseJSON.message) {
+                message = data.responseJSON.message
+            }
+            modalError(message)
+            $("#ldapImportStatus").text("")
+        })
+        .complete(function () {
+            $("#ldapBindPassword").val("")
+            $("#ldapPreviewImport").prop("disabled", false)
+        })
+}
+
+function loadLDAPImportCapability() {
+    api.ldap_import_capability()
+        .success(function (capability) {
+            if (capability.enabled) {
+                $("#ldapImportSection").show()
+            } else {
+                $("#ldapImportSection").hide()
+            }
+        })
+        .error(function () {
+            $("#ldapImportSection").hide()
+        })
+}
+
 function load() {
     $("#groupTable").hide()
     $("#emptyMessage").hide()
@@ -258,6 +332,8 @@ function load() {
 
 $(document).ready(function () {
     load()
+    loadLDAPImportCapability()
+    $("#ldapPreviewImport").click(previewLDAPImport)
     // Setup the event listeners
     // Handle manual additions
     $("#targetForm").submit(function () {

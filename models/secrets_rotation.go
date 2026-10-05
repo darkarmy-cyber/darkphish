@@ -108,13 +108,22 @@ func RotateSecrets() (int64, error) {
 				TargetType: target.table, TargetID: strconv.FormatInt(row.ID, 10), Result: "success",
 				RequestID: audit.NewRequestID(), AuthMethod: "system", Metadata: "{}",
 			}
+			rotatedThisRow := false
 			if err := withSecurityTransaction(func(tx *gorm.DB) error {
-				if err := tx.Table(target.table).Where(target.id+"=?", row.ID).Update(target.column, protected).Error; err != nil {
-					return err
+				result := tx.Table(target.table).Where(target.id+"=? AND "+target.column+"=?", row.ID, row.Value).Update(target.column, protected)
+				if result.Error != nil {
+					return result.Error
 				}
+				if result.RowsAffected == 0 {
+					return nil
+				}
+				rotatedThisRow = true
 				return (gormAuditRepository{db: tx}).Enqueue(event)
 			}); err != nil {
 				return rotated, err
+			}
+			if !rotatedThisRow {
+				continue
 			}
 			flushAuditOutboxAfterCommit()
 			rotated++

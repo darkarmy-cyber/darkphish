@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
-const installer = fs.readFileSync(new URL('../install.sh', import.meta.url), 'utf8');
+const installerURL = new URL('../install.sh', import.meta.url);
+const installer = fs.readFileSync(installerURL, 'utf8');
+
+test('installer is executable', () => {
+  assert.notEqual(fs.statSync(installerURL).mode & 0o111, 0);
+});
 
 test('installer fails closed and targets the supported native layout', () => {
   assert.match(installer, /set -Eeuo pipefail/);
@@ -75,6 +80,7 @@ test('installer creates an unprivileged hardened systemd service and rejects ove
   assert.match(installer, /KillMode=control-group/);
   assert.match(installer, /Delegate=cpu memory/);
   assert.match(installer, /ProtectControlGroups=false/);
+  assert.match(installer, /RestrictNamespaces=user pid net ipc uts mnt/);
   assert.match(installer, /DropInPaths/);
   assert.match(installer, /unexpected systemd drop-ins/);
   assert.match(installer, /FragmentPath/);

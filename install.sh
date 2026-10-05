@@ -599,7 +599,9 @@ ProtectHostname=true
 RestrictSUIDSGID=true
 LockPersonality=true
 RestrictRealtime=true
-RestrictNamespaces=true
+# Chromium's sandbox creates these namespaces as the unprivileged service user.
+# Keep cgroup namespaces denied; renderer cgroups stay under the delegated unit.
+RestrictNamespaces=user pid net ipc uts mnt
 SystemCallArchitectures=native
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE

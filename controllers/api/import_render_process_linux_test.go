@@ -23,6 +23,21 @@ func TestRenderedCgroupRootMustStayWithinCgroupMount(t *testing.T) {
 	}
 }
 
+func TestRenderedCgroupRootSurvivesServiceLeafReexec(t *testing.T) {
+	mount := t.TempDir()
+	delegated := filepath.Join(mount, "system.slice", "darkphish.service")
+	for _, suffix := range []string{
+		renderedServiceCgroupLeaf,
+		renderedServiceCgroupLeaf + "/" + renderedServiceCgroupLeaf,
+	} {
+		proc := []byte("0::/system.slice/darkphish.service/" + suffix + "\n")
+		got, err := renderedCgroupRootFromProc(mount, proc)
+		if err != nil || got != delegated {
+			t.Fatalf("delegated root for %q = %q, %v; want %q", suffix, got, err, delegated)
+		}
+	}
+}
+
 func TestRenderedCgroupRequiresDelegatedMemoryAndCPUControllers(t *testing.T) {
 	root := t.TempDir()
 	controllers := filepath.Join(root, "cgroup.controllers")
@@ -52,8 +67,8 @@ func TestRenderedCgroupRequiresDelegatedMemoryAndCPUControllers(t *testing.T) {
 	if !cgroupHasControllers(subtreeControl, "cpu", "memory") {
 		t.Fatal("delegated controllers were not enabled for renderer children")
 	}
-	if got := renderedCPUMax(); got != "50000 100000" {
-		t.Fatalf("cpu.max = %q, want 50000 100000", got)
+	if got := renderedCPUMax(); got != "40000 100000" {
+		t.Fatalf("cpu.max = %q, want 40000 100000", got)
 	}
 }
 

@@ -21,6 +21,8 @@ var (
 	renderedCgroupSetupMu  sync.Mutex
 )
 
+const renderedServiceCgroupLeaf = "darkphish-main"
+
 func configureRenderedCommand(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.WaitDelay = 2 * time.Second
@@ -53,12 +55,23 @@ func discoverRenderedCgroupRoot() (string, error) {
 	if err != nil {
 		return "", errRenderedImportUnavailable
 	}
+	return renderedCgroupRootFromProc(cgroupMount, selfCgroup)
+}
+
+func renderedCgroupRootFromProc(cgroupMount string, selfCgroup []byte) (string, error) {
 	for _, line := range strings.Split(string(selfCgroup), "\n") {
 		parts := strings.SplitN(line, ":", 3)
 		if len(parts) != 3 || parts[0] != "0" || parts[1] != "" {
 			continue
 		}
-		return validatedRenderedCgroupRoot(cgroupMount, filepath.Join(cgroupMount, strings.TrimPrefix(parts[2], "/")))
+		candidate := filepath.Join(cgroupMount, strings.TrimPrefix(parts[2], "/"))
+		// The application and update supervisor are moved into this stable leaf
+		// before controllers are enabled. A supervisor exec loses in-process
+		// caches, so recover the original delegated boundary from the leaf path.
+		for filepath.Base(candidate) == renderedServiceCgroupLeaf {
+			candidate = filepath.Dir(candidate)
+		}
+		return validatedRenderedCgroupRoot(cgroupMount, candidate)
 	}
 	return "", errRenderedImportUnavailable
 }
@@ -112,7 +125,7 @@ func prepareRenderedCgroupRoot(cgroupRoot string) error {
 	// cgroup v2 does not allow domain controllers on a populated non-root
 	// cgroup. Keep the delegated service root empty and run the service itself
 	// in a stable leaf before enabling controllers for renderer siblings.
-	serviceLeaf := filepath.Join(cgroupRoot, "darkphish-main")
+	serviceLeaf := filepath.Join(cgroupRoot, renderedServiceCgroupLeaf)
 	if err := os.Mkdir(serviceLeaf, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 		return errRenderedImportUnavailable
 	}
@@ -135,7 +148,7 @@ func prepareRenderedCgroupRoot(cgroupRoot string) error {
 }
 
 func renderedCPUMax() string {
-	return strconv.FormatUint(uint64(maxRenderedCPUPercent*1000), 10) + " 100000"
+	return strconv.FormatUint(uint64(maxRenderedCPUPercent()*1000), 10) + " 100000"
 }
 
 func startRenderedCommand(cmd *exec.Cmd) (func() error, error) {

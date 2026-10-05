@@ -11,8 +11,11 @@ import (
 
 func TestRenderedCommandUsesSuspendedJobAssignment(t *testing.T) {
 	cpu := renderedCPURateControl()
-	if cpu.ControlFlags != jobObjectCPURateControlEnable|jobObjectCPURateControlHardCap || cpu.CPURate != 5000 {
+	if cpu.ControlFlags != jobObjectCPURateControlEnable|jobObjectCPURateControlHardCap || cpu.CPURate != 4000 {
 		t.Fatalf("unexpected renderer CPU limit: %#v", cpu)
+	}
+	if aggregate := cpu.CPURate * maxConcurrentRenderedImports; aggregate > maxRenderedAggregateCPUPercent*100 {
+		t.Fatalf("aggregate renderer CPU limit %d exceeds reserved budget", aggregate)
 	}
 	configured := exec.Command("cmd.exe", "/c", "exit", "0")
 	configureRenderedCommand(configured)

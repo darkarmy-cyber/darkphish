@@ -26,7 +26,7 @@ type jobObjectCPURateControlInformation struct {
 func renderedCPURateControl() jobObjectCPURateControlInformation {
 	return jobObjectCPURateControlInformation{
 		ControlFlags: jobObjectCPURateControlEnable | jobObjectCPURateControlHardCap,
-		CPURate:      maxRenderedCPUPercent * 100,
+		CPURate:      maxRenderedCPUPercent() * 100,
 	}
 }
 

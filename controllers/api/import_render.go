@@ -27,9 +27,15 @@ const maxRenderedProxyConnections = 16
 const maxRenderedRequestHeaderBytes = 64 << 10
 const maxRenderedResponseHeaderBytes int64 = 64 << 10
 const maxRenderedMemoryBytes int64 = 512 << 20
-const maxRenderedCPUPercent uint32 = 50
+// Keep aggregate renderer CPU below the whole machine so the API and the
+// renderer proxy remain responsive even when every render slot is occupied.
+const maxRenderedAggregateCPUPercent uint32 = 80
 
 var renderedImportSlots = make(chan struct{}, maxConcurrentRenderedImports)
+
+func maxRenderedCPUPercent() uint32 {
+	return maxRenderedAggregateCPUPercent / uint32(maxConcurrentRenderedImports)
+}
 
 func acquireRenderedImportSlot() bool {
 	select {
@@ -189,10 +195,15 @@ func renderedHeaderBytes(header http.Header) int {
 
 func renderedRequestHeaderBytes(r *http.Request) int {
 	total := renderedHeaderBytes(r.Header)
+	total += len(r.Method) + 1 + len(r.RequestURI) + 1 + len(r.Proto) + 2
 	if r.Host != "" {
 		total += len("Host") + len(r.Host) + 4
 	}
 	return total
+}
+
+func renderedResponseHeaderBytes(response *http.Response) int {
+	return renderedHeaderBytes(response.Header) + len(response.Proto) + 1 + len(response.Status) + 2
 }
 
 func renderedTarget(raw string) (string, error) {
@@ -261,6 +272,11 @@ func handleRenderedConnect(ctx context.Context, budget *renderTransferBudget, w 
 		http.Error(w, "transfer budget exhausted", http.StatusTooManyRequests)
 		return
 	}
+	connectResponse := []byte("HTTP/1.1 200 Connection Established\r\n\r\n")
+	if budget.reserve(len(connectResponse)) != len(connectResponse) {
+		http.Error(w, "transfer budget exhausted", http.StatusTooManyRequests)
+		return
+	}
 	target, err := renderedTarget("https://" + r.Host)
 	if err != nil {
 		http.Error(w, "destination denied", http.StatusForbidden)
@@ -282,7 +298,7 @@ func handleRenderedConnect(ctx context.Context, budget *renderTransferBudget, w 
 		upstream.Close()
 		return
 	}
-	_, _ = client.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+	_, _ = client.Write(connectResponse)
 	go func() {
 		defer client.Close()
 		defer upstream.Close()
@@ -302,6 +318,10 @@ func handleRenderedHTTP(ctx context.Context, budget *renderTransferBudget, w htt
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method denied", http.StatusMethodNotAllowed)
+		return
+	}
+	if r.Body != nil && (r.ContentLength != 0 || len(r.TransferEncoding) != 0) {
+		http.Error(w, "request body denied", http.StatusBadRequest)
 		return
 	}
 	if isRenderedWebSocketUpgrade(r.Header) {
@@ -332,7 +352,7 @@ func handleRenderedHTTP(ctx context.Context, budget *renderTransferBudget, w htt
 		http.Error(w, "upgrade denied", http.StatusBadGateway)
 		return
 	}
-	headerBytes := renderedHeaderBytes(response.Header)
+	headerBytes := renderedResponseHeaderBytes(response)
 	if headerBytes > int(maxRenderedResponseHeaderBytes) || budget.reserve(headerBytes) != headerBytes {
 		http.Error(w, "transfer budget exhausted", http.StatusTooManyRequests)
 		return

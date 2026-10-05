@@ -115,8 +115,9 @@ func TestRenderObservationTracksMainDocumentAndIdle(t *testing.T) {
 	observation.observe(map[string]any{
 		"method": "Page.lifecycleEvent",
 		"params": map[string]any{
-			"frameId": "frame",
-			"name":    "networkIdle",
+			"frameId":  "frame",
+			"loaderId": "loader",
+			"name":     "networkIdle",
 		},
 	})
 	if observation.status != 200 || observation.responseURL != "https://example.test/app/" || !observation.networkIdle {
@@ -146,6 +147,18 @@ func TestRenderedHeaderBytesChargesRepeatedNamesPerValue(t *testing.T) {
 	want := 2 + 3*(len("Set-Cookie")+len("a=1")+4)
 	if got := renderedHeaderBytes(header); got != want {
 		t.Fatalf("header bytes = %d, want %d", got, want)
+	}
+}
+
+func TestRenderedHTTPFramingIsIncludedInTransferBudget(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "http://example.test/path?q=1", nil)
+	requestBytes := renderedRequestHeaderBytes(request)
+	if requestBytes <= renderedHeaderBytes(request.Header)+len("Host")+len(request.Host)+4 {
+		t.Fatal("request line was not included in transfer accounting")
+	}
+	response := &http.Response{Proto: "HTTP/1.1", Status: "200 OK", Header: http.Header{"X-Test": {"value"}}}
+	if got, headers := renderedResponseHeaderBytes(response), renderedHeaderBytes(response.Header); got <= headers {
+		t.Fatal("response status line was not included in transfer accounting")
 	}
 }
 
@@ -195,6 +208,15 @@ func TestRenderedHTTPRejectsWebSocketUpgradeAndStripsHopHeaders(t *testing.T) {
 	}
 }
 
+func TestRenderedHTTPRejectsSafeMethodBody(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "http://example.test/page", strings.NewReader("state change"))
+	recorder := httptest.NewRecorder()
+	handleRenderedHTTP(context.Background(), newRenderTransferBudget(maxRenderedTransferBytes), recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("GET body returned %d", recorder.Code)
+	}
+}
+
 func TestRenderedImportSlotsFailFastWhenFull(t *testing.T) {
 	for {
 		select {
@@ -214,6 +236,13 @@ drained:
 	}
 	for i := 0; i < maxConcurrentRenderedImports; i++ {
 		releaseRenderedImportSlot()
+	}
+}
+
+func TestRenderedCPUCapLeavesServiceHeadroomAtFullConcurrency(t *testing.T) {
+	aggregate := maxRenderedCPUPercent() * uint32(maxConcurrentRenderedImports)
+	if aggregate > maxRenderedAggregateCPUPercent || aggregate >= 100 {
+		t.Fatalf("aggregate renderer CPU cap = %d%%", aggregate)
 	}
 }
 
@@ -244,6 +273,25 @@ func TestRenderObservationTracksLatestMainDocumentNavigation(t *testing.T) {
 	}
 	if observation.loadSeen || observation.networkIdle {
 		t.Fatal("navigation state was not reset for the replacement document")
+	}
+}
+
+func TestRenderObservationIgnoresStaleUnscopedLoad(t *testing.T) {
+	observation := &renderObservation{frameID: "frame", loaderID: "target"}
+	observation.observe(map[string]any{"method": "Page.loadEventFired", "params": map[string]any{}})
+	observation.observe(map[string]any{
+		"method": "Page.lifecycleEvent",
+		"params": map[string]any{"frameId": "frame", "loaderId": "about-blank", "name": "load"},
+	})
+	if observation.loadSeen {
+		t.Fatal("stale about:blank load settled the target navigation")
+	}
+	observation.observe(map[string]any{
+		"method": "Page.lifecycleEvent",
+		"params": map[string]any{"frameId": "frame", "loaderId": "target", "name": "load"},
+	})
+	if !observation.loadSeen {
+		t.Fatal("current loader lifecycle did not settle the target navigation")
 	}
 }
 
@@ -427,7 +475,10 @@ func TestRenderedSettleReadsSocketBeforeBoundaryAcceptance(t *testing.T) {
 				"response": map[string]any{"status": float64(500), "url": "https://example.test/error"},
 			},
 		})
-		_ = websocket.JSON.Send(connection, map[string]any{"method": "Page.loadEventFired", "params": map[string]any{}})
+		_ = websocket.JSON.Send(connection, map[string]any{
+			"method": "Page.lifecycleEvent",
+			"params": map[string]any{"frameId": "frame", "loaderId": "replacement", "name": "load"},
+		})
 		<-time.After(3 * time.Second)
 	}))
 	defer server.Close()
@@ -453,7 +504,10 @@ func TestRenderedSettleReadsSocketBeforeBoundaryAcceptance(t *testing.T) {
 
 func TestRenderedSettleQuietTimeoutDoesNotExpireSubsequentWrites(t *testing.T) {
 	server := httptest.NewServer(websocket.Handler(func(connection *websocket.Conn) {
-		_ = websocket.JSON.Send(connection, map[string]any{"method": "Page.loadEventFired", "params": map[string]any{}})
+		_ = websocket.JSON.Send(connection, map[string]any{
+			"method": "Page.lifecycleEvent",
+			"params": map[string]any{"frameId": "frame", "loaderId": "loader", "name": "load"},
+		})
 		var request map[string]any
 		if err := websocket.JSON.Receive(connection, &request); err != nil {
 			return

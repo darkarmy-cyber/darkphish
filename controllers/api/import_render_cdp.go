@@ -381,6 +381,16 @@ func (o *renderObservation) observe(event map[string]any) {
 	case "Network.requestWillBeSent":
 		eventType, _ := params["type"].(string)
 		frameID, _ := params["frameId"].(string)
+		loaderID, _ := params["loaderId"].(string)
+		if eventType == "Document" && frameID == o.frameID {
+			if loaderID != "" && loaderID != o.loaderID {
+				o.loaderID = loaderID
+				o.status = 0
+				o.responseURL = ""
+				o.loadSeen = false
+				o.networkIdle = false
+			}
+		}
 		if eventType == "Document" && frameID == o.frameID && o.originalHTTPS {
 			request, _ := params["request"].(map[string]any)
 			rawURL, _ := request["url"].(string)
@@ -413,13 +423,18 @@ func (o *renderObservation) observe(event map[string]any) {
 			o.status = int(status)
 		}
 		o.responseURL, _ = response["url"].(string)
-	case "Page.loadEventFired":
-		o.loadSeen = true
-		o.loadAt = time.Now()
 	case "Page.lifecycleEvent":
 		frameID, _ := params["frameId"].(string)
+		loaderID, _ := params["loaderId"].(string)
 		name, _ := params["name"].(string)
-		if frameID == o.frameID && name == "networkIdle" {
+		if frameID != o.frameID || loaderID == "" || loaderID != o.loaderID {
+			return
+		}
+		switch name {
+		case "load":
+			o.loadSeen = true
+			o.loadAt = time.Now()
+		case "networkIdle":
 			o.networkIdle = true
 		}
 	}

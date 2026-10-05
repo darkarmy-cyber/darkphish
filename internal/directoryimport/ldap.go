@@ -59,10 +59,10 @@ type Preview struct {
 }
 
 type directoryEntry struct {
-	DN         string
+	DN          string
 	ObjectClass []string
-	Members    []string
-	Values     map[string]string
+	Members     []string
+	Values      map[string]string
 }
 
 type entryReader interface {

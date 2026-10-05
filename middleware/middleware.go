@@ -110,6 +110,8 @@ func apiAuditAction(method, path string) string {
 		return "imap.update"
 	case strings.HasPrefix(clean, "/api/webhooks") && method != http.MethodGet && method != http.MethodHead:
 		return "webhook.update"
+	case strings.HasPrefix(clean, "/api/directory-connectors") && method != http.MethodGet && method != http.MethodHead:
+		return "directory.connector.update"
 	case method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions:
 		return "api.modify"
 	default:
@@ -308,7 +310,7 @@ func requiredPATScope(method, path string) string {
 			return "users:write"
 		}
 		return "users:read"
-	case strings.HasPrefix(clean, "/api/imap") || strings.HasPrefix(clean, "/api/webhooks"):
+	case strings.HasPrefix(clean, "/api/imap") || strings.HasPrefix(clean, "/api/webhooks") || strings.HasPrefix(clean, "/api/directory-connectors"):
 		if write {
 			return "integrations:write"
 		}

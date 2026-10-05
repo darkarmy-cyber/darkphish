@@ -1,6 +1,8 @@
 package models
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -114,7 +116,8 @@ func normalizeDirectoryDomains(domains []string) ([]string, error) {
 
 func (c *DirectoryConnector) Validate() error {
 	c.Name = strings.TrimSpace(c.Name)
-	c.NameKey = strings.ToLower(c.Name)
+	nameDigest := sha256.Sum256([]byte(strings.ToLower(c.Name)))
+	c.NameKey = hex.EncodeToString(nameDigest[:])
 	c.Provider = strings.ToLower(strings.TrimSpace(c.Provider))
 	c.TenantID = strings.TrimSpace(c.TenantID)
 	c.ClientID = strings.ToLower(strings.TrimSpace(c.ClientID))
@@ -258,6 +261,8 @@ func PutDirectoryConnector(connector *DirectoryConnector) error {
 	if err != nil {
 		return err
 	}
+	connector.TenantID = strings.TrimSpace(connector.TenantID)
+	connector.ClientID = strings.ToLower(strings.TrimSpace(connector.ClientID))
 	if connector.ClientSecret == "" {
 		if connector.TenantID != stored.TenantID || connector.ClientID != stored.ClientID {
 			return ErrDirectoryConnectorClientSecret
@@ -281,7 +286,7 @@ func PutDirectoryConnector(connector *DirectoryConnector) error {
 	connector.NextSyncAt = stored.NextSyncAt
 	connector.ModifiedAt = time.Now().UTC()
 	result := db.Model(&DirectoryConnector{}).
-		Where("id=? AND owner_user_id=? AND modified_at=?", connector.ID, connector.OwnerUserID, stored.ModifiedAt).
+		Where("id=? AND owner_user_id=? AND modified_at=? AND client_secret=?", connector.ID, connector.OwnerUserID, stored.ModifiedAt, stored.ClientSecret).
 		Updates(map[string]interface{}{
 			"name":                  connector.Name,
 			"name_key":              connector.NameKey,

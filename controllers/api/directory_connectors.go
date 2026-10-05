@@ -56,7 +56,7 @@ func (as *Server) DirectoryConnectors(w http.ResponseWriter, r *http.Request) {
 }
 
 func (as *Server) DirectoryConnector(w http.ResponseWriter, r *http.Request) {
-	if !requireProDirectory(w) {
+	if r.Method != http.MethodDelete && !requireProDirectory(w) {
 		return
 	}
 	user := ctx.Get(r, "user").(models.User)

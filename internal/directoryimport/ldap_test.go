@@ -68,10 +68,13 @@ func TestPreviewNestedExclusionDomainAndDedup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Matched != 1 || len(got.Recipients) != 1 || got.Recipients[0].Email != "alice@example.test" {
+	if got.Matched != 2 || len(got.Recipients) != 2 {
 		t.Fatalf("unexpected recipients: %#v", got)
 	}
-	if got.Excluded != 1 || got.Skipped != 2 {
+	if got.Recipients[0].Email != "ALICE@example.test" || got.Recipients[1].Email != "alice@example.test" {
+		t.Fatalf("local-part case was not preserved: %#v", got.Recipients)
+	}
+	if got.Excluded != 1 || got.Skipped != 1 {
 		t.Fatalf("unexpected counters: %#v", got)
 	}
 }
@@ -183,5 +186,91 @@ func TestRangedMemberValues(t *testing.T) {
 	values, next, done = rangedMemberValues(entry)
 	if !done || next != 0 || len(values) != 1 {
 		t.Fatalf("final values=%#v next=%d done=%v", values, next, done)
+	}
+}
+
+
+func TestNormalizeAuditIdentityIncludesEffectivePort(t *testing.T) {
+	for _, tc := range []struct {
+		url  string
+		want string
+	}{
+		{"ldaps://Directory.Example", "directory.example:636"},
+		{"ldaps://Directory.Example:1636", "directory.example:1636"},
+	} {
+		got, _, err := NormalizeAuditIdentity(Config{
+			URL:          tc.url,
+			BindDN:       "CN=svc,DC=example,DC=test",
+			BindPassword: "secret",
+			GroupDN:      "CN=g,DC=example,DC=test",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != tc.want {
+			t.Fatalf("identity=%q want=%q", got, tc.want)
+		}
+	}
+}
+
+func TestUniqueMemberDNHandlesUIDSuffix(t *testing.T) {
+	got, err := uniqueMemberDN("CN=alice,DC=example,DC=test#'0101'B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "CN=alice,DC=example,DC=test" {
+		t.Fatalf("dn=%q", got)
+	}
+	if _, err := uniqueMemberDN("not-a-dn#'0101'B"); err == nil {
+		t.Fatal("invalid uniqueMember DN accepted")
+	}
+}
+
+func TestValidAttributeDescription(t *testing.T) {
+	for _, value := range []string{"mail", "cn;lang-de", "2.5.4.0", "2.5.4.0;binary"} {
+		if !validAttributeName(value) {
+			t.Fatalf("valid attribute description rejected: %q", value)
+		}
+	}
+	for _, value := range []string{"", "1", "1..2", "01.2", "mail;", "mail)(objectClass=*"} {
+		if validAttributeName(value) {
+			t.Fatalf("invalid attribute description accepted: %q", value)
+		}
+	}
+}
+
+func TestNormalizeEmailDomainPreservesLocalPart(t *testing.T) {
+	got := normalizeEmailDomain("User@EXAMPLE.COM")
+	if got != "User@example.com" {
+		t.Fatalf("email=%q", got)
+	}
+}
+
+func TestPreviewSkipsOversizedLeafBeforeResponse(t *testing.T) {
+	cfg, err := normalizeConfig(Config{
+		URL:          "ldaps://dc.example.test",
+		BindDN:       "CN=svc,DC=example,DC=test",
+		BindPassword: "secret",
+		GroupDN:      "CN=all,DC=example,DC=test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := &fakeReader{entries: map[string]directoryEntry{
+		"CN=all,DC=example,DC=test": {
+			DN: "CN=all,DC=example,DC=test", ObjectClass: []string{"group"},
+			Members: []string{"CN=big,DC=example,DC=test"},
+		},
+		"CN=big,DC=example,DC=test": {
+			DN: "CN=big,DC=example,DC=test", ObjectClass: []string{"person"},
+			Oversized: true,
+		},
+	}}
+	got, err := previewWithReader(context.Background(), reader, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Matched != 0 || got.Skipped != 1 {
+		t.Fatalf("unexpected preview: %#v", got)
 	}
 }

@@ -86,7 +86,6 @@ func TestCustomDeniedImport(t *testing.T) {
 	}
 }
 
-
 func TestImportSiteSharesRequestDeadlineWithRenderer(t *testing.T) {
 	if importSiteWorkTimeout >= 30*time.Second {
 		t.Fatalf("site import work timeout %s must remain below the admin server write timeout", importSiteWorkTimeout)

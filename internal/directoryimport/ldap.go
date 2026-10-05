@@ -17,15 +17,15 @@ import (
 )
 
 const (
-	maxDirectoryMembers   = 5000
-	maxDirectoryDepth     = 20
-	maxEmailDomains       = 100
-	maxDomainBytes        = 8192
-	maxNameBytes          = 256
-	maxEmailBytes         = 320
-	maxPositionBytes      = 512
-	maxPreviewBytes       = 2 << 20
-	defaultTimeout        = 5 * time.Second
+	maxDirectoryMembers = 5000
+	maxDirectoryDepth   = 20
+	maxEmailDomains     = 100
+	maxDomainBytes      = 8192
+	maxNameBytes        = 256
+	maxEmailBytes       = 320
+	maxPositionBytes    = 512
+	maxPreviewBytes     = 2 << 20
+	defaultTimeout      = 5 * time.Second
 )
 
 var (

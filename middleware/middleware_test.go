@@ -31,7 +31,6 @@ type unreadAPIBody struct{ reads int }
 func (body *unreadAPIBody) Read([]byte) (int, error) { body.reads++; return 0, io.EOF }
 func (body *unreadAPIBody) Close() error             { return nil }
 
-
 type deadlineCapableRecorder struct {
 	*httptest.ResponseRecorder
 	deadlineInstalled bool

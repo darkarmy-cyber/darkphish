@@ -199,9 +199,17 @@ var deleteGroup = function (id) {
     })
 }
 
+function normalizeEmailDomainForUI(email) {
+    var at = email.lastIndexOf("@")
+    if (at <= 0 || at === email.length - 1) {
+        return email
+    }
+    return email.substring(0, at + 1) + email.substring(at + 1).toLowerCase()
+}
+
 function addTarget(firstNameInput, lastNameInput, emailInput, positionInput) {
-    // Create new data row.
-    var email = escapeHtml(emailInput).toLowerCase();
+    // Preserve mailbox local-part case; only the domain is case-insensitive.
+    var email = escapeHtml(normalizeEmailDomainForUI(emailInput.trim()));
     var newRow = [
         escapeHtml(firstNameInput),
         escapeHtml(lastNameInput),

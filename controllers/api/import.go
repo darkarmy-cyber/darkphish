@@ -3,8 +3,8 @@ package api
 import (
 	"bytes"
 	"context"
-	"errors"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"

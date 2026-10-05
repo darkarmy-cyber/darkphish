@@ -26,6 +26,9 @@ const (
 	maxEmailBytes       = 320
 	maxPositionBytes    = 512
 	maxDNBytes          = 4096
+	maxObjectClasses    = 64
+	maxObjectClassBytes = 8192
+	maxMembershipBytes  = 2 << 20
 	maxPreviewBytes     = 2 << 20
 	defaultTimeout      = 5 * time.Second
 )
@@ -258,20 +261,32 @@ func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []stri
 	if err != nil {
 		return directoryEntry{}, err
 	}
-	classes := entry.GetEqualFoldAttributeValues("objectClass")
+	classes, err := boundedValues(entry.GetEqualFoldAttributeValues("objectClass"), maxObjectClasses, maxObjectClassBytes, 256)
+	if err != nil {
+		return directoryEntry{}, err
+	}
 	if hasClass(classes, "posixGroup") {
 		return directoryEntry{}, ErrUnsupportedLDAP
 	}
-	members := append([]string(nil), entry.GetEqualFoldAttributeValues("member")...)
+	members, err := boundedValues(entry.GetEqualFoldAttributeValues("member"), maxDirectoryMembers, maxMembershipBytes, maxDNBytes)
+	if err != nil {
+		return directoryEntry{}, err
+	}
 	for _, uniqueMember := range entry.GetEqualFoldAttributeValues("uniqueMember") {
 		memberDN, parseErr := uniqueMemberDN(uniqueMember)
 		if parseErr != nil {
 			return directoryEntry{}, parseErr
 		}
-		members = append(members, memberDN)
+		if err := appendBoundedValue(&members, memberDN, maxDirectoryMembers, maxMembershipBytes, maxDNBytes); err != nil {
+			return directoryEntry{}, err
+		}
 	}
 	rangeValues, rangeStart, rangeDone := rangedMemberValues(entry)
-	members = append(members, rangeValues...)
+	for _, memberDN := range rangeValues {
+		if err := appendBoundedValue(&members, memberDN, maxDirectoryMembers, maxMembershipBytes, maxDNBytes); err != nil {
+			return directoryEntry{}, err
+		}
+	}
 	for !rangeDone {
 		if err := ctx.Err(); err != nil {
 			return directoryEntry{}, err
@@ -282,11 +297,12 @@ func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []stri
 			return directoryEntry{}, err
 		}
 		values, next, done := rangedMemberValues(rangeEntry)
-		members = append(members, values...)
-		rangeStart, rangeDone = next, done
-		if len(members) > maxDirectoryMembers {
-			return directoryEntry{}, ErrTooManyEntries
+		for _, memberDN := range values {
+			if err := appendBoundedValue(&members, memberDN, maxDirectoryMembers, maxMembershipBytes, maxDNBytes); err != nil {
+				return directoryEntry{}, err
+			}
 		}
+		rangeStart, rangeDone = next, done
 	}
 	values := make(map[string]string, len(attributes))
 	oversized := false
@@ -296,7 +312,7 @@ func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []stri
 			oversized = true
 			continue
 		}
-		values[attr] = value
+		values[strings.ToLower(attr)] = value
 	}
 	for _, memberDN := range members {
 		if len(memberDN) == 0 || len(memberDN) > maxDNBytes {
@@ -310,6 +326,40 @@ func (r *ldapReader) ReadEntry(ctx context.Context, dn string, attributes []stri
 		Values:      values,
 		Oversized:   oversized,
 	}, nil
+}
+
+func boundedValues(values []string, maxCount, maxBytes, maxValueBytes int) ([]string, error) {
+	if len(values) > maxCount {
+		return nil, ErrTooManyEntries
+	}
+	out := make([]string, 0, len(values))
+	total := 0
+	for _, value := range values {
+		if len(value) == 0 || len(value) > maxValueBytes {
+			return nil, ErrTooManyEntries
+		}
+		total += len(value)
+		if total > maxBytes {
+			return nil, ErrTooManyEntries
+		}
+		out = append(out, value)
+	}
+	return out, nil
+}
+
+func appendBoundedValue(values *[]string, value string, maxCount, maxBytes, maxValueBytes int) error {
+	if len(value) == 0 || len(value) > maxValueBytes || len(*values) >= maxCount {
+		return ErrTooManyEntries
+	}
+	total := len(value)
+	for _, current := range *values {
+		total += len(current)
+		if total > maxBytes {
+			return ErrTooManyEntries
+		}
+	}
+	*values = append(*values, value)
+	return nil
 }
 
 func rangedMemberValues(entry *ldap.Entry) ([]string, int, bool) {
@@ -373,10 +423,10 @@ func previewWithReader(ctx context.Context, reader entryReader, cfg Config) (Pre
 			result.Skipped++
 			continue
 		}
-		email := normalizeEmailDomain(strings.TrimSpace(entry.Values[cfg.Attributes.Email]))
-		first := strings.TrimSpace(entry.Values[cfg.Attributes.FirstName])
-		last := strings.TrimSpace(entry.Values[cfg.Attributes.LastName])
-		position := strings.TrimSpace(entry.Values[cfg.Attributes.Position])
+		email := normalizeEmailDomain(strings.TrimSpace(entry.Values[strings.ToLower(cfg.Attributes.Email)]))
+		first := strings.TrimSpace(entry.Values[strings.ToLower(cfg.Attributes.FirstName)])
+		last := strings.TrimSpace(entry.Values[strings.ToLower(cfg.Attributes.LastName)])
+		position := strings.TrimSpace(entry.Values[strings.ToLower(cfg.Attributes.Position)])
 		if len(email) > maxEmailBytes || len(first) > maxNameBytes || len(last) > maxNameBytes || len(position) > maxPositionBytes {
 			result.Skipped++
 			continue
@@ -385,8 +435,7 @@ func previewWithReader(ctx context.Context, reader entryReader, cfg Config) (Pre
 			result.Skipped++
 			continue
 		}
-		parsed, err := mail.ParseAddress(email)
-		if err != nil || parsed.Address != email {
+		if !validBareMailbox(email) {
 			result.Skipped++
 			continue
 		}
@@ -469,7 +518,7 @@ func canonicalDNKey(value string) (string, error) {
 	for _, rdn := range dn.RDNs {
 		attrs := make([]string, 0, len(rdn.Attributes))
 		for _, attr := range rdn.Attributes {
-			attrs = append(attrs, strings.ToLower(attr.Type)+"\x00"+strings.ToLower(attr.Value))
+			attrs = append(attrs, strings.ToLower(attr.Type)+"\x00"+attr.Value)
 		}
 		sort.Strings(attrs)
 		rdns = append(rdns, strings.Join(attrs, "+"))
@@ -549,6 +598,21 @@ func validAttributeType(value string) bool {
 		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (i > 0 && r >= '0' && r <= '9') || (i > 0 && r == '-') {
 			continue
 		}
+		return false
+	}
+	return true
+}
+
+func validBareMailbox(email string) bool {
+	if email == "" {
+		return false
+	}
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Name != "" {
+		return false
+	}
+	trimmed := strings.TrimSpace(email)
+	if strings.HasPrefix(trimmed, "<") || strings.HasSuffix(trimmed, ">") {
 		return false
 	}
 	return true

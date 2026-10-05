@@ -1,7 +1,7 @@
 -- +goose Up
 CREATE TABLE directory_connectors (
     id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
     owner_user_id BIGINT NOT NULL,
     provider VARCHAR(32) NOT NULL,
     tenant_id VARCHAR(255) NOT NULL,
@@ -17,6 +17,8 @@ CREATE TABLE directory_connectors (
     created_at TIMESTAMPTZ NOT NULL,
     modified_at TIMESTAMPTZ NOT NULL
 );
+CREATE UNIQUE INDEX idx_directory_connectors_owner_name ON directory_connectors(owner_user_id, name);
+CREATE INDEX idx_directory_connectors_owner ON directory_connectors(owner_user_id);
 CREATE INDEX idx_directory_connectors_due ON directory_connectors(enabled, next_sync_at);
 
 CREATE TABLE directory_sync_runs (

@@ -122,6 +122,10 @@ func (as *Server) registerRoutes() {
 	router.HandleFunc("/import/site", as.ImportSite)
 	router.HandleFunc("/webhooks/", mid.Use(as.Webhooks, mid.RequirePermission(models.PermissionModifySystem)))
 	router.HandleFunc("/webhooks/{id:[0-9]+}/validate", mid.Use(as.ValidateWebhook, mid.RequirePermission(models.PermissionModifySystem)))
+	router.HandleFunc("/directory-connectors/", mid.Use(as.DirectoryConnectors, mid.RequirePermission(models.PermissionModifySystem))).Methods(http.MethodGet, http.MethodPost)
+	router.HandleFunc("/directory-connectors/{id:[0-9]+}", mid.Use(as.DirectoryConnector, mid.RequirePermission(models.PermissionModifySystem))).Methods(http.MethodGet, http.MethodPut, http.MethodDelete)
+	router.HandleFunc("/directory-connectors/{id:[0-9]+}/preview", mid.Use(as.DirectoryConnectorPreview, mid.RequirePermission(models.PermissionModifySystem), as.limitSensitive)).Methods(http.MethodPost)
+	router.HandleFunc("/directory-connectors/{id:[0-9]+}/history", mid.Use(as.DirectoryConnectorHistory, mid.RequirePermission(models.PermissionModifySystem))).Methods(http.MethodGet)
 	router.HandleFunc("/webhooks/{id:[0-9]+}", mid.Use(as.Webhook, mid.RequirePermission(models.PermissionModifySystem)))
 	as.handler = mid.CORS(as.allowedOrigins, as.limitAPIRequests)(router)
 }

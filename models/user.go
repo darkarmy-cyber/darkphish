@@ -152,6 +152,11 @@ func DeleteUser(id int64) error {
 			return err
 		}
 	}
+	// Remove managed directory connectors and their encrypted client secrets
+	// before deleting groups they may reference.
+	if err = DeleteDirectoryConnectorsForOwner(id); err != nil {
+		return err
+	}
 	// Delete the groups
 	log.Infof("Deleting groups for user ID %d", id)
 	groups, err := GetGroups(id)

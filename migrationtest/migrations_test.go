@@ -43,6 +43,24 @@ func exerciseLatestMigration(t *testing.T, driver, dialect, dsn, migrations stri
 	}
 	assertSecuritySchema(t, database)
 	assertLicenseCoordination(t, database)
+	if _, err := database.Exec("SELECT COUNT(*) FROM directory_connectors"); err != nil {
+		t.Fatalf("directory_connectors is unavailable after migrate up: %v", err)
+	}
+	if _, err := database.Exec("SELECT COUNT(*) FROM directory_sync_runs"); err != nil {
+		t.Fatalf("directory_sync_runs is unavailable after migrate up: %v", err)
+	}
+	if err := goose.Down(database, migrations); err != nil {
+		t.Fatalf("migrate directory connectors down: %v", err)
+	}
+	if _, err := database.Exec("SELECT COUNT(*) FROM directory_connectors"); err == nil {
+		t.Fatal("directory_connectors still exists after rolling back the latest migration")
+	}
+	if _, err := database.Exec("SELECT COUNT(*) FROM directory_sync_runs"); err == nil {
+		t.Fatal("directory_sync_runs still exists after rolling back the latest migration")
+	}
+	if _, err := database.Exec("SELECT COUNT(*) FROM browser_sessions"); err != nil {
+		t.Fatalf("browser_sessions disappeared while rolling back directory connectors: %v", err)
+	}
 	if err := goose.Down(database, migrations); err != nil {
 		t.Fatalf("migrate browser sessions down: %v", err)
 	}

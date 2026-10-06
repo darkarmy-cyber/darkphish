@@ -7,7 +7,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/darkarmy-cyber/darkphish/config"
@@ -35,7 +37,7 @@ func Open(c *config.Config) (*gorm.DB, error) {
 	var dialect gorm.Dialector
 	switch c.DBName {
 	case "sqlite3":
-		dialect = sqlite.Open(c.DBPath)
+		dialect = sqlite.Open(sqliteForeignKeyDSN(c.DBPath))
 	case "mysql":
 		if c.DBSSLCaPath != "" {
 			roots, err := certificateRoots(c.DBSSLCaPath)
@@ -113,4 +115,15 @@ func DriverName(backend string) string {
 		return "pgx"
 	}
 	return backend
+}
+
+func sqliteForeignKeyDSN(dsn string) string {
+	parts := strings.SplitN(dsn, "?", 2)
+	if len(parts) == 1 {
+		return dsn + "?_foreign_keys=on"
+	}
+	values, _ := url.ParseQuery(parts[1])
+	values.Del("_fk")
+	values.Set("_foreign_keys", "on")
+	return parts[0] + "?" + values.Encode()
 }

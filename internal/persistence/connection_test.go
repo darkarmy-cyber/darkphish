@@ -3,6 +3,7 @@ package persistence
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/darkarmy-cyber/darkphish/config"
@@ -87,5 +88,24 @@ func TestPostgreSQLVerifiedTLSAndDriverIdentity(t *testing.T) {
 	}
 	if DriverName("postgres") != "pgx" || DriverName("mysql") != "mysql" || DriverName("sqlite3") != "sqlite3" {
 		t.Fatal("database/sql driver mapping changed")
+	}
+}
+
+func TestSQLiteForeignKeyDSNForcesForeignKeysOn(t *testing.T) {
+	for _, test := range []struct {
+		input string
+	}{
+		{input: "fixture.db"},
+		{input: "fixture.db?_foreign_keys=off"},
+		{input: "fixture.db?_fk=0"},
+		{input: "fixture.db?cache=shared&_foreign_keys=false"},
+	} {
+		got := sqliteForeignKeyDSN(test.input)
+		if !strings.Contains(got, "_foreign_keys=on") {
+			t.Fatalf("foreign keys not forced on for %q: %q", test.input, got)
+		}
+		if strings.Contains(got, "_foreign_keys=off") || strings.Contains(got, "_foreign_keys=false") || strings.Contains(got, "_fk=0") {
+			t.Fatalf("disabled foreign-key setting survived for %q: %q", test.input, got)
+		}
 	}
 }

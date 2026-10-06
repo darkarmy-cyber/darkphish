@@ -1,6 +1,7 @@
 package models
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -81,7 +82,9 @@ func (c *DirectoryConnector) UnmarshalJSON(data []byte) error {
 		ClientSecret string `json:"client_secret"`
 		*alias
 	}{alias: (*alias)(c)}
-	if err := json.Unmarshal(data, &payload); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&payload); err != nil {
 		return err
 	}
 	c.ClientSecret = payload.ClientSecret
@@ -119,7 +122,7 @@ func (c *DirectoryConnector) Validate() error {
 	nameDigest := sha256.Sum256([]byte(strings.ToLower(c.Name)))
 	c.NameKey = hex.EncodeToString(nameDigest[:])
 	c.Provider = strings.ToLower(strings.TrimSpace(c.Provider))
-	c.TenantID = strings.TrimSpace(c.TenantID)
+	c.TenantID = strings.ToLower(strings.TrimSpace(c.TenantID))
 	c.ClientID = strings.ToLower(strings.TrimSpace(c.ClientID))
 	c.RemoteGroupID = strings.ToLower(strings.TrimSpace(c.RemoteGroupID))
 	switch {
@@ -261,10 +264,12 @@ func PutDirectoryConnector(connector *DirectoryConnector) error {
 	if err != nil {
 		return err
 	}
-	connector.TenantID = strings.TrimSpace(connector.TenantID)
+	connector.TenantID = strings.ToLower(strings.TrimSpace(connector.TenantID))
 	connector.ClientID = strings.ToLower(strings.TrimSpace(connector.ClientID))
+	storedTenantID := strings.ToLower(strings.TrimSpace(stored.TenantID))
+	storedClientID := strings.ToLower(strings.TrimSpace(stored.ClientID))
 	if connector.ClientSecret == "" {
-		if connector.TenantID != stored.TenantID || connector.ClientID != stored.ClientID {
+		if connector.TenantID != storedTenantID || connector.ClientID != storedClientID {
 			return ErrDirectoryConnectorClientSecret
 		}
 		connector.ClientSecret = stored.ClientSecret

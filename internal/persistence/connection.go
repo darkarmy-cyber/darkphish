@@ -116,7 +116,6 @@ func DriverName(backend string) string {
 	return backend
 }
 
-
 func sqliteForeignKeyDSN(dsn string) string {
 	if strings.Contains(dsn, "_foreign_keys=") || strings.Contains(dsn, "_fk=") {
 		return dsn

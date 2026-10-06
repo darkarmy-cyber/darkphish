@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -117,12 +118,12 @@ func DriverName(backend string) string {
 }
 
 func sqliteForeignKeyDSN(dsn string) string {
-	if strings.Contains(dsn, "_foreign_keys=") || strings.Contains(dsn, "_fk=") {
-		return dsn
+	parts := strings.SplitN(dsn, "?", 2)
+	if len(parts) == 1 {
+		return dsn + "?_foreign_keys=on"
 	}
-	separator := "?"
-	if strings.Contains(dsn, "?") {
-		separator = "&"
-	}
-	return dsn + separator + "_foreign_keys=on"
+	values, _ := url.ParseQuery(parts[1])
+	values.Del("_fk")
+	values.Set("_foreign_keys", "on")
+	return parts[0] + "?" + values.Encode()
 }

@@ -91,7 +91,6 @@ func TestPostgreSQLVerifiedTLSAndDriverIdentity(t *testing.T) {
 	}
 }
 
-
 func TestSQLiteForeignKeyDSNForcesForeignKeysOn(t *testing.T) {
 	for _, test := range []struct {
 		input string

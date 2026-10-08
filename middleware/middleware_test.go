@@ -290,6 +290,50 @@ func TestCORSHeaders(t *testing.T) {
 	}
 }
 
+func TestCORSEmitsOnlyConfiguredOriginValues(t *testing.T) {
+	configuredOrigin := "https://admin.example.test"
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Accept-Encoding")
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Origin", configuredOrigin)
+	response := httptest.NewRecorder()
+	CORS([]string{"  " + configuredOrigin + "  "})(handler).ServeHTTP(response, req)
+	if got := response.Header().Get("Access-Control-Allow-Origin"); got != configuredOrigin {
+		t.Fatalf("expected configured origin %q, got %q", configuredOrigin, got)
+	}
+	vary := response.Header().Values("Vary")
+	if len(vary) != 2 || vary[0] != "Origin" || vary[1] != "Accept-Encoding" {
+		t.Fatalf("expected Origin and existing Vary values, got %q", vary)
+	}
+
+	for _, requestOrigin := range []string{
+		"https://admin.example.test.attacker.invalid",
+		"https://ADMIN.example.test",
+		"null",
+		`https://attacker.invalid/"><script>alert(1)</script>`,
+	} {
+		t.Run(requestOrigin, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Origin", requestOrigin)
+			response := httptest.NewRecorder()
+			CORS([]string{configuredOrigin})(successHandler).ServeHTTP(response, req)
+			if got := response.Header().Get("Access-Control-Allow-Origin"); got != "" {
+				t.Fatalf("unexpected reflected origin %q", got)
+			}
+		})
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	response = httptest.NewRecorder()
+	CORS([]string{configuredOrigin})(successHandler).ServeHTTP(response, req)
+	if got := response.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("unexpected CORS header without Origin: %q", got)
+	}
+}
+
 func TestCORSDisabledByDefault(t *testing.T) {
 	req := httptest.NewRequest(http.MethodOptions, "/", nil)
 	req.Header.Set("Origin", "https://untrusted.example.test")

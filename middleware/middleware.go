@@ -394,7 +394,7 @@ func CORS(allowedOrigins []string, guards ...func(http.Handler) http.Handler) fu
 	allowed := make(map[string]string, len(allowedOrigins))
 	for _, configuredOrigin := range allowedOrigins {
 		configuredOrigin = strings.TrimSpace(configuredOrigin)
-		if configuredOrigin != "" && configuredOrigin != "*" {
+		if configuredOrigin != "" && configuredOrigin != "*" && !strings.ContainsAny(configuredOrigin, "\r\n") {
 			allowed[configuredOrigin] = configuredOrigin
 		}
 	}

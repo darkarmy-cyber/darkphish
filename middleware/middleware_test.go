@@ -332,6 +332,18 @@ func TestCORSEmitsOnlyConfiguredOriginValues(t *testing.T) {
 	if got := response.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Fatalf("unexpected CORS header without Origin: %q", got)
 	}
+
+	unsafeOrigin := "https://admin.example.test\r\nX-Injected: true"
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header["Origin"] = []string{unsafeOrigin}
+	response = httptest.NewRecorder()
+	CORS([]string{unsafeOrigin})(successHandler).ServeHTTP(response, req)
+	if got := response.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("unsafe configured origin reached response header: %q", got)
+	}
+	if got := response.Header().Get("X-Injected"); got != "" {
+		t.Fatalf("origin injected a response header: %q", got)
+	}
 }
 
 func TestCORSDisabledByDefault(t *testing.T) {

@@ -391,18 +391,18 @@ func loginReturnTarget(r *http.Request) string {
 // explicitly configured origins. It never emits a wildcard or credentials.
 // Guards run before preflight handling, after allowed response headers are set.
 func CORS(allowedOrigins []string, guards ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
-	allowed := make(map[string]struct{}, len(allowedOrigins))
-	for _, origin := range allowedOrigins {
-		origin = strings.TrimSpace(origin)
-		if origin != "" && origin != "*" {
-			allowed[origin] = struct{}{}
+	allowed := make(map[string]string, len(allowedOrigins))
+	for _, configuredOrigin := range allowedOrigins {
+		configuredOrigin = strings.TrimSpace(configuredOrigin)
+		if configuredOrigin != "" && configuredOrigin != "*" && !strings.ContainsAny(configuredOrigin, "\r\n") {
+			allowed[configuredOrigin] = configuredOrigin
 		}
 	}
 	return func(next http.Handler) http.Handler {
 		protocol := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			origin := r.Header.Get("Origin")
-			if origin != "" && r.Method == http.MethodOptions {
-				if _, ok := allowed[origin]; !ok {
+			requestOrigin := r.Header.Get("Origin")
+			if requestOrigin != "" && r.Method == http.MethodOptions {
+				if _, ok := allowed[requestOrigin]; !ok {
 					JSONError(w, http.StatusForbidden, "CORS origin is not allowed")
 					return
 				}
@@ -418,17 +418,18 @@ func CORS(allowedOrigins []string, guards ...func(http.Handler) http.Handler) fu
 			protocol = guards[i](protocol)
 		}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			origin := r.Header.Get("Origin")
-			if origin == "" {
+			requestOrigin := r.Header.Get("Origin")
+			if requestOrigin == "" {
 				protocol.ServeHTTP(w, r)
 				return
 			}
-			if _, ok := allowed[origin]; !ok {
+			allowedOrigin, ok := allowed[requestOrigin]
+			if !ok {
 				protocol.ServeHTTP(w, r)
 				return
 			}
 			w.Header().Add("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 			w.Header().Set("Access-Control-Expose-Headers", "X-RateLimit-Limit, X-RateLimit-Remaining, Retry-After")
 			protocol.ServeHTTP(w, r)
 		})

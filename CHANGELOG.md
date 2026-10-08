@@ -7,6 +7,17 @@
 - Add an optional rendered-snapshot path for Import Site so modern JavaScript-rendered pages can be captured before sanitization, with a static HTML fallback when Chromium is unavailable.
 - Preserve rendered page styles and source-relative assets while continuing to strip executable scripts and force imported forms back to Darkphish.
 - Bound each Chromium process tree to 512 MiB with Linux cgroup v2 and require a bounded tmpfs profile root; Windows and other deployments without an enforceable profile-storage boundary fail closed to the static HTML importer.
+- Add the Pro managed-directory connector foundation with encrypted Microsoft Entra client secrets, fixed-boundary Microsoft Graph group preview, connector scheduling metadata, and sync-history persistence.
+- Add a Professional/Enterprise-only LDAPS directory import preview for Users & Groups with certificate validation, nested group expansion, exclusion groups, email-domain filtering, attribute mapping, deduplication, bounded traversal, and audited API access without persisting bind passwords.
+
+
+### Fixed
+
+- Preserve `http.ResponseController` capabilities through API audit middleware so Import Site can enforce its connection read deadline before decoding request bodies.
+
+### Security
+
+- Stop reflecting request-owned CORS origin values by emitting only canonical, validated origins from server configuration.
 
 ## 0.26.0 - 2026-10-04
 

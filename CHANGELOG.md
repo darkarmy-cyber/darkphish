@@ -14,6 +14,8 @@
 ### Fixed
 
 - Preserve `http.ResponseController` capabilities through API audit middleware so Import Site can enforce its connection read deadline before decoding request bodies.
+- Hold ambiguous `v1.0.0` recovery attempts at the reviewed merged release source so scheduled reconciliation exits cleanly without publishing or sending repeated failure notifications.
+- Update the Go toolchain to 1.27.2 and `golang.org/x/net` to 0.60.0 to remediate newly disclosed standard-library and HTTP/2 vulnerabilities, and pin Staticcheck to the upstream unified-v5 export-data compatibility fix.
 
 ### Security
 

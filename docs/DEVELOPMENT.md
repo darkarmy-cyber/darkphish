@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go 1.27.1
+- Go 1.27.2
 - A C compiler supported by Go (SQLite uses CGO)
 - Node.js 24.x
 - pnpm 11.19.0 through Corepack

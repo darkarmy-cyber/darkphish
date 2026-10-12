@@ -89,7 +89,7 @@ jobs:
         run: go vet ./...
       - name: Staticcheck
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@v0.8.0-rc.1
+          go install honnef.co/go/tools/cmd/staticcheck@f1838cc308e5cfbb38d91cfc973355611845997e
           staticcheck ./...
       - name: Vulnerability analysis
         run: |

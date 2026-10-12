@@ -43,7 +43,7 @@ The installer:
 6. creates an immutable source snapshot from the exact Git commit using a sanitized tar
    environment so inherited `TAR_OPTIONS` cannot inject privileged extraction actions;
 7. installs the required compiler/runtime packages;
-8. uses Go 1.27.1 when already present or downloads the official toolchain from
+8. uses Go 1.27.2 when already present or downloads the official toolchain from
    `go.dev` and verifies it against a reviewed SHA-256 digest pinned inside the installer;
 9. builds only the tracked source snapshot in an empty allowlisted environment. External
    Go workspaces, user Go configuration, inherited `GOROOT`, `GOAUTH`, CGO flags, private

@@ -7,6 +7,7 @@ const source = readFileSync(new URL("./release-normalization-hold.mjs", import.m
 const nativeWorkflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n")
 const recoveryWorkflow = readFileSync(new URL("../.github/workflows/release-recover.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n")
 const reconcileWorkflow = readFileSync(new URL("../.github/workflows/release-reconcile.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n")
+const prepareWorkflow = readFileSync(new URL("../.github/workflows/release-prepare.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n")
 
 test("v1.0.0 recovery stays held to the reviewed merged release source", () => {
   assert.deepEqual(normalizationHold(), {
@@ -36,6 +37,8 @@ test("publication workflows stop before mutation while normalization hold is act
   assert.match(nativeWorkflow, /id: version\n\s+if: steps\.hold\.outputs\.active != 'true'/)
   assert.match(recoveryWorkflow, /ready: \$\{\{ steps\.hold\.outputs\.active == 'true' && 'false'/)
   assert.match(recoveryWorkflow, /id: recovery\n\s+if: steps\.hold\.outputs\.active != 'true'/)
+  assert.match(prepareWorkflow, /id: hold\n\s+name: Enforce release normalization hold/)
+  assert.match(prepareWorkflow, /name: Preflight and recover the generated release pull request\n\s+if: steps\.hold\.outputs\.active != 'true'/)
 })
 
 test("manual reconciliation retains hold enforcement but never repairs draft tags", () => {

@@ -5,9 +5,10 @@ import { successfulTrustedSBOMStep } from "./release-sbom-step.mjs"
 
 const oldPin = "f8bdd1d8ac5e901a77a92f111440fdb1b593736b"
 const newPin = "3ad7283483fc7af8ff2b4ea19663c2d5ca935e26"
+const currentPin = "66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c"
 const step = (pin, extra = {}) => ({ name: `Run anchore/sbom-action@${pin}`, status: "completed", conclusion: "success", ...extra })
 
-for (const pin of [oldPin, newPin]) {
+for (const pin of [oldPin, newPin, currentPin]) {
   test(`historical native recovery accepts exact successful generation ${pin}`, () => {
     assert.equal(successfulTrustedSBOMStep({ conclusion: "failure", steps: [{ name: "Set up job" }, step(pin), { name: "Generate checksums" }] }), true)
   })
@@ -34,7 +35,7 @@ test("both publishers and read-only smoke use the reviewed pin with all uploads 
   for (const file of ["release.yml", "release-recover.yml", "sbom-smoke.yml"]) {
     const workflow = readFileSync(new URL(`../workflows/${file}`, import.meta.url), "utf8").replace(/\r\n/g, "\n")
     const matches = [...workflow.matchAll(/uses: anchore\/sbom-action@([^\s]+)/g)]
-    assert.equal(matches.length, 1); assert.equal(matches[0][1], newPin)
+    assert.equal(matches.length, 1); assert.equal(matches[0][1], currentPin)
     const inputs = workflow.slice(matches[0].index).split(/\n      - /)[0]
     for (const key of ["upload-artifact", "upload-release-assets", "dependency-snapshot"]) assert.match(inputs, new RegExp(`${key}: false`))
     assert.match(inputs, /format: spdx-json/)

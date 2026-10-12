@@ -34,7 +34,11 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24.19.0
+      - id: hold
+        name: Enforce release normalization hold
+        run: node scripts/release-resume.mjs guard-rebuild
       - name: Preflight and recover the generated release pull request
+        if: steps.hold.outputs.active != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release-prepare.mjs

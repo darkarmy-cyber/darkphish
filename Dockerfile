@@ -9,7 +9,7 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
 COPY static ./static
 RUN pnpm run build
 
-FROM golang:1.27.1-bookworm AS backend
+FROM golang:1.27.2-bookworm AS backend
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download

@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.1
+          go-version: 1.27.2
           cache: true
       - run: go test ./internal/licensing -count=1
 
@@ -51,7 +51,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.1
+          go-version: 1.27.2
           cache: true
       - name: Verify formatting
         shell: bash
@@ -89,7 +89,7 @@ jobs:
         run: go vet ./...
       - name: Staticcheck
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@v0.8.0-rc.1
+          go install honnef.co/go/tools/cmd/staticcheck@f1838cc308e5cfbb38d91cfc973355611845997e
           staticcheck ./...
       - name: Vulnerability analysis
         run: |
@@ -107,7 +107,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.1
+          go-version: 1.27.2
           cache: true
       - run: go test -race ./... -count=1
 
@@ -121,7 +121,7 @@ jobs:
           node-version: 24.19.0
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.1
+          go-version: 1.27.2
       - name: Test release safety and idempotency
         # Browser fixtures launch real Chrome processes. Serialize test files
         # to keep parallel cold starts within the runner resource budget.
@@ -139,7 +139,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.1
+          go-version: 1.27.2
           cache: true
       - name: Start runner MySQL service
         run: |
@@ -218,7 +218,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: 1.27.1
+          go-version: 1.27.2
           cache: true
       - name: Exercise PostgreSQL migrations
         env:

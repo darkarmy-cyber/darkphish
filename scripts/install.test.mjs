@@ -26,7 +26,7 @@ test('installer fails closed and targets the supported native layout', () => {
 });
 
 test('installer pins the Go toolchain independently before executing it', () => {
-  assert.match(installer, /GO_REQUIRED="1\.27\.1"/);
+  assert.match(installer, /GO_REQUIRED="1\.27\.2"/);
   assert.match(installer, /GO_SHA256_AMD64="ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5"/);
   assert.match(installer, /GO_SHA256_ARM64="94f3e30b8e374bc285e7dadc11e0865726b9bc6e85b841ccceaabc0214c6b7c8"/);
   assert.match(installer, /https:\/\/go\.dev\/dl\/go\$\{GO_REQUIRED\}/);

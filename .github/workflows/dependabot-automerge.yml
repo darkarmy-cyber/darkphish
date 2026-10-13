@@ -46,6 +46,11 @@ jobs:
             fi
           done
 
+          if [ -f .github/release-normalization-hold.json ]; then
+            echo "Release normalization hold active; Dependabot merge reconciliation paused."
+            exit 0
+          fi
+
           node scripts/require-green-main.mjs
 
           for number in "${numbers[@]}"; do

@@ -54,9 +54,12 @@ test("legacy engineering auto-merge is revoked before the publication freeze can
 test("Dependabot migration cleanup revokes old native queues before checking the release boundary", () => {
   const workflow = read("../.github/workflows/dependabot-automerge.yml")
   const disable = workflow.indexOf("--disable-auto")
+  const hold = workflow.indexOf("if [ -f .github/release-normalization-hold.json ]")
   const boundary = workflow.indexOf("node scripts/require-green-main.mjs")
   const synchronous = workflow.indexOf("--match-head-commit")
-  assert.ok(disable >= 0 && boundary > disable && synchronous > boundary)
+  assert.ok(disable >= 0 && hold > disable && boundary > hold && synchronous > boundary)
+  assert.match(workflow, /Release normalization hold active; Dependabot merge reconciliation paused/)
+  assert.match(workflow.slice(hold, boundary), /exit 0/)
   assert.match(workflow, /autoMergeRequest/)
   assert.doesNotMatch(workflow, /gh pr merge[^\n]*--auto(?:\s|$)/)
   assert.match(workflow, /group: protected-main-mutation/)

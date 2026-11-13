@@ -25,6 +25,7 @@ It gives security teams a central place to prepare campaigns, manage users and g
 DarkPhish is designed as a native, self-hosted platform with a Go backend, web administration interface, REST API, SQLite/MySQL/PostgreSQL support, protected secrets, audit logging, and verified native release updates.
 
 > DarkPhish is intended only for environments where you have explicit authorization to perform phishing simulations or security testing.
+> **DarkPhish is developed by Dark Army s. r. o.** Penetration-testing services for DarkPhish releases are provided by fsociety s. r. o.
 
 ## Install
 

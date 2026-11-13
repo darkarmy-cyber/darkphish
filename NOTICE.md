@@ -9,7 +9,10 @@ The original project copyright remains:
 
 > Copyright (c) 2013-2020 Jordan Wright
 
-Darkphish-specific modifications are Copyright (c) 2026 DarkArmy contributors.
+Darkphish-specific modifications are Copyright (c) 2026 Dark Army s. r. o.
+and its contributors. Development of DarkPhish is performed by
+Dark Army s. r. o. Penetration-testing services for DarkPhish releases
+are provided by fsociety s. r. o.
 No claim is made that DarkArmy authored the upstream work. The complete MIT
 permission notice is preserved in `LICENSE` and applies to this distribution.
 

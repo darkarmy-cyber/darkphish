@@ -322,9 +322,6 @@ func PutGroup(g *Group) error {
 // DeleteGroup deletes a given group by group ID and user ID
 func DeleteGroup(g *Group) error {
 	err := db.Transaction(func(tx *gorm.DB) error {
-		if err := DisableDirectoryConnectorsForGroup(tx, g.Id, g.UserId); err != nil {
-			return err
-		}
 		if err := tx.Where("group_id=?", g.Id).Delete(&GroupTarget{}).Error; err != nil {
 			return err
 		}

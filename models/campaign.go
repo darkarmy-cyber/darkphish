@@ -1,9 +1,13 @@
 package models
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	log "github.com/darkarmy-cyber/darkphish/logger"
@@ -800,4 +804,94 @@ func CompleteCampaign(id int64, uid int64) error {
 		log.Error(err)
 	}
 	return err
+}
+
+// CampaignResultsPage is the paginated results envelope (blueprint §5):
+// one page of results plus the opaque cursor for the next page. Timeline
+// events are intentionally not part of the paginated view — they stay on
+// the legacy full detail response.
+type CampaignResultsPage struct {
+	Id         int64    `json:"id"`
+	Name       string   `json:"name"`
+	Status     string   `json:"status"`
+	Results    []Result `json:"results"`
+	NextCursor string   `json:"next_cursor,omitempty"`
+	HasMore    bool     `json:"has_more"`
+}
+
+// Result page sizing per blueprint §5: default 50, maximum 200.
+const (
+	ResultPageDefault = 50
+	ResultPageMax     = 200
+)
+
+// encodeResultCursor renders the last-seen result id as an opaque token.
+func encodeResultCursor(lastID int64) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("r:%d", lastID)))
+}
+
+// decodeResultCursor validates and decodes an opaque result cursor.
+func decodeResultCursor(cursor string) (int64, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(cursor))
+	if err != nil {
+		return 0, errors.New("invalid result cursor")
+	}
+	text := string(raw)
+	if !strings.HasPrefix(text, "r:") {
+		return 0, errors.New("invalid result cursor")
+	}
+	id, err := strconv.ParseInt(strings.TrimPrefix(text, "r:"), 10, 64)
+	if err != nil || id < 0 {
+		return 0, errors.New("invalid result cursor")
+	}
+	return id, nil
+}
+
+// GetCampaignResultsPage returns one page of campaign results in stable id
+// order. Ownership is re-checked exactly like GetCampaignResults; a cursor
+// is only ever interpreted inside this campaign and user scope, so a
+// guessed or stale cursor cannot enumerate another tenant's rows.
+func GetCampaignResultsPage(id, uid int64, limit int, cursor string) (CampaignResultsPage, error) {
+	page := CampaignResultsPage{Results: []Result{}}
+	user, err := GetUser(uid)
+	if err != nil {
+		return page, err
+	}
+	allowed, err := CanReadCampaign(user, id, time.Now().UTC())
+	if err != nil || !allowed {
+		return page, gorm.ErrRecordNotFound
+	}
+	var campaign CampaignResults
+	if err := db.Table("campaigns").Where("id=?", id).Take(&campaign).Error; err != nil {
+		return page, err
+	}
+	page.Id, page.Name, page.Status = campaign.Id, campaign.Name, campaign.Status
+
+	if limit <= 0 {
+		limit = ResultPageDefault
+	}
+	if limit > ResultPageMax {
+		limit = ResultPageMax
+	}
+	query := db.Table("results").Where("campaign_id=?", page.Id)
+	if cursor != "" {
+		lastID, err := decodeResultCursor(cursor)
+		if err != nil {
+			return page, err
+		}
+		query = query.Where("id > ?", lastID)
+	}
+	if err := query.Order("id ASC").Limit(limit + 1).Find(&page.Results).Error; err != nil {
+		return page, err
+	}
+	if len(page.Results) > limit {
+		page.HasMore = true
+		last := page.Results[limit-1]
+		page.Results = page.Results[:limit]
+		page.NextCursor = encodeResultCursor(last.Id)
+	}
+	if err := attachCredentialFindings(page.Results); err != nil {
+		return page, err
+	}
+	return page, nil
 }

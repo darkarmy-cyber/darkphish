@@ -12,6 +12,7 @@ import (
 	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/gorilla/mux"
+	"gorm.io/gorm"
 )
 
 // Campaigns returns a list of campaigns if requested via GET.
@@ -94,7 +95,27 @@ func (as *Server) Campaign(w http.ResponseWriter, r *http.Request) {
 func (as *Server) CampaignResults(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, _ := strconv.ParseInt(vars["id"], 0, 64)
-	cr, err := models.GetCampaignResults(id, ctx.Get(r, "user_id").(int64))
+	uid := ctx.Get(r, "user_id").(int64)
+	// Blueprint §5 pagination: with a limit parameter present the endpoint
+	// answers one page of results (default 50, maximum 200) plus an opaque
+	// next cursor. Without pagination parameters the legacy full detail
+	// response is preserved for existing clients.
+	if _, hasLimit := r.URL.Query()["limit"]; hasLimit {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		page, err := models.GetCampaignResultsPage(id, uid, limit, r.URL.Query().Get("cursor"))
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				JSONResponse(w, models.Response{Success: false, Message: "Campaign not found"}, http.StatusNotFound)
+				return
+			}
+			log.Error(err)
+			JSONResponse(w, models.Response{Success: false, Message: "Invalid result cursor"}, http.StatusBadRequest)
+			return
+		}
+		JSONResponse(w, page, http.StatusOK)
+		return
+	}
+	cr, err := models.GetCampaignResults(id, uid)
 	if err != nil {
 		log.Error(err)
 		JSONResponse(w, models.Response{Success: false, Message: "Campaign not found"}, http.StatusNotFound)

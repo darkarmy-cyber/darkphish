@@ -7,6 +7,7 @@
 - Simplified the update experience: the version selector dropdown has been removed. Settings → Update now shows the current version, the latest available version, and a single "Update to [version]" button that always targets the latest stable release.
 - Release notes and publication date are displayed directly on the update page for the latest release.
 - Update documentation links now point to docs.darkphish.eu.
+- Update `golang.org/x/sys` from 0.48.0 to 0.49.0.
 
 ### Added
 
@@ -18,6 +19,10 @@
 - MFA (multi-factor authentication) is now optional by default. Administrators can enable it under Settings → MFA, but it is no longer forced during first login. A recommendation banner is shown when MFA is not configured.
 - Retention settings page no longer shows "unavailable for this session" when MFA is not configured.
 - Browser sessions without MFA factors are now considered valid for API access.
+- Pause scheduled Dependabot merge reconciliation cleanly while a release normalization hold is active, avoiding repeated false failure notifications without weakening merge protections.
+- Prevent release preparation from recreating the held `v1.0.0` pull request, and update the pinned SBOM action with preserved historical recovery provenance.
+- Hold ambiguous `v1.0.0` recovery attempts at the reviewed merged release source so scheduled reconciliation exits cleanly without publishing or sending repeated failure notifications.
+- Update the Go toolchain to 1.27.2 and `golang.org/x/net` to 0.60.0 to remediate newly disclosed standard-library and HTTP/2 vulnerabilities, and pin Staticcheck to the upstream unified-v5 export-data compatibility fix.
 
 ## 1.0.0 - 2026-10-05
 

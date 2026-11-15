@@ -9,12 +9,8 @@ const recoveryWorkflow = readFileSync(new URL("../.github/workflows/release-reco
 const reconcileWorkflow = readFileSync(new URL("../.github/workflows/release-reconcile.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n")
 const prepareWorkflow = readFileSync(new URL("../.github/workflows/release-prepare.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n")
 
-test("v1.0.0 recovery stays held to the reviewed merged release source", () => {
-  assert.deepEqual(normalizationHold(), {
-    version: "1.0.0",
-    source: "87ccae93ac96cefcbf0e0636826a17d14d4084b3",
-    tag: "v1.0.0",
-  })
+test("v1.0.0 normalization hold closed with the 1.1.0 release", () => {
+  assert.equal(normalizationHold(), null)
   assert.match(reconcileWorkflow, /if: hashFiles\('\.github\/release-normalization-hold\.json'\) != ''/)
 })
 

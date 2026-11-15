@@ -44,7 +44,6 @@ $(function () {
         $("#updateAvailableBadge").prop("hidden", !hasUpdate);
         if (hasUpdate) {
             $("#updateAvailableText").text("Version " + status.latest_version + " is available!");
-            targetVersion = status.latest_version;
         }
         $("#updateStatus").text(status.result || status.unsupported_reason || status.error || (status.applying ? "Update in progress" : hasUpdate ? "A new release is available" : "You have the latest version"));
         $("#updateBlocked").prop("hidden", !status.unsupported_reason);
@@ -137,7 +136,7 @@ $(function () {
     function recover(xhr, mayHaveApplied) {
         request("/updates", "GET").done(function (status) {
             render(status);
-            if (status.applying) { observedApplying = true; progress("An update is already running."); watchRestart(240); return; }
+            if (status.applying) { observedApplying = true; targetVersion = status.target_version || targetVersion; progress("An update is already running."); watchRestart(240); return; }
             if (mayHaveApplied) {
                 if (outcome(status)) return;
                 unknown(status.error || "The update was interrupted.");

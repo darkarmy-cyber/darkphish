@@ -18,8 +18,8 @@
 	},
 	"db_name": "sqlite3",
 	"db_path": "darkphish.db",
-	"db_max_open_conns": 1,
-	"db_max_idle_conns": 1,
+	"db_max_open_conns": 8,
+	"db_max_idle_conns": 8,
 	"db_connection_max_lifetime_minutes": 30,
 	"postgresql": {
 		"host": "127.0.0.1",

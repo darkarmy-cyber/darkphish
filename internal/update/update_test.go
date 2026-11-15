@@ -539,6 +539,9 @@ func TestArchiveTraversalAndLinks(t *testing.T) {
 }
 
 func TestExtractCompleteNestedRuntime(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory fsync is not supported on Windows; verified on POSIX hosts")
+	}
 	var data bytes.Buffer
 	gz := gzip.NewWriter(&data)
 	tw := tar.NewWriter(gz)

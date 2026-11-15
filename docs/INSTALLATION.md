@@ -137,3 +137,11 @@ through a sudo boundary.
 
 It is not an unattended upgrade mechanism. Re-running it against an installed host
 is expected to stop with an error rather than mutate an existing instance.
+
+### Concurrent administrators and SQLite (pilot profile)
+
+The pilot capacity profile (10,000 participants, 20 concurrent administrators,
+blueprint ADR 003) requires `db_max_open_conns: 8` with SQLite so WAL readers
+run in parallel — the single-connection default serializes every request
+(p95 ~1s at 20 admins vs ~165 ms with a pool of 8). The shipped
+`config.json` sets this; do not lower it on multi-admin installations.

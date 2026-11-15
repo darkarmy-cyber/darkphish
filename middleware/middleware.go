@@ -90,8 +90,6 @@ func apiAuditAction(method, path string) string {
 		return ""
 	case method == http.MethodGet && strings.HasSuffix(clean, "/results") && strings.HasPrefix(clean, "/api/campaigns/"):
 		return "campaign.results.view"
-	case method == http.MethodPost && clean == "/api/import/ldap/preview":
-		return "directory.import.preview"
 	case method == http.MethodPost && clean == "/api/campaigns":
 		return "campaign.create"
 	case method == http.MethodPost && strings.HasSuffix(clean, "/complete"):
@@ -110,14 +108,6 @@ func apiAuditAction(method, path string) string {
 		return "imap.update"
 	case strings.HasPrefix(clean, "/api/webhooks") && method != http.MethodGet && method != http.MethodHead:
 		return "webhook.update"
-	case strings.HasPrefix(clean, "/api/directory-connectors/") && strings.HasSuffix(clean, "/preview") && method == http.MethodPost:
-		return "directory.connector.preview"
-	case strings.HasPrefix(clean, "/api/directory-connectors/") && method == http.MethodDelete:
-		return "directory.connector.delete"
-	case strings.HasPrefix(clean, "/api/directory-connectors") && method == http.MethodPost:
-		return "directory.connector.create"
-	case strings.HasPrefix(clean, "/api/directory-connectors/") && method == http.MethodPut:
-		return "directory.connector.update"
 	case method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions:
 		return "api.modify"
 	default:
@@ -316,17 +306,13 @@ func requiredPATScope(method, path string) string {
 			return "users:write"
 		}
 		return "users:read"
-	case strings.HasPrefix(clean, "/api/imap") || strings.HasPrefix(clean, "/api/webhooks") || strings.HasPrefix(clean, "/api/directory-connectors"):
+	case strings.HasPrefix(clean, "/api/imap") || strings.HasPrefix(clean, "/api/webhooks"):
 		if write {
 			return "integrations:write"
 		}
 		return "integrations:read"
 	case clean == "/api/import/group":
 		return "groups:write"
-	case clean == "/api/import/ldap/capability":
-		return "integrations:write"
-	case clean == "/api/import/ldap/preview":
-		return "integrations:write"
 	case clean == "/api/import/email" || clean == "/api/import/email/images":
 		return "templates:write"
 	case clean == "/api/import/site":

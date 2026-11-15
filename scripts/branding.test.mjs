@@ -36,9 +36,9 @@ test('all administrative shells use local DarkPhish brand assets', () => {
 test('both documentation menu destinations are the official site', () => {
   const nav = read('templates/nav.html')
   for (const label of ['User Guide', 'API Documentation']) {
-    assert.ok(nav.includes(`<a href="https://docs.darkphish.sk/" target="_blank" rel="noopener noreferrer">${label}</a>`))
+    assert.ok(nav.includes(`<a href="https://docs.darkphish.eu/" target="_blank" rel="noopener noreferrer">${label}</a>`))
   }
-  assert.doesNotMatch(nav, /getdarkphish\.com/)
+  assert.doesNotMatch(nav, /getdarkphish\.com|docs\.darkphish\.sk/)
 })
 
 test('brand derivatives preserve existing vector artwork without external resources', () => {

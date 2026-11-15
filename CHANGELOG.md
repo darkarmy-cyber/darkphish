@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.1.0 - 2026-11-15
+
+### Changed
+
+- Simplified the update experience: the version selector dropdown has been removed. Settings → Update now shows the current version, the latest available version, and a single "Update to [version]" button that always targets the latest stable release.
+- Release notes and publication date are displayed directly on the update page for the latest release.
+- Update documentation links now point to docs.darkphish.eu.
+- Update `golang.org/x/sys` from 0.48.0 to 0.49.0.
+
+### Added
+
+- Paginated campaign results API: `GET /api/campaigns/{id}/results?limit=50&cursor=<token>` returns one page of results (default 50, max 200) with an opaque next cursor, alongside the unchanged legacy full-detail response.
+- Database connection pool defaults increased to 8 connections for better concurrent admin performance.
+
+### Fixed
+
+- MFA (multi-factor authentication) is now optional by default. Administrators can enable it under Settings → MFA, but it is no longer forced during first login. A recommendation banner is shown when MFA is not configured.
+- Retention settings page no longer shows "unavailable for this session" when MFA is not configured.
+- Browser sessions without MFA factors are now considered valid for API access.
+- Pause scheduled Dependabot merge reconciliation cleanly while a release normalization hold is active, avoiding repeated false failure notifications without weakening merge protections.
+- Prevent release preparation from recreating the held `v1.0.0` pull request, and update the pinned SBOM action with preserved historical recovery provenance.
+- Hold ambiguous `v1.0.0` recovery attempts at the reviewed merged release source so scheduled reconciliation exits cleanly without publishing or sending repeated failure notifications.
+- Update the Go toolchain to 1.27.2 and `golang.org/x/net` to 0.60.0 to remediate newly disclosed standard-library and HTTP/2 vulnerabilities, and pin Staticcheck to the upstream unified-v5 export-data compatibility fix.
+
+### Security
+
+- Update `golang.org/x/net` from 0.60.0 to 0.62.0 and the Go toolchain from 1.27.2 to 1.27.4 to remediate GO-2026-6860 (quadratic text-node coalescing in x/net/html), the related x/net/html rendering finding, and GO-2026-6859 (HTTP/1 server crash via MaxBytesReader header race in net/http).
+
 ## 1.0.0 - 2026-10-05
 
 ### Added

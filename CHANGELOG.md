@@ -24,6 +24,10 @@
 - Hold ambiguous `v1.0.0` recovery attempts at the reviewed merged release source so scheduled reconciliation exits cleanly without publishing or sending repeated failure notifications.
 - Update the Go toolchain to 1.27.2 and `golang.org/x/net` to 0.60.0 to remediate newly disclosed standard-library and HTTP/2 vulnerabilities, and pin Staticcheck to the upstream unified-v5 export-data compatibility fix.
 
+### Security
+
+- Update `golang.org/x/net` from 0.60.0 to 0.62.0 and the Go toolchain from 1.27.2 to 1.27.4 to remediate GO-2026-6860 (quadratic text-node coalescing in x/net/html), the related x/net/html rendering finding, and GO-2026-6859 (HTTP/1 server crash via MaxBytesReader header race in net/http).
+
 ## 1.0.0 - 2026-10-05
 
 ### Added

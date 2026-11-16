@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	log "github.com/darkarmy-cyber/darkphish/logger"
 	"golang.org/x/net/websocket"
 )
 
@@ -155,9 +157,10 @@ func cdpWebSocketConfig(raw string) (*websocket.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	// CDP is a non-browser loopback client. Omitting Origin is accepted across
-	// supported Chromium versions without broadening remote origin access.
-	config.Origin = nil
+	// Chromium 111+ rejects origin-less DevTools websocket handshakes. Announce
+	// a fixed loopback origin; the launcher passes --remote-allow-origins for
+	// exactly this origin, so remotely imported pages still cannot reach CDP.
+	config.Origin = &url.URL{Scheme: "http", Host: "127.0.0.1"}
 	return config, nil
 }
 
@@ -456,7 +459,7 @@ func (o *renderObservation) observe(event map[string]any) {
 }
 
 func waitForRenderedSettle(ctx context.Context, client *cdpClient, observation *renderObservation) error {
-	deadline := time.Now().Add(6 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for {
 		if err := drainPendingRenderEvents(ctx, client, observation); err != nil {
 			return errRenderedImportUnavailable
@@ -464,6 +467,7 @@ func waitForRenderedSettle(ctx context.Context, client *cdpClient, observation *
 		settled := observation.loadSeen && time.Since(observation.loadAt) >= 1500*time.Millisecond
 		expired := time.Now().After(deadline)
 		if expired && !observation.loadSeen {
+			log.Warnf("rendered import never observed the load event (status=%d responseURL=%s networkIdle=%t)", observation.status, observation.responseURL, observation.networkIdle)
 			return errRenderedImportUnavailable
 		}
 		readWindow := 300 * time.Millisecond
@@ -522,25 +526,36 @@ func waitForRenderQuiescence(ctx context.Context, client *cdpClient, observation
 }
 
 func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte, *url.URL, error) {
+	stages := []string{"port", "deny-downloads", "page-ws", "dial", "setup", "navigate", "settle", "capture"}
+	stage := stages[0]
+	defer func() {
+		if stage != "" {
+			log.Warn("rendered import cdp stage failed: ", stage)
+		}
+	}()
 	portCtx, cancelPort := context.WithTimeout(ctx, 5*time.Second)
 	port, err := readDevToolsPort(portCtx, profileDir)
 	cancelPort()
 	if err != nil {
 		return nil, nil, errRenderedImportUnavailable
 	}
+	stage = stages[1]
 	if err := denyBrowserDownloads(ctx, profileDir, port); err != nil {
 		return nil, nil, errRenderedImportUnavailable
 	}
+	stage = stages[2]
 	wsCtx, cancelWS := context.WithTimeout(ctx, 5*time.Second)
 	wsURL, err := pageWebSocketURL(wsCtx, port)
 	cancelWS()
 	if err != nil {
 		return nil, nil, errRenderedImportUnavailable
 	}
+	stage = stages[3]
 	client, err := dialCDP(ctx, wsURL)
 	if err != nil {
 		return nil, nil, errRenderedImportUnavailable
 	}
+	stage = stages[4]
 	originalURLForObservation, _ := url.Parse(target)
 	client.requireHTTPS = originalURLForObservation != nil && strings.EqualFold(originalURLForObservation.Scheme, "https")
 	defer client.close()
@@ -551,11 +566,13 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 		}
 	}
 
+	stage = stages[5]
 	navigation, err := client.call(ctx, "Page.navigate", map[string]any{"url": target})
 	if err != nil {
 		return nil, nil, errRenderedImportUnavailable
 	}
 	if errorText, _ := navigation["errorText"].(string); errorText != "" {
+		log.Warn("rendered import navigation rejected: ", errorText)
 		return nil, nil, errRenderedImportUnavailable
 	}
 	frameID, _ := navigation["frameId"].(string)
@@ -563,6 +580,7 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 	if frameID == "" {
 		return nil, nil, errRenderedImportUnavailable
 	}
+	stage = stages[6]
 	observation := &renderObservation{frameID: frameID, loaderID: loaderID, originalHTTPS: client.requireHTTPS}
 	if err := drainPendingRenderEvents(ctx, client, observation); err != nil {
 		return nil, nil, errRenderedImportUnavailable
@@ -571,9 +589,11 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 		return nil, nil, errRenderedImportUnavailable
 	}
 	if observation.insecureDowngrade || observation.status < 200 || observation.status >= 300 {
+		log.Warnf("rendered import rejected response: insecureDowngrade=%t status=%d", observation.insecureDowngrade, observation.status)
 		return nil, nil, errRenderedImportUnavailable
 	}
 
+	stage = stages[7]
 	evaluated, err := client.call(ctx, "Runtime.evaluate", map[string]any{
 		"expression":    "(()=>{const html=document.documentElement?document.documentElement.outerHTML:\"\";const tooLarge=html.length>8388608;return {html:tooLarge?\"\":html,url:location.href,ready:document.readyState,tooLarge:tooLarge}})()",
 		"returnByValue": true,
@@ -604,5 +624,6 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 	if strings.EqualFold(originalURL.Scheme, "https") && !strings.EqualFold(finalURL.Scheme, "https") {
 		return nil, nil, errRenderedImportUnavailable
 	}
+	stage = ""
 	return []byte(htmlValue), finalURL, nil
 }

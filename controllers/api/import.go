@@ -12,6 +12,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/darkarmy-cyber/darkphish/internal/importhtml"
+	log "github.com/darkarmy-cyber/darkphish/logger"
 	"github.com/darkarmy-cyber/darkphish/models"
 	"github.com/darkarmy-cyber/darkphish/util"
 	"github.com/jordan-wright/email"
@@ -158,6 +159,7 @@ func (as *Server) ImportSite(w http.ResponseWriter, r *http.Request) {
 		sourceURL = renderedURL
 		mode = "rendered"
 	} else {
+		log.Warn("rendered import failed, falling back to the static response: ", renderErr)
 		warnings = append(warnings, renderedImportWarning(renderErr))
 	}
 	h, err := importhtml.Sanitize(string(content), sourceURL)

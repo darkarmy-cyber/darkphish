@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+
+	log "github.com/darkarmy-cyber/darkphish/logger"
 	"time"
 )
 
@@ -155,11 +157,17 @@ func startRenderedCommand(cmd *exec.Cmd) (func() error, error) {
 	// Rendered imports are optional and fail closed unless the service has a
 	// delegated, writable cgroup v2 subtree with memory, CPU, and PID controllers.
 	cgroupRoot, err := renderedCgroupRoot()
-	if err != nil || prepareRenderedCgroupRoot(cgroupRoot) != nil {
+	if err != nil {
+		log.Warn("rendered import unavailable: cgroup root discovery failed: ", err)
+		return nil, errRenderedImportUnavailable
+	}
+	if prepErr := prepareRenderedCgroupRoot(cgroupRoot); prepErr != nil {
+		log.Warn("rendered import unavailable: cgroup subtree preparation failed under ", cgroupRoot, ": ", prepErr)
 		return nil, errRenderedImportUnavailable
 	}
 	cgroup, err := os.MkdirTemp(cgroupRoot, "darkphish-render-")
 	if err != nil {
+		log.Warn("rendered import unavailable: render cgroup creation failed: ", err)
 		return nil, errRenderedImportUnavailable
 	}
 	removeCgroup := func() error { return os.Remove(cgroup) }
@@ -194,6 +202,7 @@ func startRenderedCommand(cmd *exec.Cmd) (func() error, error) {
 	cmd.SysProcAttr.CgroupFD = int(cgroupDir.Fd())
 	if err := cmd.Start(); err != nil {
 		_ = cgroupDir.Close()
+		log.Warn("rendered import unavailable: chromium launch failed: ", err)
 		return fail()
 	}
 	_ = cgroupDir.Close()

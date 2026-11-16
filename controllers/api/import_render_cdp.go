@@ -467,7 +467,15 @@ func waitForRenderedSettle(ctx context.Context, client *cdpClient, observation *
 		settled := observation.loadSeen && time.Since(observation.loadAt) >= 1500*time.Millisecond
 		expired := time.Now().After(deadline)
 		if expired && !observation.loadSeen {
-			log.Warnf("rendered import never observed the load event (status=%d responseURL=%s networkIdle=%t)", observation.status, observation.responseURL, observation.networkIdle)
+			// Redact query and fragment: imported URLs and redirects may carry
+			// signed tokens that must not reach the application log.
+			responseOrigin := observation.responseURL
+			if parsed, parseErr := url.Parse(responseOrigin); parseErr == nil && responseOrigin != "" {
+				parsed.RawQuery = ""
+				parsed.Fragment = ""
+				responseOrigin = parsed.String()
+			}
+			log.Warnf("rendered import never observed the load event (status=%d responseOrigin=%s networkIdle=%t)", observation.status, responseOrigin, observation.networkIdle)
 			return errRenderedImportUnavailable
 		}
 		readWindow := 300 * time.Millisecond

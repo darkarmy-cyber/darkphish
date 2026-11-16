@@ -233,3 +233,54 @@ func TestSanitizeDiscardsNoscriptSubtrees(t *testing.T) {
 		t.Fatalf("ordinary content was removed with noscript: %s", got)
 	}
 }
+
+func TestSanitizeBlocksSynthesizedStyleEndTags(t *testing.T) {
+	base, _ := url.Parse("https://example.test/")
+	got, err := Sanitize(`<html><head><style>.x{color:red}\3c /style\3e \3c script\3e alert(1)\3c /script\3e</style></head><body><p>ok</p></body></html>`, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "<style") || strings.Contains(got, "alert(1)") || strings.Contains(got, "</style") {
+		t.Fatalf("synthesized style breakout survived: %s", got)
+	}
+	if !strings.Contains(got, "<p>ok</p>") {
+		t.Fatalf("ordinary content lost: %s", got)
+	}
+}
+
+func TestSanitizeBlocksEscapedInlineURLs(t *testing.T) {
+	got, err := Sanitize(`<body><div style="color:red;background-image:u\72l(https://track.example.test/pixel)">x</div></body>`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "track.example.test") || strings.Contains(got, "background-image") || strings.Contains(got, `u\72l`) {
+		t.Fatalf("escaped inline url bypass survived: %s", got)
+	}
+	if !strings.Contains(got, "color:red") {
+		t.Fatalf("safe declaration lost: %s", got)
+	}
+}
+
+func TestSanitizeKeepsDataURLSrcsetCandidates(t *testing.T) {
+	base, _ := url.Parse("https://example.test/")
+	got, err := Sanitize(`<body><img src="logo.png" srcset="data:image/png;base64,aGVsbG8= 2x, logo.png 1x"></body></html>`, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `srcset="data:image/png;base64,aGVsbG8= 2x, https://example.test/logo.png 1x"`) {
+		t.Fatalf("data url srcset candidate mangled: %s", got)
+	}
+}
+
+func TestSanitizeBlocksExternalSVGPaintReferences(t *testing.T) {
+	got, err := Sanitize(`<body><svg><path fill="url(https://attacker.example/paint.svg#x)" stroke="#333" d="M0 0"/><rect clip-path="url(#local)" width="4" height="4"/></svg></body>`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "attacker.example") {
+		t.Fatalf("external svg paint reference survived: %s", got)
+	}
+	if !strings.Contains(got, `stroke="#333"`) || !strings.Contains(got, `clip-path="url(#local)"`) {
+		t.Fatalf("safe paint references lost: %s", got)
+	}
+}

@@ -14,7 +14,7 @@ nevytvorí produkčný podpisový kľúč ani nezačne posielať správy použí
 4. Fungujúce odosielanie e-mailov vo WordPresse. Plugin používa `wp_mail()`;
    prijatie správy poštovým serverom treba následne overiť v reálnej schránke.
 5. Cloudflare Turnstile widget: **Turnstile → Add widget**, režim Managed,
-   povolená doména `www.darkphish.sk` pre statický formulár (alebo `fsociety.sk` pre shortcode) a samostatne testovacia doména. DNS webu nemusí
+   povolená doména `www.darkphish.eu` pre statický formulár (alebo `fsociety.sk` pre shortcode) a samostatne testovacia doména. DNS webu nemusí
    byť vedené cez Cloudflare. Site key je verejný, Secret key patrí iba na server.
 6. Schválenú stránku podmienok Community licencie a označenie jej verzie.
    Plugin právne podmienky nevymýšľa; verejnú registráciu bez ich konfigurácie nepovolí.
@@ -73,7 +73,7 @@ Tieto zástupné hodnoty nefungujú a nepatria do produkcie. Pri reverznom proxy
 nastav dôveryhodné HTTPS a skutočnú klientsku IP na úrovni servera. Plugin
 nepreberá ľubovoľné `X-Forwarded-*` hlavičky. `home` aj `siteurl` majú používať HTTPS.
 
-## HTML registrácia na darkphish.sk
+## HTML registrácia na darkphish.eu
 
 Od verzie 0.1.2 môže verejná registrácia bežať na samostatnom HTML webe.
 WordPress na fsociety.sk zostáva licenčným API; súkromné kľúče a databáza
@@ -82,18 +82,18 @@ zostávajú iba na tomto serveri. Do HTML webu nepridávaj PHP ani WordPress.
 1. Vo wp-config.php nastav presný povolený origin bez koncového lomítka:
 
    ```php
-   define('DARKPHISH_LICENSE_REGISTRATION_ORIGIN', 'https://www.darkphish.sk');
+   define('DARKPHISH_LICENSE_REGISTRATION_ORIGIN', 'https://www.darkphish.eu');
    ```
 
 2. Nahraj obsah `static-site/license/` do priečinka `license` vo verejnom
-   koreni HTML webu. Výsledná stránka je `https://www.darkphish.sk/license/`.
+   koreni HTML webu. Výsledná stránka je `https://www.darkphish.eu/license/`.
    Existujúcu hlavnú stránku neprepisuj. Na registráciu nepridávaj analytiku,
    reklamy ani iné skripty, ktoré môžu čítať token alebo zobrazený kľúč.
 3. V administrácii WordPressu **DarkPhish → Settings** nastav
-   **Registration page URL** na `https://www.darkphish.sk/license/`, URL
+   **Registration page URL** na `https://www.darkphish.eu/license/`, URL
    schválených podmienok a ich skutočnú verziu. Toto nastavenie určuje aj
    cieľ overovacieho e-mailu; ľubovoľné cudzie domény sú odmietnuté.
-4. V existujúcom Turnstile widgete povoľ `darkphish.sk`. Secret key ponechaj
+4. V existujúcom Turnstile widgete povoľ `darkphish.eu`. Secret key ponechaj
    iba vo wp-config.php. Formulár načíta Site key a aktuálne podmienky cez
    verejný `/public-config`; súkromný kľúč ani secret v tejto odpovedi nie sú.
 5. Na hostingu/CDN vypni cache a zaznamenávanie tiel požiadaviek/odpovedí pre
@@ -111,7 +111,7 @@ Turnstile, overenie e-mailu ani platné aktivačné/obnovovacie poverenia.
 Produkčná základná URL API je `https://fsociety.sk/wp-json/darkphish-license/v1`.
 Samotná konfigurácia nie je potvrdením živého testu pošty a aktivácie.
 
-## Prepojenie klienta DarkPhish
+## Prepojenie klienta Darkphish
 
 Verejný keyring z administrácie ulož na serveri aplikácie do
 `/etc/darkphish/license-public-keys.json`. Obsahuje schému
@@ -195,10 +195,10 @@ Referencie: [WordPress REST API](https://developer.wordpress.org/rest-api/extend
 Anglické návrhy podmienok a oznámenia o ochrane údajov sú v
 [legal-drafts/](legal-drafts/README.md). Obsahujú výslovne označenú pripravovanú
 spoločnosť a IČO `XXXX`; nie sú určené na publikovanie ani zapnutie registrácie.
-Postup pre plánovanú licenčnú schránku `license@darkphish.sk` u Websupportu je v
+Postup pre plánovanú licenčnú schránku `license@darkphish.eu` u Websupportu je v
 [návode na SMTP](legal-drafts/MAIL_SETUP.sk.md).
 
-## DarkPhish Licenses 0.2.0
+## Darkphish Licenses 0.2.0
 
 Samostatné menu sa zaradí priamo pod Zeus, ak je prítomný. Záložky Dashboard, Community, Professional, Enterprise a Settings zobrazujú skutočné štatistiky a stránkované licencie. Správca môže ručne vydať Professional/Enterprise licenciu, upraviť jej limity a platnosť alebo použiť revoke/restore/reset/renew. Predvolené limity sa upravujú v Settings a nevynucujú sa spätne na už vydaných licenciách. Ručné vydanie neoveruje platbu ani neposiela kľúč poštou. Kľúč sa zobrazí iba v odpovedi na vydanie.
 
@@ -210,7 +210,7 @@ Publikované predvoľby podľa dodaného index.html: Professional 250 používat
 Nahraď existujúci plugin balíkom 0.2.1 (rovnaký priečinok darkphish-license).
 Zachovaj wp-config.php aj súkromný podpisový súbor. HTML e-mail obsahuje tlačidlo,
 záložný odkaz a textovú alternatívu. Používa existujúcu SMTP konfiguráciu.
-Na darkphish.sk nahraj aj statickú stránku en7 do license/, aby sa po žiadosti
+Na darkphish.eu nahraj aj statickú stránku en7 do license/, aby sa po žiadosti
 zobrazila obrazovka „Check your inbox“. Overovací odkaz stále vyžaduje výslovné
 potvrdenie na stránke; samotné otvorenie e-mailu ani odkazu kľúč nevydá.
 
@@ -271,4 +271,28 @@ a [Mailinator](https://www.mailinator.com/) (overene 2026-09-16).
 
 Nasadenie: nahraď existujuci plugin ZIPom 0.2.3 a obsah priecinka `license/`
 na webe nahraď verziou en9 (HTML, CSS a JS) pre novu chybovu spravu.
+
+## DarkPhish 0.2.8 — plny zoznam disposable domen + prechod na darkphish.eu
+
+Defaultny zoznam blokovanych domen bol rozsireny z 21 na **10 274 domen** —
+snapshot suboru `disposable_email_blocklist.conf` projektu
+[disposable-email-domains](https://github.com/disposable-email-domains/disposable-email-domains)
+z 2026-11-16 (deduplikovane, tvarovo overene, bez legitimnych poskytovatelov
+a verejnych pripon). Kopia na vlozenie je v `tools/disposable-domains-2026-11-16.txt`.
+
+**Zrusene obmedzenie poctu domen:** nastavenia uz neobmedzuju pocet domen
+(maximalne 1 000), zostava len textovy limit 1 000 000 znakov, ktory plny
+zoznam (~150 kB) spokojne zvlada. Admin textarea zobrazi aktualny pocet domen.
+
+Vsetky e-maily (verifikacia, obnova, podpora) a URL v plugin-e aj dokumentacii
+prepnute z darkphish.sk na **darkphish.eu** (`license@darkphish.eu`,
+`https://www.darkphish.eu/license/`, registracny origin vo wp-config zostava
+`https://www.darkphish.eu`).
+
+Nasadenie 0.2.8: nahraď plugin ZIPom 0.2.8. **Po aktualizacii vymaz ulozenu
+moznost** `darkphish_email_policy` (`wp option delete darkphish_email_policy`),
+inak sa pouzije stary ulozeny 21-doménovy zoznam namiesto novych defaultov
+(albo rucne vloz zoznam z `tools/`). Netreba generovat novy podpisovy kluc,
+menit wp-config.php ani databazu. Odporucame `php -l includes/EmailPolicy.php`
+pred aktivaciou.
 Netreba generovat novy podpisovy kluc ani menit wp-config.php.

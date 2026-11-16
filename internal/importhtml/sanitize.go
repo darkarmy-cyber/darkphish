@@ -196,6 +196,12 @@ func sanitizeStylesheet(css string, base *url.URL) string {
 		return ""
 	}
 	css = cssUnescape(css)
+	// Decoded escapes could otherwise synthesize markup that terminates the
+	// raw-text <style> element when the sanitized document is re-serialized.
+	lowerCSS := strings.ToLower(css)
+	if strings.Contains(lowerCSS, "</style") || strings.Contains(css, "<!--") || strings.Contains(css, "-->") {
+		return ""
+	}
 	css = cssComment.ReplaceAllString(css, " ")
 	css = cssImport.ReplaceAllString(css, " ")
 	css = strings.TrimSpace(css)
@@ -239,13 +245,19 @@ func safeStyle(raw string) string {
 		if key == "" {
 			continue
 		}
-		lower := strings.ToLower(value)
+		decoded := value
+		if strings.Contains(value, "\\") {
+			// CSS escapes are decoded before testing so u\72l(...) cannot
+			// smuggle a remote reference past the inline URL restriction.
+			decoded = cssUnescape(value)
+		}
+		lower := strings.ToLower(decoded)
 		if strings.Contains(lower, "expression(") || strings.Contains(lower, "behavior:") || strings.Contains(lower, "-moz-binding") {
 			continue
 		}
 		if strings.Contains(lower, "url(") || strings.Contains(lower, "src(") {
 			onlyRasters := true
-			for _, match := range cssURL.FindAllStringSubmatch(value, -1) {
+			for _, match := range cssURL.FindAllStringSubmatch(decoded, -1) {
 				reference := strings.TrimSpace(match[1])
 				if len(reference) >= 2 && (reference[0] == '\'' || reference[0] == '"') && reference[len(reference)-1] == reference[0] {
 					reference = reference[1 : len(reference)-1]
@@ -255,26 +267,25 @@ func safeStyle(raw string) string {
 					break
 				}
 			}
-			if strings.Contains(value, "\\") && strings.Contains(cssUnescape(value), "url(") {
-				onlyRasters = false
-			}
 			if !onlyRasters {
 				continue
 			}
 		}
-		declarations = append(declarations, key+":"+value)
+		declarations = append(declarations, key+":"+decoded)
 	}
 	return strings.Join(declarations, ";")
 }
 
 // safeSrcset validates every image candidate of a srcset attribute and keeps
-// only HTTPS or embedded-raster references.
+// only HTTPS or embedded-raster references. Comma splitting is srcset-aware:
+// chunks that continue the unterminated base64 payload of a previous data:
+// candidate (data URLs contain commas) are merged back before validation.
 func safeSrcset(raw string, base *url.URL) string {
 	if len(raw) > 8192 {
 		return ""
 	}
 	var kept []string
-	for _, candidate := range strings.Split(raw, ",") {
+	for _, candidate := range splitSrcsetCandidates(raw) {
 		fields := strings.Fields(candidate)
 		if len(fields) == 0 {
 			continue
@@ -286,6 +297,18 @@ func safeSrcset(raw string, base *url.URL) string {
 		kept = append(kept, strings.Join(append([]string{resolved}, fields[1:]...), " "))
 	}
 	return strings.Join(kept, ", ")
+}
+
+func splitSrcsetCandidates(raw string) []string {
+	var candidates []string
+	for _, part := range strings.Split(raw, ",") {
+		if len(candidates) > 0 && strings.HasSuffix(strings.TrimSpace(candidates[len(candidates)-1]), ";base64") {
+			candidates[len(candidates)-1] += "," + part
+			continue
+		}
+		candidates = append(candidates, part)
+	}
+	return candidates
 }
 
 func safeURL(raw string, base *url.URL, image bool) string {
@@ -335,7 +358,11 @@ func copyAttributes(out, source *html.Node, base *url.URL) {
 			if safeToken.MatchString(a.Val) {
 				out.Attr = append(out.Attr, html.Attribute{Key: a.Key, Val: a.Val})
 			}
-		case "viewBox", "preserveAspectRatio", "gradientUnits", "gradientTransform", "transform", "clip-path", "clip-rule", "fill", "fill-opacity", "fill-rule", "stroke", "stroke-width", "stroke-opacity", "stroke-linecap", "stroke-linejoin", "stroke-dasharray", "stroke-dashoffset", "stroke-miterlimit", "stop-color", "stop-opacity", "offset", "text-anchor", "dominant-baseline", "dx", "dy", "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "points":
+		case "fill", "stroke", "clip-path":
+			if isSVGElement(out.Data) && svgPaintReference(a.Val) {
+				appendBounded(out, a.Key, a.Val, 512)
+			}
+		case "viewBox", "preserveAspectRatio", "gradientUnits", "gradientTransform", "transform", "clip-rule", "fill-opacity", "fill-rule", "stroke-width", "stroke-opacity", "stroke-linecap", "stroke-linejoin", "stroke-dasharray", "stroke-dashoffset", "stroke-miterlimit", "stop-color", "stop-opacity", "offset", "text-anchor", "dominant-baseline", "dx", "dy", "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "points":
 			if isSVGElement(out.Data) {
 				appendBounded(out, a.Key, a.Val, 512)
 			}
@@ -400,6 +427,18 @@ func copyAttributes(out, source *html.Node, base *url.URL) {
 			}
 		}
 	}
+}
+
+// svgPaintReference reports whether an SVG paint attribute may be kept:
+// plain values and local url(#id) references only. External paint servers and
+// clip resources would trigger fetches from the landing-page origin.
+func svgPaintReference(value string) bool {
+	trimmed := strings.TrimSpace(strings.ToLower(value))
+	if !strings.HasPrefix(trimmed, "url(") {
+		return true
+	}
+	inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(trimmed, "url("), ")"))
+	return strings.HasPrefix(inner, "#") && len(inner) <= 512 && !strings.ContainsAny(inner, " \t\r\n")
 }
 
 func isSVGElement(tag string) bool {

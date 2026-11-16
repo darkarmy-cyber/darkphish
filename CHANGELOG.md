@@ -1,9 +1,10 @@
 # Changelog
 
-## 1.1.0 - 2026-11-15
+## 0.27.0 - 2026-11-16
 
 ### Changed
 
+- The free edition now numbers releases on its own 0.x line; the 1.0.0 version line belongs to the Professional/Enterprise editions and is not used for free releases.
 - Simplified the update experience: the version selector dropdown has been removed. Settings → Update now shows the current version, the latest available version, and a single "Update to [version]" button that always targets the latest stable release.
 - Release notes and publication date are displayed directly on the update page for the latest release.
 - Update documentation links now point to docs.darkphish.eu.
@@ -13,6 +14,9 @@
 
 - Paginated campaign results API: `GET /api/campaigns/{id}/results?limit=50&cursor=<token>` returns one page of results (default 50, max 200) with an opaque next cursor, alongside the unchanged legacy full-detail response.
 - Database connection pool defaults increased to 8 connections for better concurrent admin performance.
+- Add an optional rendered-snapshot path for Import Site so modern JavaScript-rendered pages can be captured before sanitization, with a static HTML fallback when Chromium is unavailable.
+- Preserve rendered page styles and source-relative assets while continuing to strip executable scripts and force imported forms back to Darkphish.
+- Bound each Chromium process tree to 512 MiB with Linux cgroup v2 and require a bounded tmpfs profile root; Windows and other deployments without an enforceable profile-storage boundary fail closed to the static HTML importer.
 
 ### Fixed
 
@@ -20,31 +24,13 @@
 - Retention settings page no longer shows "unavailable for this session" when MFA is not configured.
 - Browser sessions without MFA factors are now considered valid for API access.
 - Pause scheduled Dependabot merge reconciliation cleanly while a release normalization hold is active, avoiding repeated false failure notifications without weakening merge protections.
-- Prevent release preparation from recreating the held `v1.0.0` pull request, and update the pinned SBOM action with preserved historical recovery provenance.
-- Hold ambiguous `v1.0.0` recovery attempts at the reviewed merged release source so scheduled reconciliation exits cleanly without publishing or sending repeated failure notifications.
+- Hold ambiguous held-release recovery attempts at the reviewed merged release source so scheduled reconciliation exits cleanly without publishing or sending repeated failure notifications.
 - Update the Go toolchain to 1.27.2 and `golang.org/x/net` to 0.60.0 to remediate newly disclosed standard-library and HTTP/2 vulnerabilities, and pin Staticcheck to the upstream unified-v5 export-data compatibility fix.
-
-### Security
-
-- Update `golang.org/x/net` from 0.60.0 to 0.62.0 and the Go toolchain from 1.27.2 to 1.27.4 to remediate GO-2026-6860 (quadratic text-node coalescing in x/net/html), the related x/net/html rendering finding, and GO-2026-6859 (HTTP/1 server crash via MaxBytesReader header race in net/http).
-
-## 1.0.0 - 2026-10-05
-
-### Added
-
-- Add an optional rendered-snapshot path for Import Site so modern JavaScript-rendered pages can be captured before sanitization, with a static HTML fallback when Chromium is unavailable.
-- Preserve rendered page styles and source-relative assets while continuing to strip executable scripts and force imported forms back to Darkphish.
-- Bound each Chromium process tree to 512 MiB with Linux cgroup v2 and require a bounded tmpfs profile root; Windows and other deployments without an enforceable profile-storage boundary fail closed to the static HTML importer.
-- Add the Pro managed-directory connector foundation with encrypted Microsoft Entra client secrets, fixed-boundary Microsoft Graph group preview, connector scheduling metadata, and sync-history persistence.
-- Add a Professional/Enterprise-only LDAPS directory import preview for Users & Groups with certificate validation, nested group expansion, exclusion groups, email-domain filtering, attribute mapping, deduplication, bounded traversal, and audited API access without persisting bind passwords.
-
-
-### Fixed
-
 - Preserve `http.ResponseController` capabilities through API audit middleware so Import Site can enforce its connection read deadline before decoding request bodies.
 
 ### Security
 
+- Update `golang.org/x/net` from 0.60.0 to 0.62.0 and the Go toolchain from 1.27.2 to 1.27.4 to remediate GO-2026-6860 (quadratic text-node coalescing in x/net/html), the related x/net/html rendering finding, and GO-2026-6859 (HTTP/1 server crash via MaxBytesReader header race in net/http).
 - Stop reflecting request-owned CORS origin values by emitting only canonical, validated origins from server configuration.
 
 ## 0.26.0 - 2026-10-04

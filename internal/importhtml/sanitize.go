@@ -106,10 +106,11 @@ func cssUnescape(css string) string {
 	return cssEscape.ReplaceAllStringFunc(css, func(m string) string {
 		sub := cssEscape.FindStringSubmatch(m)
 		if sub[1] != "" {
-			if value, err := strconv.ParseUint(sub[1], 16, 32); err == nil {
-				return string(rune(value))
+			value, err := strconv.ParseUint(sub[1], 16, 32)
+			if err != nil || value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF) {
+				return ""
 			}
-			return ""
+			return string(rune(value))
 		}
 		return sub[2]
 	})

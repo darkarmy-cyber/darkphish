@@ -30,7 +30,7 @@ func TestSanitizeKeepsFormsAndRemovesActiveContent(t *testing.T) {
 }
 
 func TestSanitizeRejectsDangerousAttributesAndBoundsInput(t *testing.T) {
-	got, err := Sanitize(`<body><iframe srcdoc="x"></iframe><svg><script>x</script></svg><input type="file" name="upload"><img src="data:image/svg+xml,evil"><img src="data:image/png;base64,aGVsbG8="></body>`, nil)
+	got, err := Sanitize(`<body><iframe srcdoc="x"></iframe><svg><script>x</script></svg><svg><foreignObject><iframe src="https://evil.test"></iframe></foreignObject></svg><input type="file" name="upload"><img src="data:image/svg+xml,evil"><img src="data:image/png;base64,aGVsbG8="></body>`, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestSanitizeRejectsDangerousAttributesAndBoundsInput(t *testing.T) {
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		for _, a := range n.Attr {
-			if strings.HasPrefix(a.Key, "on") || a.Key == "srcdoc" || a.Key == "formaction" || a.Key == "srcset" {
+			if strings.HasPrefix(a.Key, "on") || a.Key == "srcdoc" || a.Key == "formaction" {
 				t.Fatalf("unsafe attribute survived: %s", a.Key)
 			}
 		}
@@ -50,11 +50,48 @@ func TestSanitizeRejectsDangerousAttributesAndBoundsInput(t *testing.T) {
 		}
 	}
 	walk(doc)
-	if strings.Contains(got, "<iframe") || strings.Contains(got, "<svg") || strings.Contains(got, "svg+xml") || !strings.Contains(got, `type="text"`) || !strings.Contains(got, `data:image/png;base64,aGVsbG8=`) {
+	if strings.Contains(got, "<iframe") || strings.Contains(got, "<script") || strings.Contains(got, "foreignObject") || strings.Contains(got, "svg+xml") || !strings.Contains(got, `type="text"`) || !strings.Contains(got, `data:image/png;base64,aGVsbG8=`) {
 		t.Fatal(got)
 	}
 	if _, err := Sanitize(strings.Repeat("x", maxBytes+1), nil); err != ErrSize {
 		t.Fatal("missing input limit")
+	}
+}
+
+func TestSanitizeKeepsSafeSVGArtwork(t *testing.T) {
+	base, _ := url.Parse("https://accounts.example.test/signin")
+	input := `<body><svg viewBox="0 0 48 48" height="48" width="48" aria-hidden="true"><g transform="translate(12 12)"><path fill="#4285F4" d="M24 12l8 8-8 8-8-8z"/><circle cx="24" cy="24" r="12" fill="#34A853"/><script>alert(1)</script><use href="#evil"/><animate attributeName="href" values="https://evil.test"/></g></svg></body>`
+	got, err := Sanitize(input, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kept := range []string{`<svg viewBox="0 0 48 48" height="48" width="48"`, `<path fill="#4285F4"`, `<circle cx="24" cy="24" r="12" fill="#34A853"`, "M24 12l8 8-8 8-8-8z"} {
+		if !strings.Contains(got, kept) {
+			t.Fatalf("safe svg artwork missing: %s\n%s", kept, got)
+		}
+	}
+	for _, blocked := range []string{"<script", "<use", "<animate", "evil.test", "href="} {
+		if strings.Contains(got, blocked) {
+			t.Fatalf("unsafe svg content survived: %s\n%s", blocked, got)
+		}
+	}
+}
+
+func TestSanitizeKeepsFrameworkClassNamesAndModernStyles(t *testing.T) {
+	base, _ := url.Parse("https://accounts.example.test/")
+	got, err := Sanitize(`<body><div class="a[b=cd] #e w-full" id="xId" role="dialog"><span style="--brand:#1a73e8;width:calc(100% - 24px);transform:translate(-50%,-50%);background-image:url(data:image/png;base64,aGVsbG8=);background-image:url(https://track.example.test/pixel)">text</span><img srcset="logo-2x.png 2x, http://evil.test/x.png 3x, logo.png" src="logo.png"></div></body>`, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kept := range []string{`class="a[b=cd] #e w-full"`, `id="xId"`, `role="dialog"`, `--brand:#1a73e8`, `width:calc(100% - 24px)`, `transform:translate(-50%,-50%)`, `url(data:image/png;base64,aGVsbG8=)`, `srcset="https://accounts.example.test/logo-2x.png 2x, https://accounts.example.test/logo.png"`} {
+		if !strings.Contains(got, kept) {
+			t.Fatalf("expected modern presentation missing: %s\n%s", kept, got)
+		}
+	}
+	for _, blocked := range []string{"track.example.test", "evil.test"} {
+		if strings.Contains(got, blocked) {
+			t.Fatalf("unsafe reference survived: %s\n%s", blocked, got)
+		}
 	}
 }
 
@@ -144,16 +181,40 @@ func TestSanitizeKeepsFragmentLinksLocalAndOmitsBase(t *testing.T) {
 	}
 }
 
-func TestSanitizeDiscardsImportedStyleBlocks(t *testing.T) {
+func TestSanitizesImportedStyleBlocks(t *testing.T) {
 	base, _ := url.Parse("https://example.test/path/")
-	got, err := Sanitize(`<html><head><style>.hero{background:u\\72l(http://evil.test/hero.png)} @import "https://evil.test/x.css";</style><style>.safe{color:red}</style></head><body></body></html>`, base)
+	got, err := Sanitize(`<html><head><style>.hero{background:u\72l(http://evil.test/hero.png)} @import "https://evil.test/x.css";</style><style>.card{color:red;font-family:'Google Sans'}.bg{background-image:url(https://cdn.example.test/hero.png)}@media (max-width:600px){.card{padding:0}}</style></head><body></body></html>`, base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"hero.png", "@import", "evil.test", ".safe{color:red}", "<style"} {
+	for _, forbidden := range []string{"evil.test", "@import", "u\\72l"} {
 		if strings.Contains(got, forbidden) {
-			t.Fatalf("imported stylesheet content survived (%s): %s", forbidden, got)
+			t.Fatalf("unsafe stylesheet content survived (%s): %s", forbidden, got)
 		}
+	}
+	for _, kept := range []string{"<style>", ".card{color:red;font-family:'Google Sans'}", "url(https://cdn.example.test/hero.png)", "@media (max-width:600px){.card{padding:0"} {
+		if !strings.Contains(got, kept) {
+			t.Fatalf("safe stylesheet content missing: %s\n%s", kept, got)
+		}
+	}
+}
+
+func TestSanitizeStyleBlockCSSBracesStayTemplateLiteral(t *testing.T) {
+	base, _ := url.Parse("https://example.test/")
+	got, err := Sanitize(`<html><head><style>@media (max-width:600px){.card{padding:0}}</style></head><body><p>plain}}text</p></body></html>`, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := template.New("imported").Parse(got)
+	if err != nil {
+		t.Fatalf("sanitized output must stay a valid template: %v\n%s", err, got)
+	}
+	var rendered bytes.Buffer
+	if err := doc.Execute(&rendered, struct{}{}); err != nil {
+		t.Fatalf("sanitized output must execute as a template: %v\n%s", err, got)
+	}
+	if !strings.Contains(rendered.String(), "@media (max-width:600px){.card{padding:0}}") {
+		t.Fatalf("css braces must survive template rendering literally: %s", rendered.String())
 	}
 }
 
@@ -170,5 +231,56 @@ func TestSanitizeDiscardsNoscriptSubtrees(t *testing.T) {
 	}
 	if !strings.Contains(got, "<p>safe</p>") {
 		t.Fatalf("ordinary content was removed with noscript: %s", got)
+	}
+}
+
+func TestSanitizeBlocksSynthesizedStyleEndTags(t *testing.T) {
+	base, _ := url.Parse("https://example.test/")
+	got, err := Sanitize(`<html><head><style>.x{color:red}\3c /style\3e \3c script\3e alert(1)\3c /script\3e</style></head><body><p>ok</p></body></html>`, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "<style") || strings.Contains(got, "alert(1)") || strings.Contains(got, "</style") {
+		t.Fatalf("synthesized style breakout survived: %s", got)
+	}
+	if !strings.Contains(got, "<p>ok</p>") {
+		t.Fatalf("ordinary content lost: %s", got)
+	}
+}
+
+func TestSanitizeBlocksEscapedInlineURLs(t *testing.T) {
+	got, err := Sanitize(`<body><div style="color:red;background-image:u\72l(https://track.example.test/pixel)">x</div></body>`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "track.example.test") || strings.Contains(got, "background-image") || strings.Contains(got, `u\72l`) {
+		t.Fatalf("escaped inline url bypass survived: %s", got)
+	}
+	if !strings.Contains(got, "color:red") {
+		t.Fatalf("safe declaration lost: %s", got)
+	}
+}
+
+func TestSanitizeKeepsDataURLSrcsetCandidates(t *testing.T) {
+	base, _ := url.Parse("https://example.test/")
+	got, err := Sanitize(`<body><img src="logo.png" srcset="data:image/png;base64,aGVsbG8= 2x, logo.png 1x"></body></html>`, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `srcset="data:image/png;base64,aGVsbG8= 2x, https://example.test/logo.png 1x"`) {
+		t.Fatalf("data url srcset candidate mangled: %s", got)
+	}
+}
+
+func TestSanitizeBlocksExternalSVGPaintReferences(t *testing.T) {
+	got, err := Sanitize(`<body><svg><path fill="url(https://attacker.example/paint.svg#x)" stroke="#333" d="M0 0"/><rect clip-path="url(#local)" width="4" height="4"/></svg></body>`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "attacker.example") {
+		t.Fatalf("external svg paint reference survived: %s", got)
+	}
+	if !strings.Contains(got, `stroke="#333"`) || !strings.Contains(got, `clip-path="url(#local)"`) {
+		t.Fatalf("safe paint references lost: %s", got)
 	}
 }

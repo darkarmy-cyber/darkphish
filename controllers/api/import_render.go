@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/darkarmy-cyber/darkphish/dialer"
+	log "github.com/darkarmy-cyber/darkphish/logger"
 	"golang.org/x/net/netutil"
 )
 
@@ -409,11 +410,13 @@ func removeRenderedHopByHopHeaders(header http.Header) {
 
 func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error) {
 	if !acquireRenderedImportSlot() {
+		log.Warn("rendered import unavailable: all render slots are busy")
 		return nil, nil, errRenderedImportUnavailable
 	}
 	defer releaseRenderedImportSlot()
 	chrome := chromiumExecutable()
 	if chrome == "" {
+		log.Warn("rendered import unavailable: no chromium executable (install chromium or set DARKPHISH_CHROMIUM_PATH)")
 		return nil, nil, errRenderedImportUnavailable
 	}
 	sourceURL, err := parseImportURL(raw)
@@ -424,11 +427,13 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 	defer cancel()
 	proxyURL, closeProxy, err := startRenderedImportProxy(renderCtx, newRenderTransferBudget(maxRenderedTransferBytes))
 	if err != nil {
+		log.Warn("rendered import unavailable: render proxy failed to start: ", err)
 		return nil, nil, errRenderedImportUnavailable
 	}
 	defer closeProxy()
 	profileDir, err := createRenderedProfileDir()
 	if err != nil {
+		log.Warn("rendered import unavailable: profile root rejected (set DARKPHISH_RENDER_PROFILE_ROOT to a tmpfs <=512MiB, <=8192 inodes)")
 		return nil, nil, errRenderedImportUnavailable
 	}
 	defer os.RemoveAll(profileDir)
@@ -457,6 +462,7 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 		"--proxy-bypass-list=<-loopback>",
 		"--remote-debugging-address=127.0.0.1",
 		"--remote-debugging-port=0",
+		"--remote-allow-origins=http://127.0.0.1",
 		"about:blank",
 	}
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("DARKPHISH_CHROMIUM_NO_SANDBOX")), "true") {
@@ -479,6 +485,9 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 	}
 	_ = cmd.Wait()
 	if err != nil || cleanupErr != nil || len(rendered) == 0 || len(rendered) > maxImportedPageBytes || finalURL == nil {
+		if len(rendered) == 0 || err != nil || finalURL == nil {
+			log.Warnf("rendered import capture failed (cdp error: %v, cleanup: %v, bytes: %d): chromium stderr tail: %.600s", err, cleanupErr, len(rendered), stderr.String())
+		}
 		return nil, nil, errRenderedImportUnavailable
 	}
 	return rendered, finalURL, nil

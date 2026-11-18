@@ -214,7 +214,7 @@ test("protected main remains independently pinned to immutable recovery executio
   assert.ok(checks.length >= 4)
 })
 
-test("recovery staging reuses one exact empty draft and creates only when none exists", () => {
+test("recovery staging reuses only exact drafts and restricts v0.27.1 quarantine reconciliation", () => {
   const publish = script.slice(script.indexOf("async function publish"), script.indexOf("const command ="))
   assert.doesNotMatch(publish, /method: "DELETE"/)
   assert.match(script, /async function assertImmutableTagProtection/)
@@ -238,8 +238,13 @@ test("recovery staging reuses one exact empty draft and creates only when none e
   assert.match(publish, /else await assertTagSnapshot\(repo, tag, null, "release tag appeared before the draft was published"\)/)
   assert.match(publish, /else await assertTagSnapshot\(repo, tag, null, "release tag appeared immediately before publication"\)/)
   const reuseIndex = publish.indexOf("release = assertExactDraft(state.drafts[0]")
-  const uploadIndex = publish.indexOf("for (const name of local.names) await uploadAsset")
+  const uploadIndex = publish.indexOf("for (const name of local.names) if (!reusable.has(name)) await uploadAsset")
   const publishPatchIndex = publish.indexOf('body: { draft: false, prerelease: false, make_latest: "true" }')
+  assert.match(publish, /audited0271Draft\(release, version, source\)/)
+  assert.match(script, /audited0271QuarantinedAsset\(release, version, source, asset\)/)
+  assert.match(script, /quarantined asset changed immediately before removal/)
+  assert.match(script, /quarantined asset deletion was not confirmed/)
+  assert.match(script, /method: "DELETE"/)
   assert.ok(reuseIndex >= 0, "single audited draft must be explicitly reused")
   assert.ok(uploadIndex > reuseIndex, "draft reuse must occur before artifact upload")
   const stagingCalls = [...publish.matchAll(/await verifyStagingSet\(preexistingTag, \(state\.drafts \|\| \[\]\)\.some\(\(draft\) => draft\.id === release\.id\) \? null : release\)/g)].map((match) => match.index)

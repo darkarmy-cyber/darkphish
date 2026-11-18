@@ -22,7 +22,9 @@ concurrency:
 jobs:
   metadata:
     permissions:
-      contents: read
+      # Draft releases are visible only to tokens with push access.
+      # Keep write scope isolated to metadata; downstream jobs remain least-privileged.
+      contents: write
       actions: read
       checks: read
       pull-requests: read

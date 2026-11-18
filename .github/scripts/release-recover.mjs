@@ -389,6 +389,62 @@ function assertUploadedAssetSet(assets, local, receiptHash, receiptLength) {
     if (asset.name === local.receiptName) assetDisposition(asset, receiptHash, receiptLength); else assetDisposition(asset, local.hashes.get(asset.name), local.bytes.get(asset.name)?.length)
   }
 }
+// In the single audited v0.27.1 incident only, remove an original asset
+// exclusively if its complete immutable ID/digest/size/uploader fingerprint
+// matches the quarantined inventory. Never trust or silently overwrite it.
+// A matching fresh rebuild may instead be reused after provenance attestation.
+async function reconcileQuarantined0271Assets(repo, release, version, source, local, receiptHash, receiptLength, executionSHA, tagState) {
+  const expected = new Map(local.names.map(name => [name, {
+    digest: "sha256:" + local.hashes.get(name),
+    size: local.bytes.get(name).length,
+  }]))
+  expected.set(local.receiptName, { digest: "sha256:" + receiptHash, size: receiptLength })
+  const path = `repos/${repo}/releases/${release.id}/assets`
+  const original = await pages(path)
+  if (!original.length) return new Set()
+  if (!audited0271Draft(release, version, source)) throw new Error("nonempty release draft cannot be reused safely")
+  const names = original.map(asset => asset?.name)
+  if (new Set(names).size !== names.length || names.some(name => !expected.has(name))) {
+    throw new Error("quarantined release has duplicate or unexpected assets")
+  }
+  for (const asset of original) {
+    const wanted = expected.get(asset.name)
+    if (asset.digest === wanted.digest && asset.size === wanted.size) {
+      if (!actionsBot(asset.uploader) || asset.state !== "uploaded") throw new Error("matching rebuilt asset has an untrusted uploader")
+      continue
+    }
+    if (!audited0271QuarantinedAsset(release, version, source, asset)) {
+      throw new Error(`quarantined ${asset.name} fingerprint changed; draft retained`)
+    }
+    await currentProtectedMain(repo, executionSHA)
+    await assertTagState(repo, versionTag(version), tagState, "immutable tag moved before quarantined asset removal")
+    const live = await api(`repos/${repo}/releases/${release.id}`)
+    if (!audited0271Draft(live, version, source) || live.body !== release.body || live.name !== release.name) {
+      throw new Error("quarantined release identity changed before asset removal")
+    }
+    const listed = await pages(path)
+    const matching = listed.filter(candidate => candidate.name === asset.name)
+    if (matching.length !== 1 || !audited0271QuarantinedAsset(live, version, source, matching[0])) {
+      throw new Error("quarantined asset changed immediately before removal")
+    }
+    // Never retry an ambiguous DELETE. Re-read and abort; next scheduled
+    // recovery can reconcile the confirmed state from immutable fingerprints.
+    try { await api(`repos/${repo}/releases/assets/${asset.id}`, { method: "DELETE" }) }
+    catch (error) { throw new Error(`quarantined asset delete was ambiguous for ${asset.name}: ${error.message}`) }
+    const after = await pages(path)
+    if (after.some(candidate => candidate.name === asset.name)) throw new Error("quarantined asset deletion was not confirmed")
+  }
+  const remaining = await pages(path), reusable = new Set()
+  for (const asset of remaining) {
+    const wanted = expected.get(asset.name)
+    if (!wanted || reusable.has(asset.name) || !actionsBot(asset.uploader) ||
+      asset.state !== "uploaded" || asset.digest !== wanted.digest || asset.size !== wanted.size) {
+      throw new Error("unexpected asset survived exact quarantined draft reconciliation")
+    }
+    reusable.add(asset.name)
+  }
+  return reusable
+}
 async function ensureTag(repo, tag, source, expectedInitialState) {
   const current = await readTagState(repo, tag)
   if (expectedInitialState?.present === true) {
@@ -469,7 +525,9 @@ async function publish() {
   if ((state.drafts || []).length === 1) {
     release = assertExactDraft(state.drafts[0], version, source, state.expected)
     const existingAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
-    if (existingAssets.length !== 0) throw new Error("existing recovery draft contains assets and cannot be reused safely")
+    if (existingAssets.length && !audited0271Draft(release, version, source)) {
+      throw new Error("existing recovery draft contains assets and cannot be reused safely")
+    }
   } else {
     release = await api(`repos/${repo}/releases`, { method: "POST", body: { tag_name: tag, target_commitish: source, name: state.expected.name, body: state.expected.body, draft: true, prerelease: false, make_latest: "true" } })
     assertExactDraft(release, version, source, state.expected)
@@ -478,7 +536,9 @@ async function publish() {
   if (preexistingTag) await assertTagState(repo, tag, preexistingTag, "immutable release tag ref object changed while staging recovery metadata")
   else await assertTagSnapshot(repo, tag, null, "release tag appeared before the draft was published")
   await verifyStagingSet(preexistingTag, (state.drafts || []).some((draft) => draft.id === release.id) ? null : release)
-  for (const name of local.names) await uploadAsset(release, name, local.bytes.get(name)); await uploadAsset(release, local.receiptName, receipt)
+  const reusable = await reconcileQuarantined0271Assets(repo, release, version, source, local, receiptHash, receipt.length, executionSHA, preexistingTag)
+  for (const name of local.names) if (!reusable.has(name)) await uploadAsset(release, name, local.bytes.get(name))
+  if (!reusable.has(local.receiptName)) await uploadAsset(release, local.receiptName, receipt)
   release = assertExactDraft(await api(`repos/${repo}/releases/${release.id}`), version, source, state.expected)
   let assets = await pages(`repos/${repo}/releases/${release.id}/assets`); assertUploadedAssetSet(assets, local, receiptHash, receipt.length)
   if (preexistingTag) await assertTagState(repo, tag, preexistingTag, "immutable release tag ref object changed before publication")

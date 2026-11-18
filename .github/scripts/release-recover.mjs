@@ -22,6 +22,7 @@ import { audited0222MetadataFailure } from "./release-recover-0222-policy.mjs"
 import { audited0231MetadataFailure, auditedTagless0231Source } from "./release-recover-0231-policy.mjs"
 import { audited0240MetadataFailure, auditedTagless0240Source } from "./release-recover-0240-policy.mjs"
 import { audited0252MetadataFailure, auditedTagless0252Source } from "./release-recover-0252-policy.mjs"
+import { audited0271MetadataOnly, audited0271Draft, audited0271QuarantinedAsset } from "./release-recover-0271-policy.mjs"
 
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
@@ -137,6 +138,7 @@ async function verifyOriginalNativeRelease(repo, source) {
   const candidates = []
   for (const run of runs.filter((item) => item.name === "Native release" && item.path === ".github/workflows/release.yml" && ["workflow_run", "schedule"].includes(item.event) && item.head_branch === "main" && item.head_sha === source && item.status === "completed" && ["success", "failure"].includes(item.conclusion))) {
     const jobs = await pages(`repos/${repo}/actions/runs/${run.id}/jobs`, "jobs")
+    const auditedMetadataOnly = audited0271MetadataOnly({ repository: repo, source, run, jobs })
     const auditedMetadataFailure = run.conclusion === "failure" && (
       audited0201MetadataFailure({ repository: repo, source, run, jobs }) ||
       audited0202MetadataFailure({ repository: repo, source, run, jobs }) ||
@@ -149,9 +151,13 @@ async function verifyOriginalNativeRelease(repo, source) {
     const metadata = jobs.find((job) => job.name === "metadata"), verify = jobs.find((job) => job.name === "verify"), smoke = jobs.find((job) => job.name === "audit-smoke"), publish = jobs.find((job) => job.name === "publish"), binaries = jobs.filter((job) => job.name?.startsWith("binaries ("))
     let attemptStarted
     try { attemptStarted = nativeReleaseAttemptStart(run, metadata) } catch { continue }
-    if (!ci.some((item) => canonicalMainCheckRun(item, "CI", source, attemptStarted)) ||
-      !codeql.some((item) => canonicalMainCheckRun(item, "CodeQL", source, attemptStarted))) continue
+    if (!auditedMetadataOnly && (!ci.some((item) => canonicalMainCheckRun(item, "CI", source, attemptStarted)) ||
+      !codeql.some((item) => canonicalMainCheckRun(item, "CodeQL", source, attemptStarted)))) continue
     if (auditedMetadataFailure) { candidates.push(run); continue }
+    // Metadata-only success is NOT a native publication. It only authorizes
+    // the separately checked and newly attested recovery build, never reuse
+    // or trust of the withdrawn original binaries.
+    if (auditedMetadataOnly) { candidates.push({ ...run, recovery_only: true }); continue }
     if (metadata?.conclusion !== "success" || verify?.conclusion !== "success" || smoke?.conclusion !== "success" || binaries.length !== 5 || binaries.some((job) => job.conclusion !== "success")) continue
     if (!successfulStep(metadata, "Run node scripts/release-publish.mjs metadata") || !successfulStep(publish, "Run actions/download-artifact@v8") || !successfulTrustedSBOMStep(publish) || !successfulStep(publish, "Generate checksums")) continue
     if (run.conclusion === "success") {
@@ -316,7 +322,7 @@ async function recoveryState(repo, version, main) {
       const source = initialTagState.commit
       await verifySourceAncestry(repo, source, main); await verifiedReleasePR(repo, source, version, tag)
       const originalRun = await verifyOriginalNativeRelease(repo, source), expected = await expectedMetadata(repo, source, version)
-      if (originalRun.conclusion === "success") {
+      if (originalRun.conclusion === "success" && originalRun.recovery_only !== true) {
         assertExactPublished(candidate, version, source, expected)
         const canonical = await assertCurrentVersionPublished(repo, { version })
         if (canonical.id !== candidate.id) throw new Error("native publication resolved a different release")

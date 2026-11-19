@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.27.2 - 2026-11-19
+
+### Security
+
+- Refresh Go cryptography and system dependencies, including upstream SSH handling fixes.
+- Update SQLite and goose migration dependencies, along with their compatible PostgreSQL and transitive modules.
+
 ## 0.27.1 - 2026-11-16
 
 ### Fixed

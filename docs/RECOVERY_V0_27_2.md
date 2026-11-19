@@ -1,6 +1,6 @@
 # v0.27.2: fail-closed release recovery authorization and acceptance criteria
 
-Status: **proposal only — not an executable recovery or replacement for a GitHub review**.
+Status: **implementation candidate — one-shot same-version fragment and auditable repair gate; no completed release or review is implied**.
 
 ## Immutable incident evidence
 
@@ -30,4 +30,4 @@ This document records the repository owner's express authorization to **prepare*
 
 The normal `scripts/release-prepare.mjs` requires an unconsumed changelog fragment and `assertReleaseAdvancePublished`, so it cannot simply re-create a second `v0.27.2` release PR from the already-advanced protected `VERSION`. Existing `scripts/release-publish.mjs` and `.github/scripts/release-recover.mjs` bind publication to a previously verified release PR. An isolated recovery implementation must account for both invariants; merely re-running the existing workflow cannot succeed.
 
-**Do not merge this proposal as if it were the recovery implementation.**
+The repair implementation adds a same-version Security fragment and a pinned PR #247 preflight in `scripts/release-repair-0272.mjs`. After PR #247 passes the normal independent code and security reviews and is merged through GitHub protection, the protected release-preparation workflow can consume the same-version fragment into an existing `CHANGELOG.md` section and create a fresh `release/v0.27.2` PR. Its actual human maintainer attestation must precede that new generated PR's merge. The existing production freeze remains until a trusted release is published. The one-shot repair gate does not itself perform a merge or create a release; an authorized reviewed merge path is still required.

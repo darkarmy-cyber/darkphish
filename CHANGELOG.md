@@ -6,6 +6,8 @@
 
 - Refresh Go cryptography and system dependencies, including upstream SSH handling fixes.
 - Update SQLite and goose migration dependencies, along with their compatible PostgreSQL and transitive modules.
+- Restore the v0.27.2 release publication path by requiring a new generated release pull request with complete pre-merge security and maintainer review attestations; the original unreviewed release merge remains unpublished.
+
 
 ## 0.27.1 - 2026-11-16
 

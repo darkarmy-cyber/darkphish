@@ -1,5 +1,4 @@
 // One maintainer-authorized repair, not a general release-freeze escape hatch.
-import { verifyV0272Repair } from "./release-repair-0272.mjs"
 const repository = "darkarmy-cyber/darkphish"
 const base = "a2851cd96e327175b3d45b8949ad64492b52b21f"
 const source = "73bf5948ed19cd918638453d478ef3f1cbe83d89"
@@ -114,7 +113,6 @@ async function hasReleaseWithTag(repo, tag, request) {
 }
 
 export async function verifyReleaseRepair(repo, pr, request) {
-  if (pr?.number === 247) return verifyV0272Repair(repo, pr, request)
   const resume = pr.number === 58, timestamp = pr.number === 59, release0201 = pr.number === 117, release0201Followup = pr.number === 118, release0202 = pr.number === 120, release0211 = pr.number === 129, release0211Followup = pr.number === 135, release0251Repair = pr.number === 203, release0252Prepare = pr.number === 205
   const expectedBase = release0252Prepare ? "4e24f93277cfc5c14fbfec63a797436018c495f1" : release0251Repair ? "98d96c7cc7eebf6ab09bbeffdf109778dd4f3632" : release0211Followup ? "69355444d01c7ef29709ec398fdbacfc4d9b4753" : release0211 ? "d58b43260b1b94a8a7ad6897636f9d0fb9ee06d4" : release0202 ? "4be0bc0d1a6a2f158da5aaed996dcd87bab3bd80" : release0201Followup ? "3cc011581698b73c76512f155f7fd78399345efd" : release0201 ? "cafdcc08b9d968931cb1446891055e3256d0caec" : timestamp ? "697fe42eb20f3f5197be9545ed5b3bf835b730c0" : resume ? "88377d6951ede7352acb257777250bdfecd2052b" : base
   const paths = release0252Prepare ? release0252PrepareAllowed : release0251Repair ? release0251RepairAllowed : release0211Followup ? release0211FollowupAllowed : release0211 ? release0211Allowed : release0202 ? release0202Allowed : release0201Followup ? release0201FollowupAllowed : release0201 ? release0201Allowed : timestamp ? timestampAllowed : resume ? resumeAllowed : allowed

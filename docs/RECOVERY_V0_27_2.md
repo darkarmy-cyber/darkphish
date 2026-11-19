@@ -1,33 +1,36 @@
-# v0.27.2: fail-closed release recovery authorization and acceptance criteria
+# v0.27.2 release recovery — authorized manual boundary
 
-Status: **implementation candidate — one-shot same-version fragment and auditable repair gate; no completed release or review is implied**.
+Status: **approved recovery plan; not an authorization to disable GitHub branch protection**.
 
-## Immutable incident evidence
+## Verified original evidence
 
-- Repository: `darkarmy-cyber/darkphish`; protected branch: `main`.
-- Already merged generated release PR: [#244](https://github.com/darkarmy-cyber/darkphish/pull/244).
-- Generated release head: `cc600c1cfb741a30cf3b4d85917c1d57545ae49c`.
-- Original release merge commit: `3f103ded1bcae7e8eccaaf46c81b910c591586cd`.
-- The PR merged on 2026-11-19T13:55:57Z and has **zero recorded GitHub PR reviews**.
-- Protected-main CI and CodeQL passed at the merge commit, but **that does not substitute for the required, pre-merge, exact-head generated-release maintainer attestation**.
-- Native release run `44539086459` was stopped at metadata verification; recovery run `44539086267` also failed closed.
-- No trusted `v0.27.2` GitHub Release was published as of initial investigation.
+- Original generated release PR: #244, closed and merged at 2026-11-19T13:55:57Z.
+- Original generated head: `cc600c1cfb741a30cf3b4d85917c1d57545ae49c`.
+- Original merge / protected main base: `3f103ded1bcae7e8eccaaf46c81b910c591586cd`.
+- Original PR #244 has no qualifying pre-merge exact-head maintainer attestation.
+- Native release workflow `44539086459` and recovery workflow `44539086267` failed closed; do not rerun as if they can repair lost historical approval.
+- Original `release/v0.27.2` branch is absent as of the 2026-11-19 check. Confirm again immediately before performing recovery.
 
-## Scope and explicit safeguards
+## Explicit recovery boundary
 
-This document records the repository owner's express authorization to **prepare** a narrowly scoped recovery, including a new release PR, subject to the existing trusted review and publication gates. It is **not** the attestation itself and cannot grant GitHub reviewer identity or historical approval.
+An engineering PR cannot make new untrusted code authorize its **own merge**: `scripts/automerge.mjs` runs the already-protected `main` checkout, which does not know a newly added repair authorization. For that reason this recovery deliberately **does not add an ineffective one-shot verifier** and does not change protected automation, GitHub rulesets, or publication verification.
 
-1. Keep the original PR, its merge commit, and evidence immutable. Never manufacture, backdate, edit, or substitute a review for PR #244.
-2. Maintain the freeze of ordinary engineering and Dependabot merges while `VERSION=0.27.2` remains unpublished.
-3. Implement any recovery exception as a separate, narrowly scoped, reviewed code change with explicit immutable version, source SHA, original PR number, and pre-existing failure provenance. No generic release-check bypass, no broad permission increase, and no write to protected main outside normal PR protection.
-4. Generate a **new** same-version release PR from the audited current protected source. The new PR must contain only legitimate regenerated release metadata, with deterministic file/commit identity; an empty/no-op PR or a hand-edited release tag is not a substitute.
-5. The new generated release PR must receive all required CI and CodeQL checks and a real exact-head code and security review, plus the required maintainer attestation **before** its protected merge. Verify the immutable GitHub review identity, commit and chronology.
-6. Publish `v0.27.2` only through native verified artifacts, checksums, SPDX SBOM, post-gate receipt, and original publication/attestation checks. Release and tag must remain immutable with no overwrite of arbitrary artifacts.
-7. Only after successful publication and verification, resume PR #245 (dependency-review gate) and PR #246 (`fast-uri` 3.1.9, four Dependabot alerts). Require fresh checks and confirm alerts close after merge.
-8. Preserve regression coverage for failure on absent or post-merge review, wrong reviewer, stale source, changed release manifest, missing code/security checks, and invalid release receipt.
+The repository owner has explicitly authorized preparing a one-time v0.27.2 recovery. The only exceptional step is a **manually initiated, GitHub-protected merge of this exact repair PR** after independently confirming the evidence below. This is **not** a generic automated bypass of the version-publication freeze; GitHub's ordinary required checks and protected-branch constraints remain mandatory.
 
-## Engineering blocker
+The repair PR may contain **only**:
+- `changes/recover-v0-27-2-attestation.md`, with `category: Security` and `version: 0.27.2`, making regenerated same-version release metadata possible;
+- this incident and recovery document.
 
-The normal `scripts/release-prepare.mjs` requires an unconsumed changelog fragment and `assertReleaseAdvancePublished`, so it cannot simply re-create a second `v0.27.2` release PR from the already-advanced protected `VERSION`. Existing `scripts/release-publish.mjs` and `.github/scripts/release-recover.mjs` bind publication to a previously verified release PR. An isolated recovery implementation must account for both invariants; merely re-running the existing workflow cannot succeed.
+## Mandatory pre-merge procedure
 
-The repair implementation adds a same-version Security fragment and a pinned PR #247 preflight in `scripts/release-repair-0272.mjs`. After PR #247 passes the normal independent code and security reviews and is merged through GitHub protection, the protected release-preparation workflow can consume the same-version fragment into an existing `CHANGELOG.md` section and create a fresh `release/v0.27.2` PR. Its actual human maintainer attestation must precede that new generated PR's merge. The existing production freeze remains until a trusted release is published. The one-shot repair gate does not itself perform a merge or create a release; an authorized reviewed merge path is still required.
+1. Confirm `main` is still exactly `3f103ded1bcae7e8eccaaf46c81b910c591586cd`, `VERSION=0.27.2`, the original merged PR #244 fields above, and no `v0.27.2` tag, draft or published release.
+2. Confirm the original `release/v0.27.2` branch is absent. If it has reappeared, **stop**, investigate its immutable GitHub ref and the closed PR; do not delete, rewind, overwrite, force-push, or reuse it automatically.
+3. Verify this repair PR contains exactly the two allowed files and the unchanged source/version, with no unexpected additional commits or generated assets.
+4. Require **all** exact-head mandatory GitHub Actions CI/CodeQL checks and independently completed, clean code/security reviews, including resolving every outstanding finding. Preserve immutable review evidence.
+5. Only then may an authorized maintainer use GitHub's normal protected, exact-head merge operation to merge the recovery fragment. If branch protection or any check denies the merge, **stop** rather than bypassing rules.
+6. After merge, require green CI and CodeQL on the new protected main commit. Let the trusted protected-main `release-prepare.yml` produce a fresh `release/v0.27.2` branch and **new** generated release PR. Never manually invent a release commit or reviewer evidence.
+7. Require the fresh generated release PR to receive all exact-head CI/CodeQL checks, clean code and security reviews, and the explicit GitHub maintainer **APPROVED** exact-head generated-release attestation **before** its protected merge.
+8. Only the native release pipeline may build, hash, SBOM-attest, draft, and publish `v0.27.2`. Verify release assets, receipt, protected source SHA and immutable tag.
+9. Only after the trusted published `v0.27.2` is verified, rebase and complete separate PRs #245 (dependency gate) and #246 (`fast-uri` 3.1.9); require fresh checks, then confirm all four Dependabot alerts close and publish a separately verified `v0.27.3`.
+
+**Fail closed:** any changed source, existing release branch/tag, missing review, invalid artifact, or unsatisfied protection makes the recovery incomplete. The original unreviewed PR #244 never becomes retrospectively authorized.

@@ -59,6 +59,6 @@ test("refuse changed historical evidence and existing publication",async()=>{
   const f=fixture();f.old.merge_commit_sha="b".repeat(40);await assert.rejects(f.verify())
   const g=fixture(),original=g.request
   g.request=async (path,options)=>path.includes("/releases/tags/v0.27.2")?{id:2}:original(path,options)
-  await assert.rejects(g.verify())
+  await assert.rejects(verifyV0272Repair(repo,g.pr,g.request))
   await assert.rejects(verifyV0272Repair("other/repo",fixture().pr,fixture().request))
 })

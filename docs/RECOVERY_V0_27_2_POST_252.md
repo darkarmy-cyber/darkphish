@@ -1,5 +1,7 @@
 # v0.27.2 recovery after unapproved generated PR #252
 
+Superseded by `RECOVERY_V0_27_2_POST_254.md` after generated release PR #254 was merged without an `APPROVED` review. Follow the newer incident record and its current PR-specific evidence.
+
 Status: proposed recovery input. This document is not a release, tag, review, approval, attestation, or authorization to bypass protection. It supersedes the procedure in `RECOVERY_V0_27_2_POST_250.md`.
 
 ## Verified incident state (2026-11-20 UTC)

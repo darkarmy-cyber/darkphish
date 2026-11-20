@@ -1,5 +1,7 @@
 # v0.27.2 recovery after generated release PR #250
 
+**Superseded:** PR #252 also merged without the required pre-merge attestation. Follow [RECOVERY_V0_27_2_POST_252.md](RECOVERY_V0_27_2_POST_252.md) for the current solo-maintainer procedure; the steps below are historical.
+
 Status: proposed recovery input only. This document does not authorize a merge, review, tag, release, or attestation.
 
 ## Observed evidence (2026-11-20 UTC)

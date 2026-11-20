@@ -19,4 +19,3 @@ Status: proposed recovery input only. This document does not authorize a merge, 
 5. Let `Native release` build, attest, and publish from the newly reviewed release merge. Keep later main changes behind this publication. Verify the immutable tag target, release source, complete five-platform archives, SPDX SBOM, SHA256SUMS, publication receipt, and workflow attestations before advancing to PR #246 for v0.27.3.
 
 No manual tag creation, ruleset bypass, postdated review, synthetic security receipt, or reuse of previous release artifacts is authorized here.
-

@@ -112,6 +112,31 @@ test("observed security heading retains original body and all identity/head/chro
   }
 })
 
+test("authenticated connector receipt wrapper preserves clean review provenance", async () => {
+  const receipt = "<!-- codex-review-receipt:v1 -->\n\n"
+  for (const heading of ["### 🛡️ Codex Security Review\n\n",
+    "### 🛡️ Codex Security Review · _Automatically triggered_\n\n"]) {
+    const f = fixture()
+    f.comments[1].body = receipt + f.comments[1].body
+    f.comments[2].body = receipt + heading + f.comments[2].body
+    const proof = await f.verify()
+    assert.equal(proof.clean.code.body, f.comments[1].body)
+    assert.equal(proof.clean.security.body, f.comments[2].body)
+    for (const change of [
+      g => { g.comments[1].body = g.comments[1].body.replace(receipt, "<!-- unknown-receipt:v1 -->\n\n") },
+      g => { g.comments[2].body = g.comments[2].body.replace(sha.slice(0, 10), "c".repeat(10)) },
+      g => { g.comments[1].performed_via_github_app.id = 1 },
+      g => { g.comments[2].created_at = at(12) },
+    ]) {
+      const g = fixture()
+      g.comments[1].body = receipt + g.comments[1].body
+      g.comments[2].body = receipt + heading + g.comments[2].body
+      change(g)
+      await assert.rejects(g.verify(), ReviewGateError)
+    }
+  }
+})
+
 test("summary quantization honors every accepted decimal precision without truncating chronology", async () => {
   const fractional = digits => at(9).replace("Z", `.${digits}Z`)
   for (let digits = 0; digits <= 9; digits++) {

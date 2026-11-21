@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.27.3 - 2026-11-21
+
+### Security
+
+- Patch the transitive frontend build dependency fast-uri to 3.1.9, addressing URI scheme spoofing, host canonicalization confusion, and relative-reference parsing advisories.
+
 ## 0.27.2 - 2026-11-19
 
 ### Security

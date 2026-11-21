@@ -7,11 +7,16 @@ const cleanMessages = {
   code: "Codex Review: Didn't find any major issues.",
   security: "Security review completed. No security issues were found in this pull request.",
 }
+const receiptPrefix = "<!-- codex-review-receipt:v1 -->\n\n"
 // Observed connector security result since 2026-09-14. Preserve the original
-// body for GraphQL provenance; recognize only this exact optional heading.
-const cleanResult = (body, kind) => typeof body === "string" &&
-  (body.startsWith(cleanMessages[kind]) || (kind === "security" &&
-    body.startsWith("### 🛡️ Codex Security Review\n\n" + cleanMessages.security)))
+// body for GraphQL provenance; recognize only these exact optional wrappers.
+const cleanResult = (body, kind) => {
+  if (typeof body !== "string") return false
+  const result = body.startsWith(receiptPrefix) ? body.slice(receiptPrefix.length) : body
+  return result.startsWith(cleanMessages[kind]) || (kind === "security" &&
+    (result.startsWith("### 🛡️ Codex Security Review\n\n" + cleanMessages.security) ||
+      result.startsWith("### 🛡️ Codex Security Review · _Automatically triggered_\n\n" + cleanMessages.security)))
+}
 const connectorActor = user => user?.login === "chatgpt-codex-connector[bot]" && user.id === 199175422 && user.type === "Bot"
 const connectorClaim = user => user?.id === 199175422 || user?.login === "chatgpt-codex-connector[bot]"
 

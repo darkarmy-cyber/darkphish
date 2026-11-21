@@ -8,6 +8,10 @@
 - Update SQLite and goose migration dependencies, along with their compatible PostgreSQL and transitive modules.
 - Restore the v0.27.2 release publication path by requiring a new generated release pull request with complete pre-merge security and maintainer review attestations; the original unreviewed release merge remains unpublished.
 - Restore the v0.27.2 trusted publication path after generated release PR #248 was merged without its required pre-merge independent security review and exact-head maintainer approval; require a fresh protected generated release PR with authentic review and provenance evidence.
+- Reopen the protected v0.27.2 publication path after generated release PR #250 merged without its required pre-merge maintainer attestation; require a fresh generated release PR with authentic exact-head review before native publication.
+- Restore the protected v0.27.2 publication path after generated release PR #252 merged before its required maintainer approval; a fresh bot-authored release PR must receive genuine exact-head approval before the native release workflow may publish.
+- Restore the protected v0.27.2 publication path after generated release PR #254 merged with only a COMMENTED review; a fresh bot-authored release PR must receive genuine exact-head maintainer APPROVED review before the native release workflow may publish.
+- Recognize the Codex connector's authenticated review receipt wrapper while preserving exact-head, reviewer identity, completion chronology, and clean-result checks for protected release merges.
 
 
 ## 0.27.1 - 2026-11-16

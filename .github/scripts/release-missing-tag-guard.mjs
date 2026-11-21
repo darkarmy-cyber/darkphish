@@ -1,7 +1,8 @@
-import { appendFileSync, readFileSync } from "node:fs"
+import { appendFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { api, pages, repository, versionTag } from "../../scripts/release-lib.mjs"
+import { recoveryVersion } from "./release-recovery-version.mjs"
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const output = (name, value) => { if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`) }
@@ -76,7 +77,7 @@ async function withdrawWhileTagAbsent(repo, tag, releases, executionSHA) {
 async function main() {
   const executionSHA = process.env.RECOVERY_EXECUTION_SHA
   const repo = repository()
-  const version = readFileSync("VERSION", "utf8").trim()
+  const version = recoveryVersion()
   const tag = versionTag(version)
   const releases = await publicReleases(repo, tag)
   const tagState = await currentTag(repo, tag)

@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Update the HTML parsing dependency to goquery v1.14.0 and cascadia v1.3.5.
 - Update the Go network dependency to v0.63.0 for upstream HTTP/2 fixes.
 
 ### Security

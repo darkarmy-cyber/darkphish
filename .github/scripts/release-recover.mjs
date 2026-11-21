@@ -23,6 +23,8 @@ import { audited0231MetadataFailure, auditedTagless0231Source } from "./release-
 import { audited0240MetadataFailure, auditedTagless0240Source } from "./release-recover-0240-policy.mjs"
 import { audited0252MetadataFailure, auditedTagless0252Source } from "./release-recover-0252-policy.mjs"
 import { audited0271MetadataOnly, audited0271Draft, audited0271QuarantinedAsset } from "./release-recover-0271-policy.mjs"
+import { audited0272Source, audited0272RunId, audited0272StaleNativeRun, audited0272Draft, audited0272QuarantinedAsset } from "./release-recover-0272-policy.mjs"
+import { recoveryVersion } from "./release-recovery-version.mjs"
 
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
@@ -135,6 +137,14 @@ async function verifyOriginalNativeRelease(repo, source) {
   const ci = runs.filter((run) => canonicalMainCheckRun(run, "CI", source))
   const codeql = runs.filter((run) => canonicalMainCheckRun(run, "CodeQL", source))
   if (!ci.length || !codeql.length) throw new Error("historical release source lacks successful exact-SHA CI or CodeQL")
+  if (repo === "darkarmy-cyber/darkphish" && source === audited0272Source) {
+    const incident = await api(`repos/${repo}/actions/runs/${audited0272RunId}`)
+    const incidentJobs = await pages(`repos/${repo}/actions/runs/${audited0272RunId}/jobs`, "jobs")
+    if (!audited0272StaleNativeRun({ repository: repo, source, run: incident, jobs: incidentJobs })) {
+      throw new Error("audited v0.27.2 stale-head Native release evidence changed")
+    }
+    return { ...incident, recovery_only: true }
+  }
   const candidates = []
   for (const run of runs.filter((item) => item.name === "Native release" && item.path === ".github/workflows/release.yml" && ["workflow_run", "schedule"].includes(item.event) && item.head_branch === "main" && item.head_sha === source && item.status === "completed" && ["success", "failure"].includes(item.conclusion))) {
     const jobs = await pages(`repos/${repo}/actions/runs/${run.id}/jobs`, "jobs")
@@ -216,7 +226,7 @@ async function downloadReleaseAsset(repo, asset, directory) {
 }
 function verifyRecoveryAttestation(repo, path, recoverySHA, run) {
   if (!sha40(recoverySHA) || !Number.isSafeInteger(run?.id) || !Number.isSafeInteger(run?.run_attempt)) throw new Error("recovery attestation identity is malformed")
-  const stdout = execFileSync("gh", ["attestation", "verify", path, "--repo", repo, "--signer-workflow", `${repo}/.github/workflows/release-recover.yml`, "--signer-digest", recoverySHA, "--source-ref", "refs/heads/main", "--source-digest", recoverySHA, "--predicate-type", "https://slsa.dev/provenance/v1", "--deny-self-hosted-runners", "--format", "json"], { encoding: "utf8", env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN || process.env.GITHUB_TOKEN }, stdio: ["ignore", "pipe", "pipe"] })
+  const stdout = execFileSync("gh", ["attestation", "verify", path, "--repo", repo, "--signer-workflow", `${repo}/.github/workflows/release-recover.yml`, "--signer-digest", recoverySHA, "--source-ref", "refs/heads/main", "--source-digest", recoverySHA, "--predicate-type", "https://slsa.dev/provenance/v1", "--deny-self-hosted-runners", "--format", "json"], { encoding: "utf8", env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN || process.env.GITHUB_TOKEN }, stdio: ["ignore", "pipe", "pipe"], timeout: 120_000 })
   let verified
   try { verified = JSON.parse(stdout) } catch { throw new Error("verified recovery attestation JSON is malformed") }
   const expectedInvocation = `https://github.com/${repo}/actions/runs/${run.id}/attempts/${run.run_attempt}`
@@ -232,7 +242,7 @@ async function qualifyingRecoveryRun(repo, release, version, main) {
     const local = new Map(); for (const asset of selected) local.set(asset.name, await downloadReleaseAsset(repo, asset, directory))
     const publishedAt = timestamp(release.published_at, "release publication")
     const runs = await pages(`repos/${repo}/actions/workflows/release-recover.yml/runs?branch=main&status=success`, "workflow_runs")
-    const candidates = runs.filter((run) => run.name === "Recover pending release" && run.path === ".github/workflows/release-recover.yml" && run.head_branch === "main" && sha40(run.head_sha) && ["workflow_run", "schedule"].includes(run.event) && run.status === "completed" && run.conclusion === "success").sort((a, b) => b.id - a.id)
+    const candidates = runs.filter((run) => run.name === "Recover pending release" && run.path === ".github/workflows/release-recover.yml" && run.head_branch === "main" && sha40(run.head_sha) && (["workflow_run", "schedule"].includes(run.event) || (version === "0.27.2" && run.event === "workflow_dispatch")) && run.status === "completed" && run.conclusion === "success").sort((a, b) => b.id - a.id)
     for (const run of candidates) {
       try {
         const runStarted = timestamp(run.run_started_at || run.created_at, "recovery run start"), runFinished = timestamp(run.updated_at, "recovery run completion")
@@ -389,7 +399,7 @@ function assertUploadedAssetSet(assets, local, receiptHash, receiptLength) {
     if (asset.name === local.receiptName) assetDisposition(asset, receiptHash, receiptLength); else assetDisposition(asset, local.hashes.get(asset.name), local.bytes.get(asset.name)?.length)
   }
 }
-// In the single audited v0.27.1 incident only, remove an original asset
+// In the two pinned v0.27.1/v0.27.2 incidents only, remove an original asset
 // exclusively if its complete immutable ID/digest/size/uploader fingerprint
 // matches the quarantined inventory. Never trust or silently overwrite it.
 // A matching fresh rebuild may instead be reused after provenance attestation.
@@ -402,7 +412,7 @@ async function reconcileQuarantined0271Assets(repo, release, version, source, lo
   const path = `repos/${repo}/releases/${release.id}/assets`
   const original = await pages(path)
   if (!original.length) return new Set()
-  if (!audited0271Draft(release, version, source)) throw new Error("nonempty release draft cannot be reused safely")
+  if (!audited0271Draft(release, version, source) && !audited0272Draft(release, version, source)) throw new Error("nonempty release draft cannot be reused safely")
   const names = original.map(asset => asset?.name)
   if (new Set(names).size !== names.length || names.some(name => !expected.has(name))) {
     throw new Error("quarantined release has duplicate or unexpected assets")
@@ -413,18 +423,18 @@ async function reconcileQuarantined0271Assets(repo, release, version, source, lo
       if (!actionsBot(asset.uploader) || asset.state !== "uploaded") throw new Error("matching rebuilt asset has an untrusted uploader")
       continue
     }
-    if (!audited0271QuarantinedAsset(release, version, source, asset)) {
+    if (!audited0271QuarantinedAsset(release, version, source, asset) && !audited0272QuarantinedAsset(release, version, source, asset)) {
       throw new Error(`quarantined ${asset.name} fingerprint changed; draft retained`)
     }
     await currentProtectedMain(repo, executionSHA)
     await assertTagState(repo, versionTag(version), tagState, "immutable tag moved before quarantined asset removal")
     const live = await api(`repos/${repo}/releases/${release.id}`)
-    if (!audited0271Draft(live, version, source) || live.body !== release.body || live.name !== release.name) {
+    if ((!audited0271Draft(live, version, source) && !audited0272Draft(live, version, source)) || live.body !== release.body || live.name !== release.name) {
       throw new Error("quarantined release identity changed before asset removal")
     }
     const listed = await pages(path)
     const matching = listed.filter(candidate => candidate.name === asset.name)
-    if (matching.length !== 1 || !audited0271QuarantinedAsset(live, version, source, matching[0])) {
+    if (matching.length !== 1 || (!audited0271QuarantinedAsset(live, version, source, matching[0]) && !audited0272QuarantinedAsset(live, version, source, matching[0]))) {
       throw new Error("quarantined asset changed immediately before removal")
     }
     // Never retry an ambiguous DELETE. Re-read and abort; next scheduled
@@ -459,7 +469,7 @@ async function ensureTag(repo, tag, source, expectedInitialState) {
   throw new Error("recovery tag snapshot is required before publication")
 }
 async function metadata() {
-  const repo = repository(), version = readFileSync("VERSION", "utf8").trim(), tag = versionTag(version)
+  const repo = repository(), version = recoveryVersion(), tag = versionTag(version)
   const executionSHA = process.env.RECOVERY_EXECUTION_SHA || process.env.GITHUB_SHA
   if (!sha40(executionSHA)) throw new Error("recovery execution SHA is unavailable or invalid")
   const precheck = parsePrecheckSnapshot(process.env.RECOVERY_PRECHECK_TAG_ABSENT)
@@ -525,7 +535,7 @@ async function publish() {
   if ((state.drafts || []).length === 1) {
     release = assertExactDraft(state.drafts[0], version, source, state.expected)
     const existingAssets = await pages(`repos/${repo}/releases/${release.id}/assets`)
-    if (existingAssets.length && !audited0271Draft(release, version, source)) {
+    if (existingAssets.length && !audited0271Draft(release, version, source) && !audited0272Draft(release, version, source)) {
       throw new Error("existing recovery draft contains assets and cannot be reused safely")
     }
   } else {

@@ -13,6 +13,7 @@ import { normalizationHold } from "../../scripts/release-normalization-hold.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
 import { canonicalMainCheckRun, nativeReleaseAttemptStart } from "./release-provenance-checks.mjs"
+import { recoveryVersion } from "./release-recovery-version.mjs"
 
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
@@ -128,7 +129,7 @@ function verifyAttestation(repo, path, workflow, digest, run) {
   if (!sha40(digest)) throw new Error("attestation signer digest is invalid")
   if (!Number.isSafeInteger(run?.id) || run.id < 1 || !Number.isSafeInteger(run?.run_attempt) || run.run_attempt < 1) throw new Error("attestation workflow run identity is invalid")
   const stdout = execFileSync("gh", ["attestation", "verify", path, "--repo", repo, "--signer-workflow", `${repo}/${workflow}`, "--signer-digest", digest, "--source-ref", "refs/heads/main", "--source-digest", digest, "--predicate-type", "https://slsa.dev/provenance/v1", "--deny-self-hosted-runners", "--format", "json"], {
-    encoding: "utf8", env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN || process.env.GITHUB_TOKEN }, stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8", env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN || process.env.GITHUB_TOKEN }, stdio: ["ignore", "pipe", "pipe"], timeout: 120_000,
   })
   let verified
   try { verified = JSON.parse(stdout) } catch { throw new Error("verified attestation JSON is malformed") }
@@ -179,8 +180,11 @@ async function verifyRecoveryPublication(repo, release, version, main, tagState,
     const runs = await pages(`repos/${repo}/actions/workflows/release-recover.yml/runs?branch=main&status=success`, "workflow_runs")
     for (const run of runs.sort((a, b) => b.id - a.id)) {
       try {
-        if (run.name !== "Recover pending release" || run.path !== ".github/workflows/release-recover.yml" || run.head_branch !== "main" || !sha40(run.head_sha) || !["workflow_run", "schedule"].includes(run.event) || run.status !== "completed" || run.conclusion !== "success") continue
+        if (run.name !== "Recover pending release" || run.path !== ".github/workflows/release-recover.yml" || run.head_branch !== "main" || !sha40(run.head_sha) || !(["workflow_run", "schedule"].includes(run.event) || (version === "0.27.2" && run.event === "workflow_dispatch")) || run.status !== "completed" || run.conclusion !== "success") continue
         const created = timestamp(run.created_at, "recovery run creation")
+        // The release must have been published during this run. Historical runs
+        // cannot qualify and must not trigger hundreds of API and attestation checks.
+        if (created > publishedAt || timestamp(run.updated_at, "recovery run completion") < publishedAt) continue
         await exactMainChecks(repo, run.head_sha, created)
         await exactRequiredChecksBefore(repo, run.head_sha, created)
         const jobs = await pages(`repos/${repo}/actions/runs/${run.id}/jobs`, "jobs")
@@ -286,7 +290,7 @@ function parsePrecheck(value) {
   return { absent: false, tagState: { objectType: match[1], objectSha: match[2] } }
 }
 async function preflight() {
-  const repo = repository(), version = readFileSync("VERSION", "utf8").trim(), tag = versionTag(version)
+  const repo = repository(), version = recoveryVersion(), tag = versionTag(version)
   const executionSHA = process.env.RECOVERY_EXECUTION_SHA
   const precheck = parsePrecheck(process.env.RECOVERY_PRECHECK_TAG_ABSENT)
   const main = await executionMain(repo, executionSHA)

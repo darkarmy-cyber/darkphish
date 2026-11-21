@@ -169,11 +169,12 @@ test("recovery rebuilds immutable source and mandates receipt-inclusive attestat
   assert.match(workflow, /attestations: write/)
 })
 
-test("recovery workflow is serialized main-only automation", () => {
+test("recovery workflow is serialized and binds dispatch to the audited version", () => {
   assert.match(workflow, /workflow_run:/)
   assert.match(workflow, /branches: \[main\]/)
   assert.match(workflow, /schedule:/)
-  assert.doesNotMatch(workflow, /\bworkflow_dispatch\s*:/)
+  assert.match(workflow, /workflow_dispatch:[\s\S]*recovery_version:[\s\S]*- '0\.27\.2'/)
+  assert.match(workflow, /RECOVERY_VERSION_OVERRIDE: \$\{\{ inputs\.recovery_version \}\}/)
   assert.match(workflow, /group: protected-main-mutation/)
   assert.match(workflow, /cancel-in-progress: false/)
   assert.match(workflow, /node \.github\/scripts\/release-recover\.mjs metadata/)
@@ -214,7 +215,7 @@ test("protected main remains independently pinned to immutable recovery executio
   assert.ok(checks.length >= 4)
 })
 
-test("recovery staging reuses only exact drafts and restricts v0.27.1 quarantine reconciliation", () => {
+test("recovery staging reuses only exact drafts and restricts audited quarantine reconciliation", () => {
   const publish = script.slice(script.indexOf("async function publish"), script.indexOf("const command ="))
   assert.doesNotMatch(publish, /method: "DELETE"/)
   assert.match(script, /async function assertImmutableTagProtection/)

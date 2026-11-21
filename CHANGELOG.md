@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.28.0 - 2026-11-21
+
+### Security
+
+- Update the MySQL driver to v1.10.2 to address malformed handshake handling, connection reuse after failed local file uploads, and unsafe charset interpolation.
+- Update the PostgreSQL driver to pgx v5.13.0 to handle malformed result rows safely and avoid unsafe query retries after connection failures.
+
 ## 0.27.3 - 2026-11-21
 
 ### Security

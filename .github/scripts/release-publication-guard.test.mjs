@@ -45,6 +45,11 @@ test("native preservation requires successful attestations for every published a
   assert.doesNotMatch(guard, /attestStep\?\.conclusion !== "skipped"/)
 })
 
+test("recovery provenance skips runs that ended before publication and bounds attestation checks", () => {
+  assert.match(guard, /created > publishedAt \|\| \(run\.updated_at && timestamp\(run\.updated_at, "recovery run completion"\) < publishedAt\)/)
+  assert.match(guard, /timeout: 120_000/)
+})
+
 test("unverified publication withdrawal uses a stable direct release and by-tag confirmation", () => {
   assert.match(guard, /const finalDirect = await Promise\.all/)
   assert.match(guard, /releases\/\$\{id\}/)

@@ -13,6 +13,7 @@ function fixture(ids = [12]) {
     URL, fileURLToPath: url => url.pathname, console: {warn() {}},
     process: {execPath: "node-test", env: {RECOVERY_EXECUTION_SHA: sha, GITHUB_OUTPUT: "memory"}},
     readFileSync: () => "0.13.0", appendFileSync: (_, text) => state.outputs.push(text),
+    recoveryVersion: () => "0.13.0",
     repository: () => "owner/repo", versionTag: v => `v${v}`,
     setTimeout: fn => {assert.ok(events.length < 20, "bounded mock retry"); fn()},
     execFileSync: (binary, args, options) => {

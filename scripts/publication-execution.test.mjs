@@ -19,7 +19,6 @@ function fixture() {
       fn()
     }, Buffer,
     readFileSync: () => '0.12.0', appendFileSync: (_, text) => state.outputs.push(text),
-    recoveryVersion: () => '0.12.0',
     mkdtempSync: () => 'memory', tmpdir: () => 'memory', join: (...parts) => parts.join('/'), rmSync() {},
     repository: () => 'owner/repo', versionTag: version => `v${version}`,
     releaseDisplayName: version => { const [major, minor, patch] = version.split("."); return `Darkphish ${patch === "0" ? `${major}.${minor}` : version}` },
@@ -71,7 +70,7 @@ test('real native and recovery run loops do not swallow final execution errors',
   for(const kind of ['Native','Recovery']) {
     const f = fixture(), native = kind === 'Native'
     const workflow = native ? '.github/workflows/release.yml' : '.github/workflows/release-recover.yml'
-    f.context.runRecord = {id:1, run_attempt:1, name:native?'Native release':'Recover pending release', path:workflow, head_branch:'main', head_sha:sha, event:'schedule', status:'completed', conclusion:'success', created_at:'2026-09-17T10:00:00Z', updated_at:'2026-09-17T10:10:00Z'}
+    f.context.runRecord = {id:1, run_attempt:1, name:native?'Native release':'Recover pending release', path:workflow, head_branch:'main', head_sha:sha, event:'schedule', status:'completed', conclusion:'success', created_at:'2026-09-17T10:00:00Z'}
     f.context.steps = [
       'Run node scripts/release-publish.mjs metadata', 'Generate checksums',
       'Publish verified assets without overwriting an existing release', 'Attest canonical native release artifacts',

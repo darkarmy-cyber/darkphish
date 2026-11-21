@@ -13,7 +13,6 @@ import { normalizationHold } from "../../scripts/release-normalization-hold.mjs"
 import { verifyCodeQLBaseline } from "../../scripts/codeql-baseline.mjs"
 import { verifyReleaseMaintainerReview } from "../../scripts/release-maintainer-review.mjs"
 import { canonicalMainCheckRun, nativeReleaseAttemptStart } from "./release-provenance-checks.mjs"
-import { recoveryVersion } from "./release-recovery-version.mjs"
 
 const sha40 = (value) => typeof value === "string" && /^[a-f0-9]{40}$/.test(value)
 const actionsBot = (actor) => actor?.login === "github-actions[bot]" && actor?.type === "Bot" && actor?.id === 41898282
@@ -25,6 +24,14 @@ const timestamp = (value, label) => {
   return parsed
 }
 const successfulStep = (job, name) => job?.steps?.some((step) => step.name === name && step.status === "completed" && step.conclusion === "success")
+function guardVersion() {
+  const current = readFileSync("VERSION", "utf8").trim()
+  const requested = process.env.RECOVERY_VERSION_OVERRIDE || ""
+  if (requested && (requested !== "0.27.2" || current !== "0.27.3" || process.env.GITHUB_EVENT_NAME !== "workflow_dispatch")) {
+    throw new Error("historical release recovery override is not authorized for this version or event")
+  }
+  return requested || current
+}
 
 function releaseName(version) { return releaseDisplayName(version) }
 async function sourceText(repo, path, source) {
@@ -184,7 +191,7 @@ async function verifyRecoveryPublication(repo, release, version, main, tagState,
         const created = timestamp(run.created_at, "recovery run creation")
         // The release must have been published during this run. Historical runs
         // cannot qualify and must not trigger hundreds of API and attestation checks.
-        if (created > publishedAt || timestamp(run.updated_at, "recovery run completion") < publishedAt) continue
+        if (created > publishedAt || (run.updated_at && timestamp(run.updated_at, "recovery run completion") < publishedAt)) continue
         await exactMainChecks(repo, run.head_sha, created)
         await exactRequiredChecksBefore(repo, run.head_sha, created)
         const jobs = await pages(`repos/${repo}/actions/runs/${run.id}/jobs`, "jobs")
@@ -290,7 +297,7 @@ function parsePrecheck(value) {
   return { absent: false, tagState: { objectType: match[1], objectSha: match[2] } }
 }
 async function preflight() {
-  const repo = repository(), version = recoveryVersion(), tag = versionTag(version)
+  const repo = repository(), version = guardVersion(), tag = versionTag(version)
   const executionSHA = process.env.RECOVERY_EXECUTION_SHA
   const precheck = parsePrecheck(process.env.RECOVERY_PRECHECK_TAG_ABSENT)
   const main = await executionMain(repo, executionSHA)

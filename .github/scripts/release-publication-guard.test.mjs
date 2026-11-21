@@ -46,7 +46,7 @@ test("native preservation requires successful attestations for every published a
 })
 
 test("recovery provenance skips runs that ended before publication and bounds attestation checks", () => {
-  assert.match(guard, /created > publishedAt \|\| timestamp\(run\.updated_at, "recovery run completion"\) < publishedAt/)
+  assert.match(guard, /created > publishedAt \|\| \(run\.updated_at && timestamp\(run\.updated_at, "recovery run completion"\) < publishedAt\)/)
   assert.match(guard, /timeout: 120_000/)
 })
 

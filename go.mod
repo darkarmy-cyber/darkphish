@@ -6,7 +6,7 @@ toolchain go1.27.4
 
 require (
 	github.com/NYTimes/gziphandler v1.1.1
-	github.com/PuerkitoBio/goquery v1.13.0
+	github.com/PuerkitoBio/goquery v1.14.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/emersion/go-imap v1.2.1
 	github.com/emersion/go-message v0.18.2
@@ -38,7 +38,7 @@ require (
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137 // indirect
-	github.com/andybalholm/cascadia v1.3.4 // indirect
+	github.com/andybalholm/cascadia v1.3.5 // indirect
 	github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

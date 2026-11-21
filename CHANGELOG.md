@@ -2,6 +2,10 @@
 
 ## 0.28.0 - 2026-11-21
 
+### Changed
+
+- Update the Go network dependency to v0.63.0 for upstream HTTP/2 fixes.
+
 ### Security
 
 - Update the MySQL driver to v1.10.2 to address malformed handshake handling, connection reuse after failed local file uploads, and unsafe charset interpolation.

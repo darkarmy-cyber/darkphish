@@ -76,5 +76,6 @@ test("dispatch recovery is restricted to v0.27.2 and verified as recovery, never
   assert.match(workflow, /RECOVERY_VERSION_OVERRIDE: \$\{\{ inputs\.recovery_version \}\}/)
   assert.match(recover, /return \{ \.\.\.incident, recovery_only: true \}/)
   assert.match(recover, /version === "0\.27\.2" && run\.event === "workflow_dispatch"/)
+  assert.match(recover, /make_latest: version === "0\.27\.2" \? "false" : "true"/)
   assert.match(guard, /version === "0\.27\.2" && run\.event === "workflow_dispatch"/)
 })

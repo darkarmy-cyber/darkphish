@@ -539,7 +539,7 @@ async function publish() {
       throw new Error("existing recovery draft contains assets and cannot be reused safely")
     }
   } else {
-    release = await api(`repos/${repo}/releases`, { method: "POST", body: { tag_name: tag, target_commitish: source, name: state.expected.name, body: state.expected.body, draft: true, prerelease: false, make_latest: "true" } })
+    release = await api(`repos/${repo}/releases`, { method: "POST", body: { tag_name: tag, target_commitish: source, name: state.expected.name, body: state.expected.body, draft: true, prerelease: false, make_latest: version === "0.27.2" ? "false" : "true" } })
     assertExactDraft(release, version, source, state.expected)
   }
   await assertImmutableTagProtection(repo, tag)
@@ -561,7 +561,7 @@ async function publish() {
   if (preexistingTag) await assertTagState(repo, tag, preexistingTag, "immutable release tag ref object changed immediately before publication")
   else await assertTagSnapshot(repo, tag, null, "release tag appeared immediately before publication")
   await verifyStagingSet(preexistingTag, (state.drafts || []).some((draft) => draft.id === release.id) ? null : release)
-  try { await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, prerelease: false, make_latest: "true" } }) }
+  try { await api(`repos/${repo}/releases/${release.id}`, { method: "PATCH", body: { draft: false, prerelease: false, make_latest: version === "0.27.2" ? "false" : "true" } }) }
   catch (error) {
     const observedTag = await readTagState(repo, tag)
     if (observedTag && observedTag.commit !== source) throw new Error("publication PATCH failed and created the release tag at an unexpected source")

@@ -240,7 +240,7 @@ test("recovery staging reuses only exact drafts and restricts audited quarantine
   assert.match(publish, /else await assertTagSnapshot\(repo, tag, null, "release tag appeared immediately before publication"\)/)
   const reuseIndex = publish.indexOf("release = assertExactDraft(state.drafts[0]")
   const uploadIndex = publish.indexOf("for (const name of local.names) if (!reusable.has(name)) await uploadAsset")
-  const publishPatchIndex = publish.indexOf('body: { draft: false, prerelease: false, make_latest: "true" }')
+  const publishPatchIndex = publish.indexOf('body: { draft: false, prerelease: false, make_latest: version === "0.27.2" ? "false" : "true" }')
   assert.match(publish, /audited0271Draft\(release, version, source\)/)
   assert.match(script, /audited0271QuarantinedAsset\(release, version, source, asset\)/)
   assert.match(script, /quarantined asset changed immediately before removal/)

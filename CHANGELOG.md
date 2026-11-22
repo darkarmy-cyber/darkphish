@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.28.3 - 2026-11-22
+
+### Fixed
+
+- Rendered Import Site works again with Chromium 158 and later (stable since 17 November 2026). The renderer was allowed 128 processes and threads; current Chromium holds 140 threads before it receives the first command, so it aborted at once and every rendered import silently fell back to the static HTML response. The limit is now 512, more than twice the 221 threads measured while rendering YouTube, the Google sign-in page, BBC and GitHub. The 512 MiB memory cap per render is unchanged.
+
+### Security
+
+- Rendered Import Site no longer hands the DarkPhish service environment to Chromium. The renderer received every variable of the service, including secrets configured through the environment (`DARKPHISH_SECRET_*`, `DARKPHISH_VAULT_TOKEN`, `DARKPHISH_POSTGRES_PASSWORD`, `DARKPHISH_AUDIT_SIGNING_KEY*`), on installations that run Chromium without a sandbox. It now receives only `PATH`, the locale and time zone variables, the temp location, `LD_LIBRARY_PATH` and `CHROME_DEVEL_SANDBOX`; its home directories stay inside the render profile as before.
+
 ## 0.28.2 - 2026-11-22
 
 ### Fixed

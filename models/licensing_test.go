@@ -111,6 +111,34 @@ func TestRefreshRetainsCredentialForBlankResponse(t *testing.T) {
 	}
 }
 
+// A Professional or Enterprise lease is answered with the latest paid version
+// on every refresh. The Community client used to reject that response as
+// invalid, so such an installation never renewed its lease.
+func TestRefreshRenewsPaidEditionLeaseAdvertisingLatestPaidVersion(t *testing.T) {
+	withLicensingDB(t)
+	manager, envelope := testLicenseManagerEnvelope(t, 250, -1, licensing.EditionProfessional)
+	ConfigureLicenseManager(manager)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"lease": envelope, "latest_paid_version": "1.0.0"})
+	}))
+	defer server.Close()
+	client, err := licensing.NewClient(server.URL, "0.28.2", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ConfigureLicenseClient(client)
+	t.Cleanup(func() { ConfigureLicenseClient(nil) })
+
+	status, err := RefreshCommunityLicense(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("refresh of a Professional lease: %v", err)
+	}
+	if status.Edition != licensing.EditionProfessional || status.State != string(licensing.StateActive) || manager.RefreshToken() != "refresh" {
+		t.Fatalf("unexpected status after refresh: %+v", status)
+	}
+}
+
 func withLicensingDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	connection, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

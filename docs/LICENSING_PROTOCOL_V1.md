@@ -105,6 +105,21 @@ The service can use refreshes to record minimal operational metadata such as
 product version and last-seen time. Optional telemetry beyond licensing status
 must be documented separately and must not be silently added to this protocol.
 
+### Response envelope
+
+Activation and refresh responses are JSON objects. `lease` (the signed
+envelope) is always present and `refresh_token` is returned on activation.
+For Professional and Enterprise licenses the service may also return
+`latest_paid_version` (a semantic version) and, on activation, `download_url`
+(a one-time paid-artifact URL). These are licensing metadata, not telemetry.
+
+Clients reject responses that contain a field they do not know. Every edition
+must therefore declare these fields, even when it has no use for their values:
+an installation that holds a Professional or Enterprise lease, for example one
+activated by another edition, otherwise fails to activate or refresh with
+`license service request failed: invalid response`. A service that adds a new
+response field must first ship clients that declare it.
+
 ## Signed lease envelope
 
 The HTTP response contains an envelope. `payload` is base64url without padding

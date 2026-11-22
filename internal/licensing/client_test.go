@@ -108,6 +108,42 @@ func TestClientRejectsUnknownResponseFields(t *testing.T) {
 	}
 }
 
+// An installation can hold a Professional or Enterprise lease (for example one
+// activated by another edition). The service advertises the latest paid
+// version to such licenses, and the client must still activate and refresh.
+func TestClientDecodesPaidEditionResponseFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/wp-json/darkphish-license/v1/activate":
+			_, _ = w.Write([]byte(`{"lease":{"key_id":"test","algorithm":"Ed25519","payload":"e30","signature":"sig"},"refresh_token":"refresh-one","download_url":"https://license.example.test/download?token=one-time","latest_paid_version":"1.0.0"}`))
+		case "/wp-json/darkphish-license/v1/refresh":
+			_, _ = w.Write([]byte(`{"lease":{"key_id":"test","algorithm":"Ed25519","payload":"e30","signature":"sig"},"latest_paid_version":"1.0.0"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client, err := newClient(server.URL+"/wp-json/darkphish-license/v1", "0.28.1", server.Client(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activation, err := client.Activate(context.Background(), "DP-PRO-SECRET", "installation-1")
+	if err != nil {
+		t.Fatalf("activation with paid-edition response fields: %v", err)
+	}
+	if activation.RefreshToken != "refresh-one" || activation.LatestPaidVersion != "1.0.0" || activation.DownloadURL != "https://license.example.test/download?token=one-time" {
+		t.Fatalf("unexpected activation exchange: %+v", activation)
+	}
+	refreshed, err := client.Refresh(context.Background(), activation.RefreshToken, "installation-1")
+	if err != nil {
+		t.Fatalf("refresh with paid-edition response fields: %v", err)
+	}
+	if len(refreshed.Lease) == 0 || refreshed.RefreshToken != "" || refreshed.LatestPaidVersion != "1.0.0" || refreshed.DownloadURL != "" {
+		t.Fatalf("unexpected refresh exchange: %+v", refreshed)
+	}
+}
+
 func TestClientRejectsRedirectsWithoutForwardingCredentials(t *testing.T) {
 	for _, code := range []int{301, 302, 303, 307, 308} {
 		t.Run(fmt.Sprint(code), func(t *testing.T) {

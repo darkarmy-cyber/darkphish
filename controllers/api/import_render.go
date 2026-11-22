@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +30,16 @@ const maxRenderedProxyConnections = 16
 const maxRenderedRequestHeaderBytes = 64 << 10
 const maxRenderedResponseHeaderBytes int64 = 64 << 10
 const maxRenderedMemoryBytes int64 = 512 << 20
-const maxRenderedPIDs = 128
+
+// chromiumMeasuredPeakThreads is the highest thread count one render needed
+// in a measurement and must stay well below maxRenderedPIDs. Chromium 158
+// held 140 threads before the first DevTools command and up to 221 while
+// rendering YouTube, the Google sign-in page, BBC and GitHub (2026-11-23,
+// 16 CPUs, headless). Under the earlier limit of 128 it aborted with SIGTRAP
+// as soon as a thread could not be created, and every rendered import fell
+// back to the static response.
+const chromiumMeasuredPeakThreads = 221
+const maxRenderedPIDs = 512
 const maxRenderedProfileFilesystemBytes uint64 = 512 << 20
 const maxRenderedProfileInodes uint64 = 8192
 const renderedProfileRootEnvironment = "DARKPHISH_RENDER_PROFILE_ROOT"
@@ -499,16 +509,50 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 	return rendered, finalURL, nil
 }
 
-// renderedChromiumEnvironment points everything Chromium keeps outside its
-// profile at the bounded profile directory, which is removed after the render.
-// On native installations the service account's home is the installation
-// directory: inherited unchanged, the first rendered import adds cache
-// directories there and one-click updates refuse the unmanaged files. Later
-// entries win, so the service environment itself is left untouched.
+// chromiumInheritedVariables is everything the renderer receives from the
+// service environment. A rendered import executes page script chosen by
+// whoever controls the imported site, and installations that cannot provide a
+// working sandbox start Chromium with --no-sandbox. The service environment
+// may carry secrets (DARKPHISH_SECRET_*, DARKPHISH_VAULT_TOKEN,
+// DARKPHISH_POSTGRES_PASSWORD) and loader variables (LD_PRELOAD, GTK_MODULES),
+// so it is not passed on. What remains shapes the result or locates Chromium's
+// own files: locale and time zone, library path, temp location and the sandbox
+// helper of development builds.
+var chromiumInheritedVariables = []string{
+	"PATH",
+	"LANG", "LANGUAGE", "TZ",
+	"TMPDIR", "TMP", "TEMP",
+	"LD_LIBRARY_PATH",
+	"CHROME_DEVEL_SANDBOX",
+}
+
+// Locale categories such as LC_CTYPE and LC_MESSAGES are inherited as a family.
+const chromiumInheritedVariablePrefix = "LC_"
+
+func chromiumInheritsVariable(name string) bool {
+	if strings.HasPrefix(name, chromiumInheritedVariablePrefix) {
+		return true
+	}
+	return slices.Contains(chromiumInheritedVariables, name)
+}
+
+// renderedChromiumEnvironment gives Chromium only the service variables that
+// chromiumInheritsVariable admits, and points everything Chromium keeps outside
+// its profile at the bounded profile directory, which is removed after the
+// render. On native installations the service account's home is the
+// installation directory: inherited unchanged, the first rendered import adds
+// cache directories there and one-click updates refuse the unmanaged files.
+// Later entries win, so the service environment itself is left untouched.
 func renderedChromiumEnvironment(inherited []string, profileDir string) []string {
 	home := filepath.Join(profileDir, "home")
-	env := make([]string, 0, len(inherited)+5)
-	env = append(env, inherited...)
+	env := make([]string, 0, len(chromiumInheritedVariables)+6)
+	for _, entry := range inherited {
+		name, _, ok := strings.Cut(entry, "=")
+		if !ok || !chromiumInheritsVariable(name) {
+			continue
+		}
+		env = append(env, entry)
+	}
 	return append(env,
 		"HOME="+home,
 		"XDG_CONFIG_HOME="+filepath.Join(home, ".config"),

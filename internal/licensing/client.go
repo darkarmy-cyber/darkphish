@@ -27,6 +27,12 @@ type Client struct {
 type ActivationResponse struct {
 	Lease        json.RawMessage `json:"lease"`
 	RefreshToken string          `json:"refresh_token"`
+	// The service attaches these to responses for Professional and Enterprise
+	// licenses. The Community edition does not act on them, but it must be
+	// able to decode them: unknown response fields are rejected below, and an
+	// installation that holds such a lease would otherwise never refresh it.
+	DownloadURL       string `json:"download_url,omitempty"`
+	LatestPaidVersion string `json:"latest_paid_version,omitempty"`
 }
 
 type activationRequest struct {

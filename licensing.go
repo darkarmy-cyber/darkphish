@@ -53,7 +53,10 @@ func configureLicensing(c *config.Config) (func(), error) {
 				return
 			}
 			if _, err := models.RefreshCommunityLicense(ctx, time.Now().UTC()); err != nil && ctx.Err() == nil {
-				log.Warn("Community license refresh failed; retaining the last verified lease until its signed expiry")
+				// The licensing client reports categories only (never a response
+				// body or credential), so the cause is safe to log. Without it a
+				// failing refresh cannot be told apart from an expired lease.
+				log.Warn("Community license refresh failed; retaining the last verified lease until its signed expiry: ", err)
 			}
 		})
 	}()

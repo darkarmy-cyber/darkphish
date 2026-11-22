@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.28.0 - 2026-11-21
+
+### Changed
+
+- Update the HTML parsing dependency to goquery v1.14.0 and cascadia v1.3.5.
+- Update the Go network dependency to v0.63.0 for upstream HTTP/2 fixes.
+
+### Security
+
+- Update the MySQL driver to v1.10.2 to address malformed handshake handling, connection reuse after failed local file uploads, and unsafe charset interpolation.
+- Update the PostgreSQL driver to pgx v5.13.0 to handle malformed result rows safely and avoid unsafe query retries after connection failures.
+
 ## 0.27.3 - 2026-11-21
 
 ### Security

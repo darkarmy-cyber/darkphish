@@ -468,7 +468,13 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("DARKPHISH_CHROMIUM_NO_SANDBOX")), "true") {
 		args = append([]string{"--no-sandbox"}, args...)
 	}
+	chromiumHome := filepath.Join(profileDir, "home")
+	if err := os.MkdirAll(chromiumHome, 0o700); err != nil {
+		log.Warn("rendered import unavailable: chromium home creation failed: ", err)
+		return nil, nil, errRenderedImportUnavailable
+	}
 	cmd := exec.CommandContext(renderCtx, chrome, args...)
+	cmd.Env = renderedChromiumEnvironment(os.Environ(), profileDir)
 	var stderr boundedBuffer
 	stderr.limit = 1 << 20
 	cmd.Stdout = io.Discard
@@ -491,6 +497,25 @@ func renderImportPage(ctx context.Context, raw string) ([]byte, *url.URL, error)
 		return nil, nil, errRenderedImportUnavailable
 	}
 	return rendered, finalURL, nil
+}
+
+// renderedChromiumEnvironment points everything Chromium keeps outside its
+// profile at the bounded profile directory, which is removed after the render.
+// On native installations the service account's home is the installation
+// directory: inherited unchanged, the first rendered import adds cache
+// directories there and one-click updates refuse the unmanaged files. Later
+// entries win, so the service environment itself is left untouched.
+func renderedChromiumEnvironment(inherited []string, profileDir string) []string {
+	home := filepath.Join(profileDir, "home")
+	env := make([]string, 0, len(inherited)+5)
+	env = append(env, inherited...)
+	return append(env,
+		"HOME="+home,
+		"XDG_CONFIG_HOME="+filepath.Join(home, ".config"),
+		"XDG_CACHE_HOME="+filepath.Join(home, ".cache"),
+		"XDG_DATA_HOME="+filepath.Join(home, ".local", "share"),
+		"XDG_STATE_HOME="+filepath.Join(home, ".local", "state"),
+	)
 }
 
 func renderedImportWarning(err error) string {

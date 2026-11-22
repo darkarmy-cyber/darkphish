@@ -92,8 +92,15 @@ func TestRenderedCommandStartsInsideResourceCgroupOrFailsClosed(t *testing.T) {
 	_ = cmd.Wait()
 }
 
-func TestRenderedPIDLimitIsConservative(t *testing.T) {
-	if maxRenderedPIDs <= 0 || maxRenderedPIDs > 256 {
+func TestRenderedPIDLimitCoversChromiumAndStaysBounded(t *testing.T) {
+	// The pids controller counts threads. Chromium 158 holds 140 before the
+	// first DevTools command and aborted with SIGTRAP under the earlier limit
+	// of 128. The limit keeps at least twice the measured peak of real pages
+	// and stays a bound on what a renderer can spawn.
+	if maxRenderedPIDs < 2*chromiumMeasuredPeakThreads {
+		t.Fatalf("renderer PID limit %d leaves no headroom above the measured %d threads", maxRenderedPIDs, chromiumMeasuredPeakThreads)
+	}
+	if maxRenderedPIDs > 1024 {
 		t.Fatalf("unexpected renderer PID limit: %d", maxRenderedPIDs)
 	}
 }

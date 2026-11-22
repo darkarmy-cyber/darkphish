@@ -560,7 +560,7 @@ func TestRendererSecurityCapsAndSetupCommands(t *testing.T) {
 	if maxRenderedMemoryBytes != 512<<20 {
 		t.Fatalf("unexpected per-render memory cap: %d", maxRenderedMemoryBytes)
 	}
-	if maxRenderedPIDs != 128 {
+	if maxRenderedPIDs != 512 {
 		t.Fatalf("unexpected per-render PID cap: %d", maxRenderedPIDs)
 	}
 	commands := renderSetupCommands()
@@ -640,10 +640,122 @@ func TestRenderedChromiumEnvironmentConfinesHomeToProfile(t *testing.T) {
 			t.Fatalf("%s=%q want %q", key, effective[key], want)
 		}
 	}
-	if effective["PATH"] != "/usr/bin:/bin" || effective["DARKPHISH_CHROMIUM_PATH"] != "/usr/bin/google-chrome-stable" {
-		t.Fatalf("service environment was not preserved: %v", env)
+	// PATH lets the Chromium launcher find its tools. The application's own
+	// variables configure DarkPhish, not the renderer.
+	if effective["PATH"] != "/usr/bin:/bin" {
+		t.Fatalf("PATH was not preserved: %v", env)
+	}
+	if _, present := effective["DARKPHISH_CHROMIUM_PATH"]; present {
+		t.Fatalf("application variable reached the renderer: %v", env)
 	}
 	if strings.Join(inherited, "|") != "HOME=/opt/darkphish|PATH=/usr/bin:/bin|DARKPHISH_CHROMIUM_PATH=/usr/bin/google-chrome-stable|XDG_CONFIG_HOME=/etc/xdg" {
 		t.Fatalf("caller environment was modified: %v", inherited)
+	}
+}
+
+func TestRenderedChromiumEnvironmentWithholdsServiceSecrets(t *testing.T) {
+	profile := filepath.Join(t.TempDir(), "profile-123")
+	kept := []string{
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"LANG=en_US.UTF-8",
+		"LANGUAGE=en:sk",
+		"LC_ALL=C.UTF-8",
+		"LC_MESSAGES=sk_SK.UTF-8",
+		"TZ=Europe/Bratislava",
+		"TMPDIR=/var/tmp/darkphish",
+		"TMP=/var/tmp/darkphish",
+		"TEMP=/var/tmp/darkphish",
+		"LD_LIBRARY_PATH=/opt/chromium/lib:/opt/x=y",
+		"CHROME_DEVEL_SANDBOX=/opt/chromium/chrome_sandbox",
+	}
+	// Everything else a service may legitimately hold for itself: secrets
+	// given through the environment, the application's own settings, the
+	// supervisor's markers, code loaders and session endpoints.
+	withheld := []string{
+		"DARKPHISH_SECRET_ENCRYPTION_KEY=3J9sbGx8ZUVZT0xM",
+		"DARKPHISH_SECRET_KEY_2026=qP2vX7mK",
+		"DARKPHISH_SECRET_ACTIVE_KEY=2026",
+		"DARKPHISH_VAULT_TOKEN=hvs.XXXX",
+		"DARKPHISH_AUDIT_SIGNING_KEY=base64:AAAA",
+		"DARKPHISH_AUDIT_SIGNING_KEY_2026=base64:BBBB",
+		"DARKPHISH_AUDIT_ACTIVE_SIGNING_KEY=2026",
+		"DARKPHISH_POSTGRES_PASSWORD=pg-secret",
+		"DARKPHISH_PRODUCTION=true",
+		"DARKPHISH_UPDATE_CHILD=1",
+		"DARKPHISH_CHROMIUM_PATH=/usr/bin/google-chrome-stable",
+		"DARKPHISH_CHROMIUM_NO_SANDBOX=true",
+		"DARKPHISH_RENDER_PROFILE_ROOT=/run/darkphish-render",
+		"DARKPHISH_RENDER_CGROUP_ROOT=/sys/fs/cgroup/darkphish",
+		"GITHUB_TOKEN=ghp_secret",
+		"GH_TOKEN=ghp_secret",
+		"LD_PRELOAD=/opt/darkphish/libpreload.so",
+		"GTK_MODULES=gail:atk-bridge",
+		"GIO_MODULE_DIR=/opt/darkphish/gio",
+		"GST_PLUGIN_PATH=/opt/darkphish/gst",
+		"SSLKEYLOGFILE=/var/lib/darkphish/tls-keys.log",
+		"HTTP_PROXY=http://127.0.0.1:3128",
+		"HTTPS_PROXY=http://127.0.0.1:3128",
+		"ALL_PROXY=socks5://127.0.0.1:1080",
+		"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket",
+		"XDG_RUNTIME_DIR=/run/user/darkphish",
+		"DISPLAY=:0",
+		"XAUTHORITY=/home/admin/.Xauthority",
+		"GODEBUG=http2debug=2",
+		"INVOCATION_ID=9f1c2d3e4a5b4c6d7e8f90a1b2c3d4e5",
+		"PATH_EXTRA=/tmp",
+		"LANG_EXTRA=sk",
+		"TZDIR=/usr/share/zoneinfo",
+		"home=/opt/darkphish",
+		"=VALUE_WITHOUT_A_NAME",
+	}
+	inherited := append(append([]string{}, withheld...), kept...)
+
+	env := renderedChromiumEnvironment(inherited, profile)
+	effective := map[string]string{}
+	for _, entry := range env {
+		key, value, _ := strings.Cut(entry, "=")
+		if _, duplicate := effective[key]; duplicate {
+			t.Fatalf("%s appears twice: %v", key, env)
+		}
+		effective[key] = value
+	}
+	for _, entry := range withheld {
+		name, _, _ := strings.Cut(entry, "=")
+		if _, present := effective[name]; present {
+			t.Errorf("%s reached the renderer", name)
+		}
+	}
+	for _, entry := range kept {
+		name, _, _ := strings.Cut(entry, "=")
+		if effective[name] == "" || entry != name+"="+effective[name] {
+			t.Errorf("%s was not preserved intact (got %q)", entry, effective[name])
+		}
+	}
+	if len(env) != len(kept)+5 {
+		t.Errorf("renderer received %d variables, want the %d admitted plus HOME and the four XDG directories: %v", len(env), len(kept), env)
+	}
+	for _, name := range []string{"HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"} {
+		if !strings.HasPrefix(effective[name], profile+string(os.PathSeparator)) {
+			t.Errorf("%s=%q is outside the render profile", name, effective[name])
+		}
+	}
+	if len(inherited) != len(kept)+len(withheld) {
+		t.Fatalf("caller environment was modified: %v", inherited)
+	}
+}
+
+func TestRenderedChromiumAdmitsOnlyNamedVariables(t *testing.T) {
+	// New service settings must stay private by default, whatever they are
+	// called, and only locale categories are admitted by prefix.
+	for _, name := range []string{"DARKPHISH_SECRET_ENCRYPTION_KEY", "DARKPHISH_NEW_SETTING", "GOPHISH_SECRET_ENCRYPTION_KEY", "LD_PRELOAD", "PATH_EXTRA", "LC", "TZDIR", "", "LC_MESSAGES"} {
+		want := name == "LC_MESSAGES"
+		if got := chromiumInheritsVariable(name); got != want {
+			t.Errorf("chromiumInheritsVariable(%q) = %v, want %v", name, got, want)
+		}
+	}
+	for _, name := range chromiumInheritedVariables {
+		if strings.HasPrefix(name, chromiumInheritedVariablePrefix) {
+			t.Errorf("%s is admitted twice: by name and by prefix", name)
+		}
 	}
 }

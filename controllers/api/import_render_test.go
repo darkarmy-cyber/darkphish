@@ -616,3 +616,34 @@ func TestCDPWebSocketConfigOmitsOrigin(t *testing.T) {
 		t.Fatal("CDP websocket config retained an Origin")
 	}
 }
+
+func TestRenderedChromiumEnvironmentConfinesHomeToProfile(t *testing.T) {
+	profile := filepath.Join(t.TempDir(), "profile-123")
+	// The native unit runs the service account with the installation
+	// directory as its home.
+	inherited := []string{"HOME=/opt/darkphish", "PATH=/usr/bin:/bin", "DARKPHISH_CHROMIUM_PATH=/usr/bin/google-chrome-stable", "XDG_CONFIG_HOME=/etc/xdg"}
+	env := renderedChromiumEnvironment(inherited, profile)
+	effective := map[string]string{}
+	for _, entry := range env {
+		key, value, _ := strings.Cut(entry, "=")
+		effective[key] = value
+	}
+	home := filepath.Join(profile, "home")
+	for key, want := range map[string]string{
+		"HOME":            home,
+		"XDG_CONFIG_HOME": filepath.Join(home, ".config"),
+		"XDG_CACHE_HOME":  filepath.Join(home, ".cache"),
+		"XDG_DATA_HOME":   filepath.Join(home, ".local", "share"),
+		"XDG_STATE_HOME":  filepath.Join(home, ".local", "state"),
+	} {
+		if effective[key] != want {
+			t.Fatalf("%s=%q want %q", key, effective[key], want)
+		}
+	}
+	if effective["PATH"] != "/usr/bin:/bin" || effective["DARKPHISH_CHROMIUM_PATH"] != "/usr/bin/google-chrome-stable" {
+		t.Fatalf("service environment was not preserved: %v", env)
+	}
+	if strings.Join(inherited, "|") != "HOME=/opt/darkphish|PATH=/usr/bin:/bin|DARKPHISH_CHROMIUM_PATH=/usr/bin/google-chrome-stable|XDG_CONFIG_HOME=/etc/xdg" {
+		t.Fatalf("caller environment was modified: %v", inherited)
+	}
+}

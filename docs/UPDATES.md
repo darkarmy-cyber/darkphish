@@ -68,6 +68,17 @@ the Update tab. Eligibility and the supervisor are initialized at startup;
 may then be reported. Use a verified manual upgrade when this installation is
 unsupported; do not simply enable the disabled button in the browser.
 
+If the reason mentions `unmanaged runtime files`, the installation directory
+contains an entry the updater does not manage. It may hold only the release
+files (`darkphish`, `VERSION`, `LICENSE`, `NOTICE.md`, `README.md`,
+`CHANGELOG.md`, `license-public-keys.json`, `db`, `static`, `templates`),
+`config.json`, the SQLite database with its `-wal` and `-shm` files, the key
+and certificate files referenced from `config.json`, and the internal
+`.darkphish-updates` directory. Move backups, copied releases and other files
+elsewhere, restart the service and reload the Update tab. Keep secrets in
+`/etc/darkphish` as the installer places them. Rendered Import Site keeps its
+temporary browser files outside the installation directory since 0.28.1.
+
 Cancelling password confirmation leaves Update now available. After a failed
 reauthentication or apply request, the UI rechecks server state before offering
 a retry. A lost response may still mean an update started, so it must never

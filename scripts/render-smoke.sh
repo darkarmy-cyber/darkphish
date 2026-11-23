@@ -19,7 +19,7 @@ if [[ "$(uname -s)" != Linux ]]; then
   echo "render-smoke: Rendered Import Site runs on Linux only" >&2
   exit 2
 fi
-for tool in systemd-run findmnt go; do
+for tool in systemd-run systemctl findmnt go; do
   command -v "$tool" >/dev/null || { echo "render-smoke: $tool is required" >&2; exit 2; }
 done
 
@@ -39,13 +39,34 @@ if [[ -z "$chrome" ]]; then
 fi
 [[ -n "$chrome" ]] || { echo "render-smoke: no Chromium found; install one or set DARKPHISH_CHROMIUM_PATH" >&2; exit 2; }
 
+unit="darkphish-render-smoke-$$"
 mounted=""
 created=""
 cleanup() {
-  if [[ -n "$mounted" ]]; then "${sudo[@]}" umount "$root" || true; fi
-  if [[ -n "$created" ]]; then "${sudo[@]}" rmdir "$root" || true; fi
+  # systemd-run only waits for the service. A running Chromium would keep the
+  # profile root busy, so the service is killed and awaited first; killed
+  # processes let go of the root a moment after the unit reports inactivity.
+  "${sudo[@]}" systemctl kill --kill-whom=all --signal=SIGKILL "$unit" 2>/dev/null || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    unit_state="$("${sudo[@]}" systemctl is-active "$unit" 2>/dev/null || true)"
+    [[ "$unit_state" != active && "$unit_state" != deactivating ]] && break
+    sleep 0.5
+  done
+  if [[ -n "$mounted" ]]; then
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      "${sudo[@]}" umount "$root" 2>/dev/null && break
+      sleep 0.5
+    done
+    if findmnt -no FSTYPE --mountpoint "$root" >/dev/null 2>&1; then
+      echo "render-smoke: unmount $root by hand" >&2
+    fi
+  fi
+  if [[ -n "$created" ]]; then "${sudo[@]}" rmdir "$root" 2>/dev/null || true; fi
 }
 trap cleanup EXIT
+# A handled signal returns from the wait below at once. Without a handler the
+# shell would die on the spot and leave the service and the mount behind.
+trap ':' INT TERM HUP
 
 if [[ ! -d "$root" ]]; then
   "${sudo[@]}" mkdir -p "$root"
@@ -67,8 +88,9 @@ fi
 # A plain shell has no delegated cgroup; the transient unit provides one, the
 # way the native service unit does.
 "${sudo[@]}" systemd-run --quiet --wait --pipe --collect \
-  --unit="darkphish-render-smoke-$$" --uid="$uid" --gid="$gid" \
+  --unit="$unit" --uid="$uid" --gid="$gid" \
   --property="Delegate=cpu memory pids" --property=ProtectControlGroups=no \
   --property=RestrictNamespaces=no --property="WorkingDirectory=$PWD" \
   "${environment[@]}" \
-  go test -count=1 ./controllers/api/ -run '^TestRenderedImportRealChromium$' -v "$@"
+  go test -count=1 ./controllers/api/ -run '^TestRenderedImportRealChromium$' -v "$@" &
+wait "$!"

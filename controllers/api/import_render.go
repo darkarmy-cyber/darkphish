@@ -44,6 +44,12 @@ const maxRenderedProfileFilesystemBytes uint64 = 512 << 20
 const maxRenderedProfileInodes uint64 = 8192
 const renderedProfileRootEnvironment = "DARKPHISH_RENDER_PROFILE_ROOT"
 
+// renderedStartupTimeout bounds the wait for Chromium's DevTools port. The
+// renderer shares 40 percent of one CPU, and on a slow host a cold Chromium
+// needed more than the five seconds allowed before (a hosted CI runner,
+// 2026-11-23); the import then fell back to the static response.
+const renderedStartupTimeout = 15 * time.Second
+
 // Keep aggregate renderer CPU below the whole machine so the API and the
 // renderer proxy remain responsive even when every render slot is occupied.
 const maxRenderedAggregateCPUPercent uint32 = 80

@@ -563,6 +563,12 @@ func TestRendererSecurityCapsAndSetupCommands(t *testing.T) {
 	if maxRenderedPIDs != 512 {
 		t.Fatalf("unexpected per-render PID cap: %d", maxRenderedPIDs)
 	}
+	// A cold Chromium on a slow host needed more than five seconds under the
+	// renderer's CPU limit. The wait stays well above that and leaves most of
+	// the import's 25 seconds to the page.
+	if renderedStartupTimeout < 10*time.Second || renderedStartupTimeout > 15*time.Second {
+		t.Fatalf("unexpected Chromium startup wait: %s", renderedStartupTimeout)
+	}
 	commands := renderSetupCommands()
 	for _, command := range commands {
 		if command.method == "Page.navigate" {

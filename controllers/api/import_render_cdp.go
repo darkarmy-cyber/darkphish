@@ -541,7 +541,7 @@ func renderImportPageCDP(ctx context.Context, profileDir, target string) ([]byte
 			log.Warn("rendered import cdp stage failed: ", stage)
 		}
 	}()
-	portCtx, cancelPort := context.WithTimeout(ctx, 5*time.Second)
+	portCtx, cancelPort := context.WithTimeout(ctx, renderedStartupTimeout)
 	port, err := readDevToolsPort(portCtx, profileDir)
 	cancelPort()
 	if err != nil {

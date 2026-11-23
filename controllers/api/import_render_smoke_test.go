@@ -27,13 +27,17 @@ func TestRenderedImportRealChromium(t *testing.T) {
 		t.Fatal("no Chromium on this host: install one or set DARKPHISH_CHROMIUM_PATH")
 	}
 	// The wrapper records the environment the product hands to Chromium and
-	// then becomes Chromium.
-	dump := filepath.Join(t.TempDir(), "chromium-environment")
+	// then becomes Chromium. Paths travel through files, never through shell
+	// syntax, so a browser path with spaces cannot change what runs.
 	wrapper := filepath.Join(t.TempDir(), "chromium")
-	script := "#!/bin/sh\n/usr/bin/env -0 > " + dump + "\nexec " + chrome + " \"$@\"\n"
+	script := "#!/bin/sh\n/usr/bin/env -0 > \"$0.environment\"\nexec \"$(cat \"$0.target\")\" \"$@\"\n"
 	if err := os.WriteFile(wrapper, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(wrapper+".target", []byte(chrome+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dump := wrapper + ".environment"
 	t.Setenv("DARKPHISH_CHROMIUM_PATH", wrapper)
 	t.Setenv("DARKPHISH_SECRET_ENCRYPTION_KEY", "render-smoke-sentinel")
 
@@ -86,9 +90,6 @@ func TestRenderedImportRealChromium(t *testing.T) {
 // cgroups reached while renders were running. Kernels older than 6.8 do not
 // expose the peak files; the report then says unknown.
 func sampleRenderPeaks(stop <-chan struct{}, result chan<- string) {
-	self, _ := os.ReadFile("/proc/self/cgroup")
-	_, group, _ := strings.Cut(string(self), "::")
-	group = "/sys/fs/cgroup" + strings.TrimSpace(group)
 	var threads, memory int
 	for {
 		select {
@@ -101,9 +102,14 @@ func sampleRenderPeaks(stop <-chan struct{}, result chan<- string) {
 			return
 		default:
 		}
-		for _, dir := range globRenderCgroups(group) {
-			threads = max(threads, readCounter(filepath.Join(dir, "pids.peak")))
-			memory = max(memory, readCounter(filepath.Join(dir, "memory.peak")))
+		// The render cgroups are children of the delegated root. The test
+		// process itself may have been moved into the service leaf below it,
+		// so its own cgroup is not the place to look.
+		if group, err := renderedCgroupRoot(); err == nil {
+			for _, dir := range globRenderCgroups(group) {
+				threads = max(threads, readCounter(filepath.Join(dir, "pids.peak")))
+				memory = max(memory, readCounter(filepath.Join(dir, "memory.peak")))
+			}
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

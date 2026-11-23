@@ -1,0 +1,30 @@
+name: Rendered import smoke
+on:
+  pull_request:
+    paths:
+      - "controllers/api/import_render*"
+      - "scripts/render-smoke.sh"
+      - ".github/workflows/render-smoke.yml"
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rendered-import-smoke-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  smoke:
+    name: Rendered Import Site with real Chromium
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.4
+          cache: true
+      - name: Render two public pages with the Chromium of the runner
+        run: scripts/render-smoke.sh

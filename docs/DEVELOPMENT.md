@@ -52,7 +52,9 @@ Before a release that touches `controllers/api/import_render*`, run
 `scripts/render-smoke.sh` on Linux: it mounts a small tmpfs, starts a delegated
 transient unit and renders two public pages with the Chromium of the host. The
 "Rendered import smoke" workflow does the same in CI for pull requests that
-change the renderer, every Monday and on demand.
+change the renderer, every Monday and on demand. On the hosted runner Chromium
+runs without its sandbox (`DARKPHISH_CHROMIUM_NO_SANDBOX=true`), as on
+installations that cannot provide one.
 
 Runtime changes require a fragment under `changes/`. Validate it with
 `node scripts/changelog.mjs validate`; release preparation aggregates fragments

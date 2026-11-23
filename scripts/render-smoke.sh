@@ -39,6 +39,15 @@ if [[ -z "$chrome" ]]; then
 fi
 [[ -n "$chrome" ]] || { echo "render-smoke: no Chromium found; install one or set DARKPHISH_CHROMIUM_PATH" >&2; exit 2; }
 
+# Read the browser's large files once. A hosted runner starts with a cold page
+# cache, and under the renderer's CPU limit loading several hundred megabytes
+# of Chromium alone exceeded the product's startup wait there. The test is
+# meant to measure the renderer, not the disk.
+browser_dir="$(dirname "$(readlink -f "$chrome")")"
+if [[ -d "$browser_dir" ]]; then
+  find "$browser_dir" -maxdepth 1 -type f -size +1M -exec cat {} + >/dev/null 2>&1 || true
+fi
+
 unit="darkphish-render-smoke-$$"
 mounted=""
 created=""
